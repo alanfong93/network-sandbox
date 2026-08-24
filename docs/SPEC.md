@@ -2,6 +2,13 @@
 
 Design document. **Nothing is implemented yet.**
 
+This file describes *what* v1 is, and it gets archived when the phase closes. The
+*why* behind the load-bearing decisions lives in [`adr/`](adr/) and outlives it —
+0001 pipeline-not-rulebook, 0002 trace-not-verdict, 0003 no-timers, 0004 one router
+type, 0005 NAT on by default, 0006 radio is an estimate, 0007 unmanaged-switch names a
+capability, 0008 PVID is ingress and native VLAN is egress. Reversing any of those means
+appending a new ADR that supersedes the old one, not editing this file quietly.
+
 ## 1. Principle
 
 Execute the **802.1Q ingress → forward → egress pipeline**, and let outcomes fall out of it. Do not write a rulebook of hand-authored error conditions — the pipeline is finite, published and vendor-neutral, so running it produces the standard's answer rather than the author's.
@@ -21,9 +28,13 @@ type MacAddr = string;           // "aa:bb:cc:dd:ee:01"
 interface Port {
   id: string;
   mode: 'access' | 'trunk';
-  pvid: VlanId;                  // native VLAN on a trunk; the VLAN on an access port
-  taggedVlans: Set<VlanId>;      // egress-tagged members (trunk only)
-  untaggedVlans: Set<VlanId>;    // egress-untagged members
+  // INGRESS ONLY: the VLAN an accepted untagged frame enters. This is NOT the
+  // native VLAN - native is an egress concept and lives in untaggedVlans below.
+  // The two coincide by default but are independent. See ADR 0008.
+  pvid: VlanId;
+  taggedVlans: Set<VlanId>;      // EGRESS: members sent tagged (trunk only)
+  untaggedVlans: Set<VlanId>;    // EGRESS: members sent untagged. A trunk's "native VLAN"
+                                 // is this set's single entry - derived, never stored.
   acceptableFrameTypes: 'all' | 'tagged-only' | 'untagged-only';
   ingressFiltering: boolean;
   stpState: 'forwarding' | 'blocking' | 'disabled';
@@ -40,8 +51,8 @@ interface ManagedSwitch {
   fdb: Map<string, string>;      // "vlan:mac" -> port id
 }
 
-interface DumbSwitch {
-  kind: 'dumb-switch';
+interface UnmanagedSwitch {
+  kind: 'unmanaged-switch';
   id: string;
   ports: { id: string; link?: Link }[];   // no VLAN config, no STP, no priority
   fdb: Map<MacAddr, string>;              // one flat table, VLAN-blind
@@ -93,7 +104,9 @@ interface Hop {
 
 ## 3. Device notes
 
-**Unmanaged switch.** Zero configuration. Forwards by MAC only; tagged frames pass straight through with the tag intact. One flat FDB. Sends and understands no BPDUs, so a loop through unmanaged switches is invisible to spanning tree. Consequences worth reproducing: trunk → dumb switch → trunk usually works (which is why people wrongly believe it "supports VLANs"), and every port on it shares one broadcast domain.
+**Unmanaged switch.** Zero configuration. Forwards by MAC only; tagged frames pass straight through with the tag intact. One flat FDB. Sends and understands no BPDUs, so a loop through unmanaged switches is invisible to spanning tree. Consequences worth reproducing: trunk → unmanaged switch → trunk usually works (which is why people wrongly believe it "supports VLANs"), and every port on it shares one broadcast domain.
+
+The name states a *capability* — no configurable per-port VLAN membership — and deliberately claims nothing more. "Unmanaged" is a management-plane word, and real unmanaged hardware varies in the data plane: pass-the-tag-intact is the common behaviour, not a guarantee, and some cheap silicon strips or drops tagged frames. The sandbox models the common behaviour; the UI must not let that read as a promise about the box on the user's desk. Same honesty boundary as ADR 0006, one tier down.
 
 **Managed switch.** Full port config per §2.
 
@@ -114,11 +127,11 @@ The product is really this table. Each row is a reproducible mistake with a spec
 | # | Device | Mistake | Trace should say |
 |---|---|---|---|
 | 1 | Managed switch | VLAN missing from the trunk's allowed list | *"Dropped at SW2 port 3 (egress): port is not a member of VLAN 20"* |
-| 2 | Managed switch | Native/PVID mismatch across a trunk | *"Untagged frame entered VLAN 10 at SW1, arrived as VLAN 20 at SW2 — VLAN leak"* |
+| 2 | Managed switch | Trunk's egress-untagged VLAN ≠ far end's ingress PVID | *"Untagged frame entered VLAN 10 at SW1, arrived as VLAN 20 at SW2 — VLAN leak"* |
 | 3 | Managed switch | Access port on the wrong PVID | *"Host got 192.168.20.51 — expected VLAN 10"* |
 | 4 | Managed switch | Ingress filtering off, tagged frame on an access port | *"Admitted only because ingress filtering is disabled"* |
-| 5 | Dumb switch | Expecting per-port VLANs on it | *"This device has no VLAN awareness — all 5 ports are one broadcast domain"* |
-| 6 | Dumb switch | Loop through two dumb switches | *"Frame has looped 50x — no BPDUs on this path, STP cannot break this loop"* |
+| 5 | Unmanaged switch | Expecting per-port VLANs on it | *"This device has no VLAN awareness — all 5 ports are one broadcast domain"* |
+| 6 | Unmanaged switch | Loop through two unmanaged switches | *"Frame has looped 50x — no BPDUs on this path, STP cannot break this loop"* |
 | 7 | Router | Gateway IP on the wrong VLAN subinterface | *"ARP for 192.168.10.1 flooded VLAN 10 — no reply; gateway is on VLAN 20"* |
 | 8 | Router | DHCP server on another VLAN, no relay | *"DHCP DISCOVER flooded VLAN 30 — no server is a member. Add a relay on the VLAN 30 interface"* |
 | 9 | Router | Firewall denies inter-VLAN return traffic | *"ICMP reached VLAN 20; reply dropped by rule VLAN20 -> VLAN10 deny"* |
@@ -130,6 +143,7 @@ The product is really this table. Each row is a reproducible mistake with a spec
 | 15 | Multi-tier | Asymmetric path | *"Request R1->R2->R4; reply R4->R3->R1 — return path differs"* |
 | 16 | STP | Redundant link, STP off | *"MAC aa:..:01 seen on port 1 and port 2 within one step — MAC table is flapping"* |
 | 17 | STP | Bridge priority makes the wrong switch root | *"Root is SW3 (priority 4096). Traffic SW1->SW2 now transits SW3"* |
+| 18 | Managed switch | Trunk set to tag everything on egress, far end still sends untagged | *"SW1 port 2 admits tagged frames only; the untagged frame from SW2 was dropped at ingress"* |
 
 ## 5. STP
 
