@@ -108,3 +108,16 @@ in code, on access ports and trunks alike.
   VLAN at all while still carrying a `pvid`. Catalogue row 18.
 - **Do not call it:** *default VLAN*, *untagged VLAN* alone (ambiguous — say
   "egress-untagged"), or *PVID*.
+
+### Cold trace
+
+Every trace starts with nothing resolved. There is no ARP cache, and nothing carries
+between traces ([ADR 0010](docs/adr/0010-arp-is-modelled-without-a-cache.md)) — a
+cache that ages is a timer, and [ADR 0003](docs/adr/0003-converged-state-no-timers.md)
+forbids timers.
+
+- So a trace that opens with an ARP exchange **every single time** is correct, not a
+  bug. It would look odd on a real host mid-session, which is why the cold-cache
+  precondition is user-visible rather than an implementation detail.
+- **Do not add a cache** — not "just for realism", not keyed on the trace id. If
+  resolution ever needs to persist, that supersedes ADR 0010 in writing first.

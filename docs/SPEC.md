@@ -6,7 +6,9 @@ This file describes *what* v1 is, and it gets archived when the phase closes. Th
 *why* behind the load-bearing decisions lives in [`adr/`](adr/) and outlives it —
 0001 pipeline-not-rulebook, 0002 trace-not-verdict, 0003 no-timers, 0004 one router
 type, 0005 NAT on by default, 0006 radio is an estimate, 0007 unmanaged-switch names a
-capability, 0008 PVID is ingress and native VLAN is egress. Reversing any of those means
+capability, 0008 PVID is ingress and native VLAN is egress, 0009 browser-only not a real
+dataplane, 0010 ARP is modelled without a cache, 0011 single-instance STP owes a warning.
+Reversing any of those means
 appending a new ADR that supersedes the old one, not editing this file quietly.
 
 ## 1. Principle
@@ -144,6 +146,7 @@ The product is really this table. Each row is a reproducible mistake with a spec
 | 16 | STP | Redundant link, STP off | *"MAC aa:..:01 seen on port 1 and port 2 within one step — MAC table is flapping"* |
 | 17 | STP | Bridge priority makes the wrong switch root | *"Root is SW3 (priority 4096). Traffic SW1->SW2 now transits SW3"* |
 | 18 | Managed switch | Trunk set to tag everything on egress, far end still sends untagged | *"SW1 port 2 admits tagged frames only; the untagged frame from SW2 was dropped at ingress"* |
+| 19 | STP | Two parallel trunks, two VLANs, expecting per-VLAN load balancing | *"This model runs one spanning tree: port 2 is blocked for every VLAN. Gear defaulting to Rapid PVST+ may forward VLAN 10 here and VLAN 20 on the other trunk"* |
 
 ## 5. STP
 
@@ -151,7 +154,15 @@ Modelled, deterministically: root election by bridge ID, root port by lowest pat
 
 **Not modelled: timers.** The converged state is computed. Listening/learning delays, BPDU timeouts and topology-change notifications are absent, so the sandbox cannot tell you how long a real network is down while reconverging. This limit belongs in the UI, not just in this file.
 
-**Not modelled: per-VLAN spanning tree** (PVST+/MSTP). Single instance only.
+**Not modelled: per-VLAN spanning tree** (PVST+/MSTP). Single instance only — which is what
+IEEE 802.1D itself defines, one instance for the whole network.
+
+**This limit belongs in the UI too, and more urgently than the timer one.** Cisco Catalyst gear
+*defaults* to Rapid PVST+, a separate instance per VLAN, so for those users the sandbox is not
+missing an edge case — it is backwards from their default. Two parallel trunks carrying two VLANs
+will load-balance on their gear and block one path here. v1 therefore owes a visible limitation
+notice, a contextual warning fired by detecting that exact shape, and catalogue row 19. See
+[ADR 0011](adr/0011-single-instance-stp-owes-a-warning.md).
 
 ## 6. Staging, and the honesty boundary
 
@@ -168,6 +179,6 @@ Vendor profiles and vendor CLI syntax · per-VLAN STP · convergence timing · L
 
 ## 8. Open questions
 
-1. Is ARP modelled explicitly, or is reachability enough? Rows 7 and 8 are much better with it. Leaning yes.
+1. ~~Is ARP modelled explicitly, or is reachability enough?~~ **CLOSED 2026-08-25 — yes, explicitly, and with no ARP cache.** See [ADR 0010](adr/0010-arp-is-modelled-without-a-cache.md).
 2. Topology sharing: URL-encoded state vs JSON download. URL sharing is free reach for a teaching tool but may not survive large topologies.
 3. Broadcast storm representation: a hop counter is cheap and honest; an animation teaches harder. Cheap first.
