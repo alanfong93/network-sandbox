@@ -31,3 +31,7 @@ pnpm-debug.log*
 # test / coverage
 coverage/
 .nyc_output/
+
+
+# Claude LOCAL
+.claude/CLAUDE.LOCAL.MD
