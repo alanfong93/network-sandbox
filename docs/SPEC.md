@@ -7,7 +7,10 @@ This file describes *what* v1 is, and it gets archived when the phase closes. Th
 0001 pipeline-not-rulebook, 0002 trace-not-verdict, 0003 no-timers, 0004 one router
 type, 0005 NAT on by default, 0006 radio is an estimate, 0007 unmanaged-switch names a
 capability, 0008 PVID is ingress and native VLAN is egress, 0009 browser-only not a real
-dataplane, 0010 ARP is modelled without a cache, 0011 single-instance STP owes a warning.
+dataplane, 0010 ARP is modelled without a cache, 0011 single-instance STP owes a warning,
+0012 profiles are data and the engine is the only executor,
+0013 a device is a chassis plus functions, 0014 AGPL-3.0 with a DCO,
+0015 read real config before generating it.
 Reversing any of those means
 appending a new ADR that supersedes the old one, not editing this file quietly.
 
@@ -23,86 +26,171 @@ Every drop is simultaneously a teaching moment and a bug report. The UI's job is
 
 ## 2. Data model
 
+A device is a **chassis plus functions** — see [ADR 0013](adr/0013-devices-are-a-chassis-plus-functions.md).
+The palette shows boxes ("Home router with WiFi"); the functions live underneath.
+
 ```ts
-type VlanId = number;            // 1..4094
+type VlanId  = number;           // 1..4094
 type MacAddr = string;           // "aa:bb:cc:dd:ee:01"
+type Bytes   = number;
+type DeviceId = string;
+type FnId     = string;
+
+// ---------- topology ----------
+
+interface Topology {
+  devices: Chassis[];
+  links: Link[];
+  profiles: string[];            // profile ids in use - ADR 0012
+}
+
+// ONE link type. A wireless link carries VLANs exactly like copper and carries
+// NO RF semantics: no signal, no rate, no coverage. It is an ASSUMPTION the UI
+// must label as such. RF is stage 4 and is an estimate - ADR 0006, ADR 0013.
+interface Link {
+  id: string;
+  a: { device: DeviceId; port: string };
+  b: { device: DeviceId; port: string };
+  medium: 'wired' | 'wireless';
+}
+
+// ---------- the box ----------
+
+interface Chassis {
+  id: DeviceId;
+  label: string;                 // what the palette called it
+  preset?: string;               // the profile it was created from - ADR 0012
+  ports: Port[];
+  radios: Radio[];
+  functions: Fn[];
+  internal: InternalEdge[];      // generated from the preset; inspectable, not user-rewirable
+}
 
 interface Port {
   id: string;
+  mtu: Bytes;                    // usable size is COMPUTED from encapsulation, never stored
+  ownedBy: FnId;                 // a port is a bridge member, a routed iface, or a WAN
+}
+
+// A radio exists so several wireless functions can share ONE radio - that is what
+// makes an extender an extender. It deliberately has NO power/channel-quality
+// fields: those are stage 4 estimates.
+interface Radio {
+  id: string;
+  band: '2.4' | '5' | '6';
+}
+
+interface InternalEdge { from: FnId | string; to: FnId | string; }
+
+// ---------- functions ----------
+
+type Fn =
+  | { kind: 'bridging'; id: FnId; vlanAware: boolean;
+      members: BridgePort[]; fdb: Map<string, string> }        // vlanAware=false -> one flat, VLAN-blind table
+  | { kind: 'stp'; id: FnId; bridge: FnId; priority: number; baseMac: MacAddr;
+      // Keyed by instance. v1 ships exactly ONE instance (ADR 0011); MSTP (802.1s)
+      // adds more without a model change. Build MSTP before PVST+ - ADR 0012.
+      state: Map<string, Map<string, 'forwarding' | 'blocking' | 'disabled'>> }
+  | { kind: 'routing'; id: FnId; ifaces: RouterIface[]; routes: Route[];
+      firewall: { from: VlanId; to: VlanId; action: 'allow' | 'deny' }[] }
+  | { kind: 'nat'; id: FnId; on: FnId;
+      portForwards: { proto: string; outsidePort: number; toIp: string; toPort: number }[] }
+  | { kind: 'dhcp-server'; id: FnId; scopes: DhcpScope[] }
+  | { kind: 'dhcp-relay'; id: FnId; helper: string }
+  | { kind: 'wireless'; id: FnId; radio: string;                // several may share one radio
+      mode: 'ap' | 'client' | 'mesh'; ssid: string; vlan?: VlanId }
+  | { kind: 'isp-handoff'; id: FnId; port: string;              // several = multi-WAN
+      mode: 'pppoe' | 'dhcp' | 'static';
+      vlanTag?: VlanId;                                         // TM unifi tags VLAN 500 here
+      credentials?: { user: string; pass: string }; ip?: string; prefix?: number };
+
+interface BridgePort {
+  port: string;
   mode: 'access' | 'trunk';
-  // INGRESS ONLY: the VLAN an accepted untagged frame enters. This is NOT the
-  // native VLAN - native is an egress concept and lives in untaggedVlans below.
-  // The two coincide by default but are independent. See ADR 0008.
+  // INGRESS ONLY: the VLAN an accepted untagged frame enters. NOT the native VLAN -
+  // native is egress and lives in untaggedVlans. Independent. ADR 0008.
   pvid: VlanId;
-  taggedVlans: Set<VlanId>;      // EGRESS: members sent tagged (trunk only)
-  untaggedVlans: Set<VlanId>;    // EGRESS: members sent untagged. A trunk's "native VLAN"
-                                 // is this set's single entry - derived, never stored.
+  taggedVlans: Set<VlanId>;      // EGRESS: sent tagged
+  untaggedVlans: Set<VlanId>;    // EGRESS: sent untagged. A trunk's "native VLAN" is
+                                 // this set's single entry - derived, never stored.
   acceptableFrameTypes: 'all' | 'tagged-only' | 'untagged-only';
   ingressFiltering: boolean;
-  stpState: 'forwarding' | 'blocking' | 'disabled';
-  link?: { toDevice: string; toPort: string };
-}
-
-interface ManagedSwitch {
-  kind: 'managed-switch';
-  id: string;
-  bridgePriority: number;        // 802.1D: lower wins the root election
-  baseMac: MacAddr;              // bridge ID tiebreaker
-  stpEnabled: boolean;
-  ports: Port[];
-  fdb: Map<string, string>;      // "vlan:mac" -> port id
-}
-
-interface UnmanagedSwitch {
-  kind: 'unmanaged-switch';
-  id: string;
-  ports: { id: string; link?: Link }[];   // no VLAN config, no STP, no priority
-  fdb: Map<MacAddr, string>;              // one flat table, VLAN-blind
 }
 
 interface RouterIface {
   id: string;
-  vlan: VlanId;                  // subinterface / SVI
+  vlan?: VlanId;                 // a TAGGED SUB-INTERFACE on a routed port - no bridge involved
   ip: string; prefix: number;
-  dhcpServer?: { poolStart: string; poolEnd: string; gateway: string; dns: string };
-  dhcpRelay?: string;            // helper address
 }
 
-// ONE router type at any depth. "Sub-router" is a position, not a device kind.
-interface Router {
-  kind: 'router';
-  id: string;
-  ports: Port[];
-  ifaces: RouterIface[];
-  uplink?: { port: string; mode: 'dhcp-client' | 'static'; ip?: string };  // absent = edge
-  nat: boolean;                  // the real decision at each tier
-  routes: { dest: string; prefix: number; via: string }[];
-  firewall: { from: VlanId; to: VlanId; action: 'allow' | 'deny' }[];
+interface Route {
+  dest: string; prefix: number; via: string;
+  fromVlan?: VlanId;             // present = policy routing (multi-WAN), absent = destination-only
 }
 
-interface Host {
-  kind: 'host';
-  id: string;
-  mac: MacAddr;
-  addressing: 'dhcp' | 'static';
-  ip?: string; prefix?: number; gateway?: string;
-  port: { link?: Link };
-}
+interface DhcpScope { vlan: VlanId; poolStart: string; poolEnd: string; gateway: string; dns: string }
+
+// ---------- what moves ----------
 
 interface Frame {
   srcMac: MacAddr; dstMac: MacAddr;
   vlan: VlanId | null;                    // null = untagged on the wire
+  size: Bytes;                            // MTU failures are invisible without this
+  encapsulation: ('ethernet' | 'vlan-tag' | 'pppoe')[];   // each costs bytes; the
+                                          // usable MTU is COMPUTED from this stack,
+                                          // never typed in as 1492 - ADR 0001
   payload: { kind: 'arp' | 'icmp' | 'dhcp'; srcIp?: string; dstIp?: string; dhcpType?: string };
-  hops: Hop[];                            // appended at every device - this IS the explanation
+  hops: Hop[];                            // appended everywhere - this IS the explanation
 }
 
 interface Hop {
-  device: string; inPort: string; outPort?: string;
+  device: DeviceId;
+  fn?: FnId;                     // WHICH FUNCTION inside the box handled it - no black
+                                 // holes inside a combo device (ADR 0013)
+  inPort?: string; outPort?: string;
   vlan: VlanId | null;
   action: 'forwarded' | 'flooded' | 'dropped' | 'delivered';
   reason: string;
+  // Present when a profile influenced this step. Standard-derived output must never
+  // appear to endorse a third party's claim - ADR 0012.
+  provenance?: { profile: string; version: string; fields: string[] };
 }
+
+// Catalogue rows 9, 13 and 15 are about a REPLY dying, not a request. One frame in one
+// direction cannot show that, so what the user traces is a FLOW.
+interface Flow {
+  id: string;
+  request: Frame;
+  reply?: Frame;                 // absent = nothing came back, which is itself the finding
+  outcome: 'round-trip'          // request delivered, reply returned
+         | 'request-failed'      // it never arrived
+         | 'reply-failed';       // it arrived; the reply died coming back - row 13
+  asymmetric?: boolean;          // the reply took a different path - row 15
+}
+
+// A looped frame would trace forever. The engine stops here, and the count IS how a
+// broadcast storm is shown - catalogue row 6.
+const MAX_HOPS = 100;
 ```
+
+### How the real boxes compose
+
+| Box on the palette | Functions |
+|---|---|
+| Unmanaged switch | `bridging` (vlanAware false) |
+| Managed switch | `bridging` (vlanAware true) + `stp` |
+| L3 switch | `bridging` + `stp` + `routing` |
+| Router | `bridging` + `routing` + `nat` + `dhcp-server` |
+| Home router with WiFi | the above + `wireless` (ap) on a radio |
+| ISP combo box | the above + `isp-handoff` |
+| Standalone AP | `bridging` + `wireless` (ap) |
+| Mesh node | `bridging` + `wireless` (mesh) |
+| Extender | `wireless` (ap) + `wireless` (client) **on the same radio** |
+| Host | a chassis with no functions |
+
+The extender's two wireless functions naming one `radio.id` is what makes it an
+extender. **This does not model its throughput** — that depends on airtime, PHY rate
+and channel reuse, which is an estimate, not a derived outcome (ADR 0013).
 
 ## 3. Device notes
 
@@ -112,15 +200,21 @@ The name states a *capability* — no configurable per-port VLAN membership — 
 
 **Managed switch.** Full port config per §2.
 
-**L3 switch.** Managed switch plus router interfaces — reuses `RouterIface`.
+**L3 switch.** The same chassis carrying `bridging` + `stp` + `routing`. Not a separate device kind.
 
-**Router at any depth.** The NAT flag is the decision that matters at each tier:
+**Router at any depth.** Whether the `nat` function is present is the decision that matters at each tier:
 - **NAT on** (home/SMB, router behind router): downstream hides behind one address, upstream needs no routes. Fails at inbound connections and port forwarding, and is hard to debug three tiers deep.
 - **NAT off** (proper routed hierarchy): real subnets and real routing. Fails at the **missing return route** — the downstream can reach up, the upstream has no route back down, so replies never come home. This is invisible from the downstream side, which is exactly why a trace beats a ping.
 
 Default: **NAT on** for a newly placed router. This matches consumer gear and user expectation. Consequence to design around: the missing-return-route case then never appears unless a user turns NAT off, so surface it through a starter scenario rather than by changing the default.
 
-**Access point.** Wired device with a trunk uplink; SSIDs map to VLANs; management VLAN. Clients join an SSID and then behave as ordinary hosts. Radio is stage 4 and carries a weaker claim — see §6.
+**Access point.** A chassis with `bridging` and one or more `wireless` functions in `ap` mode, plus a trunk uplink. Each SSID is one wireless function, and **several can share one radio while mapping to different VLANs** — which is exactly how guest wifi leaks into the main network. Clients join an SSID and then behave as ordinary hosts.
+
+**Mesh node.** `bridging` + `wireless` in `mesh` mode. The backhaul is an ordinary link with `medium: 'wireless'`, so it carries VLANs and can be misconfigured like any other. It says nothing about whether the two nodes can actually hear each other.
+
+**Extender.** `wireless` in `ap` mode and `wireless` in `client` mode **naming the same radio**. That shared radio is what makes it an extender — and it is also the limit of the claim: the sandbox will not tell anyone what throughput they lose, because that is airtime and PHY rate, which is an estimate (ADR 0013).
+
+Radio itself is stage 4 and carries a weaker claim — see §6.
 
 ## 4. Failure catalogue
 
@@ -175,10 +269,16 @@ Stages 1–3 execute published standards. **Radio coverage does not.** Whether a
 
 ## 7. Out of scope for v1
 
-Vendor profiles and vendor CLI syntax · per-VLAN STP · convergence timing · LACP · VRRP · VXLAN/EVPN · IPv6 · QoS · ACLs beyond simple inter-VLAN allow/deny · routing protocols (OSPF/BGP) · server-side persistence (local storage plus JSON export/import instead) · accounts · multi-user collaboration · importing a real device config.
+Vendor profile *content* and vendor CLI syntax — note the profile **mechanism** (schema,
+loader, versioning, trace provenance) IS in v1 per [ADR 0012](adr/0012-profiles-are-data-the-engine-is-the-only-executor.md); what is out is the author shipping vendor profiles, plus any
+profile editor, public directory, signing or curation · per-VLAN STP · convergence timing · LACP · VRRP · VXLAN/EVPN · IPv6 · QoS · ACLs beyond simple inter-VLAN allow/deny · routing protocols (OSPF/BGP) · server-side persistence (local storage plus JSON export/import instead) · accounts · multi-user collaboration · **generating** real device config (exporting config you paste into a live switch — see [ADR 0015](adr/0015-import-real-config-before-exporting-it.md)).
+
+No longer out of scope: **reading** a real device config. See ADR 0015.
 
 ## 8. Open questions
 
 1. ~~Is ARP modelled explicitly, or is reachability enough?~~ **CLOSED 2026-08-25 — yes, explicitly, and with no ARP cache.** See [ADR 0010](adr/0010-arp-is-modelled-without-a-cache.md).
-2. Topology sharing: URL-encoded state vs JSON download. URL sharing is free reach for a teaching tool but may not survive large topologies.
-3. Broadcast storm representation: a hop counter is cheap and honest; an animation teaches harder. Cheap first.
+2. ~~Topology sharing: URL vs JSON download.~~ **CLOSED 2026-08-25 — a JSON file is the format of record.** URLs have a practical limit of a couple of thousand characters and will not survive a large topology, and profiles make it worse. URL sharing may still be offered for small topologies as a convenience, but never as the canonical format.
+3. ~~Broadcast storm representation.~~ **CLOSED 2026-08-25 — a hop counter, capped at `MAX_HOPS`.** Cheap, honest, and it also stops the engine looping forever.
+
+   *Kept for later, not rejected:* an animation showing the frame multiplying teaches harder than a number does. It is a presentation change only — the counter is the mechanism either way — so it can be added at any time without touching the engine.

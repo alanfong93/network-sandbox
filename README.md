@@ -92,6 +92,30 @@ Single-instance STP only, not per-VLAN (PVST+/MSTP). Vendor-specific syntax and 
 
 **And a deliberate honesty boundary around wireless:** SSID-to-VLAN mapping is configuration, and it carries the same confidence as everything else here. **Radio coverage does not.** Whether an AP reaches the far end of an office depends on walls, materials, antenna patterns and the neighbours' networks; no standard answers that, a site survey does. When coverage modelling arrives it will be presented differently from the rest of the tool, because it is an estimate and the rest is not.
 
+## Contributing
+
+Contributions are welcome. Sign your commits off with `git commit -s` — see
+[`CONTRIBUTING.md`](CONTRIBUTING.md).
+
+You keep the copyright on what you write. There is **no CLA**, and nobody can
+relicense this project or take it closed — including the maintainer. That is
+deliberate: see [ADR 0014](docs/adr/0014-agpl-with-dco-no-cla.md).
+
 ## Licence
 
-Not yet chosen.
+Copyright (C) 2026 Alan Fong
+
+This program is free software: you can redistribute it and/or modify it under the
+terms of the **GNU Affero General Public License** as published by the Free Software
+Foundation, either version 3 of the License, or (at your option) any later version.
+
+It is distributed in the hope that it will be useful, but **WITHOUT ANY WARRANTY** —
+without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR
+PURPOSE. See the [GNU AGPL](LICENSE) for details.
+
+AGPL was chosen so that anyone who modifies this tool — **including anyone who merely
+hosts a modified copy** — has to publish their changes. Contributors give their work
+freely; nobody gets to take it private.
+
+The licence covers this project's code. It does not claim ownership of vendor or ISP
+**profiles** that users write — those belong to their authors.

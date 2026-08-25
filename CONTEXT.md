@@ -109,6 +109,29 @@ in code, on access ports and trunks alike.
 - **Do not call it:** *default VLAN*, *untagged VLAN* alone (ambiguous — say
   "egress-untagged"), or *PVID*.
 
+### Preset
+
+The named box on the palette — "Home router with WiFi" — and the list of functions it
+switches on. **A preset is a profile** ([ADR 0012](docs/adr/0012-profiles-are-data-the-engine-is-the-only-executor.md),
+[ADR 0013](docs/adr/0013-devices-are-a-chassis-plus-functions.md)): both are declarative
+data selecting capabilities the engine already implements. They are one mechanism, not
+two.
+
+- **Do not call it:** *device type*, *device class*. There are no device types — there
+  is a chassis, and there are functions.
+
+### Radio
+
+A shared transmitter on a chassis. It exists **so that several `wireless` functions can
+name the same one** — an extender is an AP and a client on one radio, and guest wifi is
+two SSIDs on one radio landing in different VLANs.
+
+- It deliberately carries **no power, channel quality or coverage fields**. Those are
+  stage 4 estimates ([ADR 0006](docs/adr/0006-radio-is-an-estimate-not-a-result.md)).
+- **A shared radio does not let the tool state a throughput cost.** That needs airtime
+  and PHY rate. Saying "an extender halves your speed" is an estimate wearing the
+  clothes of a derived result — the exact mistake ADR 0013 records.
+
 ### Cold trace
 
 Every trace starts with nothing resolved. There is no ARP cache, and nothing carries
