@@ -241,6 +241,7 @@ The product is really this table. Each row is a reproducible mistake with a spec
 | 17 | STP | Bridge priority makes the wrong switch root | *"Root is SW3 (priority 4096). Traffic SW1->SW2 now transits SW3"* |
 | 18 | Managed switch | Trunk set to tag everything on egress, far end still sends untagged | *"SW1 port 2 admits tagged frames only; the untagged frame from SW2 was dropped at ingress"* |
 | 19 | STP | Two parallel trunks, two VLANs, expecting per-VLAN load balancing | *"This model runs one spanning tree: port 2 is blocked for every VLAN. Gear defaulting to Rapid PVST+ may forward VLAN 10 here and VLAN 20 on the other trunk"* |
+| 20 | Mesh AP | Consumer mesh in AP mode expected to carry tagged VLANs | *"Guest SSID maps to VLAN 30, but this node passes untagged only — clients landed in VLAN 10 with everything else"* |
 
 ## 5. STP
 
@@ -282,3 +283,74 @@ No longer out of scope: **reading** a real device config. See ADR 0015.
 3. ~~Broadcast storm representation.~~ **CLOSED 2026-08-25 — a hop counter, capped at `MAX_HOPS`.** Cheap, honest, and it also stops the engine looping forever.
 
    *Kept for later, not rejected:* an animation showing the frame multiplying teaches harder than a number does. It is a presentation change only — the counter is the mechanism either way — so it can be added at any time without touching the engine.
+
+## 9. Reference scenario
+
+The test the model has to pass. A **Malaysian home network**, modelled on the owner's
+own, genericised — no device models, addresses or hostnames, so it is a real test and
+not a map of anyone's house.
+
+If the engine can build this and trace through it correctly, the foundation works.
+
+```mermaid
+flowchart TD
+    NET[Internet] --> ONT[ISP ONT<br>bridge mode only]
+    ONT -->|VLAN 500 tagged<br>PPPoE| RTR[Router<br>OpenWrt / pfSense / OPNsense]
+    RTR -->|trunk 10,20,30| MSW[Managed switch]
+    MSW -->|trunk 10,20,30| AP[Access point<br>3 SSIDs]
+    MSW -->|access VLAN 10| USW[Unmanaged switch]
+    MSW -->|access VLAN 10<br>untagged| MESH1[Mesh node<br>AP mode, main only]
+    MESH1 -.wireless backhaul.-> MESH2[Mesh node<br>AP mode, main only]
+    USW --> WIRED[Wired hosts<br>all in VLAN 10]
+    style ONT fill:#e8e8ff,color:#000
+    style RTR fill:#d7f5d7,color:#000
+    style USW fill:#ffe9cc,color:#000
+    style MESH1 fill:#ffd7d7,color:#000
+    style MESH2 fill:#ffd7d7,color:#000
+```
+
+**VLANs:** 10 main · 20 IoT · 30 guest. Plus 500 on the WAN, tagged, carrying PPPoE.
+
+**Devices, as chassis + functions (§2):**
+
+| Box | Functions |
+|---|---|
+| ISP ONT | `isp-handoff` (pppoe, vlanTag 500) — bridge only, no router mode |
+| Router | `bridging` + `routing` + `nat` + `dhcp-server` × 3 VLANs |
+| Managed switch | `bridging` (vlanAware) + `stp` |
+| Unmanaged switch | `bridging` (vlanAware false) |
+| Access point | `bridging` + 3 × `wireless` (ap) on one radio, one per VLAN |
+| Mesh node × 2 | `bridging` + `wireless` (mesh), linked by a `medium: 'wireless'` link. **One SSID, VLAN 10 untagged** — consumer mesh cannot tag in AP mode, so it extends main and nothing else |
+
+**The router must be expressible as OpenWrt, pfSense or OPNsense.** Those are open
+source and easy to obtain, which matters more for a reference scenario than matching
+any one owner's hardware. Vendor differences are profile data (ADR 0012), not engine
+code.
+
+### What this scenario is designed to catch
+
+It is not a happy path. Three real failures are built into it.
+
+1. **The unmanaged switch hangs off an access port.** Everything behind it is VLAN 10,
+   whatever the user believes. Catalogue row 5.
+2. **Two kinds of wireless sit side by side, and only one can tag.** The business-class
+   AP carries three SSIDs with a VLAN each. The consumer mesh carries one, untagged,
+   because it cannot tag in AP mode — guest isolation on that hardware works only when
+   it is the router ([TP-Link community](https://community.tp-link.com/en/home/forum/topic/599652)).
+
+   As drawn, this is **correct**: the mesh extends main under its own SSID name — a
+   second SSID landing in the same VLAN 10 — and is given nothing else to
+   carry. The failure is what happens when someone puts the guest SSID on it anyway,
+   which is catalogue row 20. Having the working case and the broken case in one
+   topology is the point — the difference between them is the lesson.
+3. **The WAN is tagged.** Lose VLAN 500 on the uplink and there is no internet at all,
+   with every LAN-side light still green.
+
+### Known limits of this scenario
+
+It exercises the WAN edge and the switching core. It does **not** exercise multi-WAN,
+per-VLAN spanning tree, or anything with two parallel trunks.
+
+And it proves the **engine** works. It does not prove the **profile** system
+generalises — the engine will naturally fit whatever it is built against, and this was
+built against Malaysia. That claim gets tested by the second country, not the first.
