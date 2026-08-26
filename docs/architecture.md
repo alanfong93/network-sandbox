@@ -3,10 +3,8 @@
 Headless TypeScript engine. Nothing here talks to a server. Persistence, when
 it lands, is a JSON file the user keeps — there is no database.
 
-This slice is the floor plus the run context. Types, reason codes, the
-catalogue, `format`, and defaults landed in #2. #3 adds one run object and
-the converged spanning tree the pipeline will read. The 802.1Q pipeline
-itself is #4; the walk is #5.
+This slice is the floor, the run context, and one pass through a bridging
+function. The topology walk is #5.
 
 ## Modules
 
@@ -18,7 +16,8 @@ flowchart LR
     D[defaults.ts<br>built-in profile] --> S[stp.ts]
     M --> S
     S --> U[run.ts<br>one context per run]
-    U --> F
+    U --> B[bridge.ts<br>802.1Q one hop]
+    B --> F
     style M color:#000
     style R color:#000
     style F color:#000
@@ -26,6 +25,7 @@ flowchart LR
     style D color:#000
     style S color:#000
     style U color:#000
+    style B color:#000
 ```
 
 | Module | Holds |
@@ -37,6 +37,7 @@ flowchart LR
 | `src/catalogue.ts` | The 23-row table. Row 20 is Stage 2. |
 | `src/stp.ts` | Converged 802.1D: root, root port, designated port, else blocking. Single instance. ADR 0011 warning. |
 | `src/run.ts` | One context per run: FDB, resolved MACs, hop budget, STP map, warnings. Discarded when the run ends. |
+| `src/bridge.ts` | One pass through one bridging function: STP ingress, acceptable frames, PVID, ingress filtering, learn, lookup, STP egress, membership, tagging. |
 
 There is no `switch (device.kind)`. There are no device kinds. A chassis
 carries functions; later issues dispatch on `Port.ownedBy`. A chassis with
@@ -83,6 +84,11 @@ erDiagram
 ## Tests
 
 Per [ADR 0017](adr/0017-structure-in-engine-tests-wording-against-the-table.md):
-structural assertions name device, port, VLAN and STP state, and contain no
-prose. Wording assertions compare `format(...)` to `row.expected` on the
-catalogue table. Row 19 is a warning, not a hop.
+structural assertions name device, function, pipeline step, reason code, VLAN,
+port and action, and contain no prose. Wording assertions compare `Hop.reason`
+to `row.expected` on the catalogue table. Row 19 is a warning, not a hop.
+
+PVID is ingress only. Egress tagged/untagged is `untaggedVlans`. A VLAN ID of
+0 is priority-tagged and is classified to the PVID, matching 802.1Q; that case
+is not in the catalogue. `vlanAware: false` makes membership tests vacuous
+and leaves the on-wire tag untouched.

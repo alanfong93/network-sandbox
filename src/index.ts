@@ -63,3 +63,6 @@ export {
   setResolvedMac,
   warningAsFormatInput,
 } from './run';
+
+export type { BridgeArgs, BridgeResult, Transmission } from './bridge';
+export { bridgeFrame } from './bridge';

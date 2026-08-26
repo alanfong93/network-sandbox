@@ -18,6 +18,13 @@ function walk(dir: string): string[] {
 }
 
 describe('invariants', () => {
+  it('does not store a nativeVlan field', () => {
+    for (const file of walk(srcDir)) {
+      const src = readFileSync(file, 'utf8');
+      expect(src, file).not.toMatch(/\bnativeVlan\s*[?:]/);
+    }
+  });
+
   it('does not resolve names, hold zone data, or call anything dns', () => {
     for (const file of walk(srcDir)) {
       const src = readFileSync(file, 'utf8');
