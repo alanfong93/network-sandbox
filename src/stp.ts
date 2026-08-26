@@ -97,12 +97,22 @@ function compareBridgeId(a: StpBridge, b: StpBridge): number {
 }
 
 function comparePortId(a: string, b: string): number {
-  const na = Number(a);
-  const nb = Number(b);
-  if (Number.isInteger(na) && Number.isInteger(nb)) return na - nb;
-  if (a < b) return -1;
-  if (a > b) return 1;
-  return 0;
+  const partsA = a.match(/\d+|\D+/g) ?? [a];
+  const partsB = b.match(/\d+|\D+/g) ?? [b];
+  const n = Math.min(partsA.length, partsB.length);
+  for (let i = 0; i < n; i++) {
+    const pa = partsA[i] ?? '';
+    const pb = partsB[i] ?? '';
+    const digitsA = /^\d+$/.test(pa);
+    const digitsB = /^\d+$/.test(pb);
+    if (digitsA && digitsB) {
+      const diff = Number(pa) - Number(pb);
+      if (diff !== 0) return diff;
+      continue;
+    }
+    if (pa !== pb) return pa < pb ? -1 : 1;
+  }
+  return partsA.length - partsB.length;
 }
 
 function isStpPort(
@@ -132,10 +142,11 @@ function linksOf(topology: Topology, device: DeviceId, port: string): Link[] {
 }
 
 /**
- * A segment is one LAN: a point-to-point link between two STP ports, or every
- * STP port reachable from one another only through chassis that have no stp
- * function. Unmanaged switches are the LAN, not bridges, because they have no
- * stp function — not because we special-case their kind.
+ * A segment is one LAN: a point-to-point link between two STP ports, a single
+ * STP attachment facing only non-STP devices (an edge port), or every STP port
+ * reachable from one another only through chassis that have no stp function.
+ * Unmanaged switches are the LAN, not bridges, because they have no stp
+ * function — not because we special-case their kind.
  */
 function segments(
   topology: Topology,
@@ -208,7 +219,7 @@ function segments(
         }
       }
 
-      if (found.length < 2) continue;
+      if (found.length < 1) continue;
       for (const att of found) claimedShared.add(attachmentKey(att));
       result.push({ attachments: found });
     }
@@ -339,17 +350,8 @@ function dijkstra(
     let bestRec: PathRecord | undefined;
     for (const id of remaining) {
       const rec = dist.get(id);
-      const bridge = bridges.get(id);
-      if (!rec || !bridge) continue;
-      const bestBridge = bestId ? bridges.get(bestId) : undefined;
-      if (
-        !bestId ||
-        !bestRec ||
-        rec.cost < bestRec.cost ||
-        (rec.cost === bestRec.cost &&
-          bestBridge !== undefined &&
-          compareBridgeId(bridge, bestBridge) < 0)
-      ) {
+      if (!rec) continue;
+      if (!bestId || !bestRec || betterPath(rec, bestRec, bridges)) {
         bestId = id;
         bestRec = rec;
       }
@@ -480,10 +482,28 @@ function vlansOnLink(
   return common;
 }
 
+function commonVlansOnLinks(
+  topology: Topology,
+  devices: Map<DeviceId, Chassis>,
+  a: Link,
+  b: Link,
+): VlanId[] {
+  const left = vlansOnLink(topology, devices, a);
+  const right = vlansOnLink(topology, devices, b);
+  const common: VlanId[] = [];
+  for (const vlan of left) {
+    if (right.has(vlan)) common.push(vlan);
+  }
+  common.sort((x, y) => x - y);
+  return common;
+}
+
 /**
- * ADR 0011: two or more links between the same pair of STP bridges that
- * carry two or more VLANs in common. Not a Hop — the tool's fidelity, not
- * a verdict on the user's network.
+ * ADR 0011: any two direct links between the same pair of STP bridges that
+ * carry two or more VLANs in common. A third link that does not share those
+ * VLANs must not suppress the warning. Shared LANs through a chassis with no
+ * stp function are one segment, not parallel trunks, and are not grouped
+ * here. Not a Hop — the tool's fidelity, not a verdict on the user's network.
  */
 export function detectSingleInstanceWarnings(
   topology: Topology,
@@ -507,26 +527,28 @@ export function detectSingleInstanceWarnings(
   const warnings: StpWarning[] = [];
   for (const [pair, links] of grouped) {
     if (links.length < 2) continue;
-    let common: Set<VlanId> | undefined;
-    for (const link of links) {
-      const vlans = vlansOnLink(topology, devices, link);
-      if (!common) common = new Set(vlans);
-      else {
-        for (const vlan of [...common]) {
-          if (!vlans.has(vlan)) common.delete(vlan);
-        }
+    let chosen: { pairLinks: [Link, Link]; vlans: VlanId[] } | undefined;
+    for (let i = 0; i < links.length && !chosen; i++) {
+      const first = links[i];
+      if (!first) continue;
+      for (let j = i + 1; j < links.length; j++) {
+        const second = links[j];
+        if (!second) continue;
+        const common = commonVlansOnLinks(topology, devices, first, second);
+        if (common.length < 2) continue;
+        chosen = { pairLinks: [first, second], vlans: common };
+        break;
       }
     }
-    if (!common || common.size < 2) continue;
-    const vlans = [...common].sort((a, b) => a - b);
-    const fromVlan = vlans[0];
-    const toVlan = vlans[1];
+    if (!chosen) continue;
+    const fromVlan = chosen.vlans[0];
+    const toVlan = chosen.vlans[1];
     if (fromVlan === undefined || toVlan === undefined) continue;
 
     const [left, right] = pair.split('::') as [DeviceId, DeviceId];
     const ends: Attachment[] = [];
-    for (const link of links) {
-      ends.push(link.a, link.b);
+    for (const item of chosen.pairLinks) {
+      ends.push(item.a, item.b);
     }
     let blocked: Attachment | undefined;
     for (const att of ends) {

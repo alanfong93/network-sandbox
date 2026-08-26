@@ -36,9 +36,12 @@ Three obligations attach, and they are requirements rather than nice-to-haves:
 
 1. **A visible limitation notice**, of the same standing as the no-timers notice.
 2. **A contextual warning**, fired by detecting the shape rather than by a general
-   disclaimer: two or more parallel paths between the same pair of bridges, two or
-   more VLANs, STP on. It appears on the affected trace, at the moment the user would
-   otherwise draw the wrong conclusion.
+   disclaimer: any two **direct** links between the same pair of STP bridges that
+   share two or more VLANs. A third link that does not share those VLANs must not
+   suppress it. Paths that meet only through a chassis with no `stp` function are
+   one shared LAN (one segment), not parallel trunks, and do not fire this warning.
+   It appears on the affected trace, at the moment the user would otherwise draw
+   the wrong conclusion.
 3. **A failure catalogue row** (row 19), so the divergence is a first-class,
    reproducible, traceable case rather than a footnote.
 
