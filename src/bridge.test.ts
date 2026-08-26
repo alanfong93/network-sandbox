@@ -199,7 +199,7 @@ describe('802.1Q pipeline', () => {
     });
     expect(egress.hop.step).toBe('stp-egress');
     expect(egress.transmissions).toEqual([]);
-    expect(egress.hop.outPort).toBe('1');
+    expect(egress.hop.outPort).toBeUndefined();
     expect(egress.transmissions.some((tx) => tx.outPort === '1')).toBe(false);
   });
 

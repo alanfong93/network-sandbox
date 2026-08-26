@@ -280,7 +280,6 @@ export function bridgeFrame(ctx: RunContext, args: BridgeArgs): BridgeResult {
           device: args.device,
           fn: bridge.id,
           inPort: args.inPort,
-          outPort,
           vlan,
           step: 'stp-egress',
           facts,
