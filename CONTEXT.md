@@ -145,6 +145,17 @@ forbids timers.
 - **Do not add a cache** — not "just for realism", not keyed on the trace id. If
   resolution ever needs to persist, that supersedes ADR 0010 in writing first.
 
+### Run context
+
+One invocation of a trace or a flow. It holds the per-VLAN forwarding
+tables, resolved next-hop MACs, the hop budget, and the converged STP
+port map. It is created at the start of the run and discarded at the end.
+Nothing in it survives to the next run ([ADR 0010](docs/adr/0010-arp-is-modelled-without-a-cache.md)).
+
+- **Do not call it:** *session*, *simulation*, *world*, *cache*, *global state*.
+- Within one run, later frames (the reply) read the tables the request built.
+  That is #7, not a cache.
+
 ### Pipeline step
 
 A stage of the 802.1Q (or subsequent) pipeline **within a single hop**. One pass

@@ -20,11 +20,12 @@ export type {
   Radio,
   Route,
   RouterIface,
+  StpPortState,
   Topology,
   TransportProto,
   VlanId,
 } from './model';
-export { nativeVlanOf } from './model';
+export { carriedVlans, nativeVlanOf } from './model';
 
 export type { Outcome, PipelineStep, ReasonCode } from './reasons';
 export {
@@ -48,3 +49,17 @@ export { format, shortMac } from './format';
 
 export type { CatalogueRow, CatalogueStage } from './catalogue';
 export { CATALOGUE } from './catalogue';
+
+export type { StpStateMap, StpWarning } from './stp';
+export { computeStp, detectSingleInstanceWarnings } from './stp';
+
+export type { FdbEntry, RunContext } from './run';
+export {
+  createRunContext,
+  getResolvedMac,
+  learn,
+  lookup,
+  portState,
+  setResolvedMac,
+  warningAsFormatInput,
+} from './run';

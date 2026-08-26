@@ -1,5 +1,6 @@
 import { describe, expect, it, expectTypeOf } from 'vitest';
 import {
+  carriedVlans,
   nativeVlanOf,
   type BridgePort,
   type DhcpScope,
@@ -23,6 +24,7 @@ describe('model', () => {
     expect(
       nativeVlanOf({ ...port, untaggedVlans: new Set() }),
     ).toBeUndefined();
+    expect([...carriedVlans(port)].sort()).toEqual([1, 10, 20]);
   });
 
   it('narrows a port-forward proto so a service frame can match it', () => {

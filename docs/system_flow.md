@@ -1,21 +1,25 @@
 # System flow
 
-The product workflow from [`PRODUCT.md`](PRODUCT.md). The engine call is a
-hole until #3–#7 land; `format` and the catalogue already sit at the end of
-it, which is why they shipped first.
+The product workflow from [`PRODUCT.md`](PRODUCT.md). `createRunContext`
+computes spanning tree before any frame exists. The 802.1Q pipeline itself
+is still a hole (#4, #5).
 
 ```mermaid
 flowchart TD
-    A[Describe the topology as data] --> B{Engine<br>not yet built}
-    B -->|#3 onwards| C[One run context]
+    A[Describe the topology as data] --> C[createRunContext]
     C --> D[Converged STP state]
-    D --> E[Frame walks the 802.1Q pipeline]
+    D --> W{Parallel trunks<br>two or more VLANs?}
+    W -->|yes| X[ADR 0011 warning<br>not a Hop]
+    W -->|no| E[Frame walks the 802.1Q pipeline]
+    X --> E
     E --> F[Each chassis appends a Hop]
-    F --> G[format turns hops into sentences]
+    F --> G[format turns hops and warnings into sentences]
     G --> H[Caller reads the trace]
     I[Wording test] --> G
     I --> J[catalogue.ts row]
-    style B fill:#ffe9cc,color:#000
+    style C fill:#d7f5d7,color:#000
+    style D fill:#d7f5d7,color:#000
+    style E fill:#ffe9cc,color:#000
     style G fill:#d7f5d7,color:#000
     style H fill:#d7f5d7,color:#000
 ```
