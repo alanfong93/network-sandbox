@@ -371,6 +371,25 @@ describe('802.1Q pipeline', () => {
     expect(egress.transmissions).toEqual([]);
   });
 
+  it('does not pretend STP dropped a frame that never entered a bridge', () => {
+    const host: Chassis = {
+      id: 'H1',
+      label: 'H1',
+      ports: [{ id: '1', mtu: defaults.portMtu, ownedBy: 'none' }],
+      radios: [],
+      functions: [],
+      internal: [],
+    };
+    const ctx = createRunContext(topo([host]));
+    expect(() =>
+      bridgeFrame(ctx, {
+        device: 'H1',
+        inPort: '1',
+        frame: frame({ vlan: null }),
+      }),
+    ).toThrow(/not a bridging member/);
+  });
+
   it('always records a non-empty reason on a successful forward', () => {
     const sw = switchBox('SW1', [access('1', 10), access('2', 10)]);
     const ctx = createRunContext(topo([sw]));

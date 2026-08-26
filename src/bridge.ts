@@ -159,24 +159,13 @@ function egressVlan(
  */
 export function bridgeFrame(ctx: RunContext, args: BridgeArgs): BridgeResult {
   const chassis = chassisOf(ctx, args.device);
-  if (!chassis) {
-    return drop({
-      device: args.device,
-      inPort: args.inPort,
-      vlan: args.frame.vlan,
-      step: 'stp-ingress',
-    });
-  }
-  const port = chassis.ports.find((item) => item.id === args.inPort);
-  const bridge = port ? bridgingFn(chassis, port.ownedBy) : undefined;
+  const port = chassis?.ports.find((item) => item.id === args.inPort);
+  const bridge = port && chassis ? bridgingFn(chassis, port.ownedBy) : undefined;
   const member = bridge ? memberOf(bridge, args.inPort) : undefined;
-  if (!port || !bridge || !member) {
-    return drop({
-      device: args.device,
-      inPort: args.inPort,
-      vlan: args.frame.vlan,
-      step: 'stp-ingress',
-    });
+  if (!chassis || !port || !bridge || !member) {
+    throw new Error(
+      `bridgeFrame: ${args.device}:${args.inPort} is not a bridging member`,
+    );
   }
 
   const facts: HopFacts = { otherDevice: args.arrivedFrom };
