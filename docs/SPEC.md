@@ -1,6 +1,7 @@
 # v1 Spec
 
-Design document. **Nothing is implemented yet.**
+Design document. The engine skeleton (types, catalogue, format, defaults) exists;
+the 802.1Q pipeline does not.
 
 This file describes *what* v1 is, and it gets archived when the phase closes. The
 *why* behind the load-bearing decisions lives in [`adr/`](adr/) and outlives it —
@@ -10,7 +11,10 @@ capability, 0008 PVID is ingress and native VLAN is egress, 0009 browser-only no
 dataplane, 0010 ARP is modelled without a cache, 0011 single-instance STP owes a warning,
 0012 profiles are data and the engine is the only executor,
 0013 a device is a chassis plus functions, 0014 AGPL-3.0 with a DCO,
-0015 read real config before generating it.
+0015 read real config before generating it,
+0016 TypeScript + Vitest with no runtime framework,
+0017 structure in engine tests and wording against the catalogue table,
+0018 services are reached not answered.
 Reversing any of those means
 appending a new ADR that supersedes the old one, not editing this file quietly.
 
@@ -94,7 +98,7 @@ type Fn =
   | { kind: 'routing'; id: FnId; ifaces: RouterIface[]; routes: Route[];
       firewall: { from: VlanId; to: VlanId; action: 'allow' | 'deny' }[] }
   | { kind: 'nat'; id: FnId; on: FnId;
-      portForwards: { proto: string; outsidePort: number; toIp: string; toPort: number }[] }
+      portForwards: { proto: 'udp' | 'tcp'; outsidePort: number; toIp: string; toPort: number }[] }
   | { kind: 'dhcp-server'; id: FnId; scopes: DhcpScope[] }
   | { kind: 'dhcp-relay'; id: FnId; helper: string }
   | { kind: 'wireless'; id: FnId; radio: string;                // several may share one radio
@@ -128,7 +132,7 @@ interface Route {
   fromVlan?: VlanId;             // present = policy routing (multi-WAN), absent = destination-only
 }
 
-interface DhcpScope { vlan: VlanId; poolStart: string; poolEnd: string; gateway: string; dns: string }
+interface DhcpScope { vlan: VlanId; poolStart: string; poolEnd: string; gateway: string; resolver: string }
 
 // ---------- what moves ----------
 
@@ -139,9 +143,27 @@ interface Frame {
   encapsulation: ('ethernet' | 'vlan-tag' | 'pppoe')[];   // each costs bytes; the
                                           // usable MTU is COMPUTED from this stack,
                                           // never typed in as 1492 - ADR 0001
-  payload: { kind: 'arp' | 'icmp' | 'dhcp'; srcIp?: string; dstIp?: string; dhcpType?: string };
+  payload:
+    | { kind: 'arp' | 'icmp'; srcIp?: string; dstIp?: string }
+    | { kind: 'dhcp'; srcIp?: string; dstIp?: string; dhcpType?: string }
+    | { kind: 'service'; proto: 'udp' | 'tcp'; dstPort: number;
+        srcIp?: string; dstIp?: string; srcPort?: number };
   hops: Hop[];                            // appended everywhere - this IS the explanation
 }
+
+// ReasonCode is exactly `step:outcome`. Adding a code requires adding a step
+// or an outcome, never a scenario (ADR 0001, ADR 0017).
+type PipelineStep =
+  | 'acceptable-frame-types' | 'pvid-assignment' | 'ingress-filtering'
+  | 'stp-ingress' | 'source-learning' | 'destination-lookup' | 'hop-budget'
+  | 'stp-egress' | 'egress-membership' | 'egress-tagging'
+  | 'arp' | 'route-lookup' | 'firewall' | 'nat' | 'port-forward'
+  | 'dhcp-server' | 'dhcp-relay' | 'isp-handoff' | 'mtu' | 'delivery'
+  | 'ssid-vlan';                 // stage 2
+type Outcome =
+  | 'forwarded' | 'flooded' | 'dropped' | 'delivered'
+  | 'admitted' | 'classified' | 'learned' | 'translated' | 'relayed';
+type ReasonCode = `${PipelineStep}:${Outcome}`;
 
 interface Hop {
   device: DeviceId;
@@ -150,7 +172,9 @@ interface Hop {
   inPort?: string; outPort?: string;
   vlan: VlanId | null;
   action: 'forwarded' | 'flooded' | 'dropped' | 'delivered';
-  reason: string;
+  step: PipelineStep;            // the pipeline stage that decided this hop
+  reasonCode: ReasonCode;        // structured; engine tests read this
+  reason: string;                // format() output — user-facing copy (ADR 0002)
   // Present when a profile influenced this step. Standard-derived output must never
   // appear to endorse a third party's claim - ADR 0012.
   provenance?: { profile: string; version: string; fields: string[] };
@@ -242,6 +266,9 @@ The product is really this table. Each row is a reproducible mistake with a spec
 | 18 | Managed switch | Trunk set to tag everything on egress, far end still sends untagged | *"SW1 port 2 admits tagged frames only; the untagged frame from SW2 was dropped at ingress"* |
 | 19 | STP | Two parallel trunks, two VLANs, expecting per-VLAN load balancing | *"This model runs one spanning tree: port 2 is blocked for every VLAN. Gear defaulting to Rapid PVST+ may forward VLAN 10 here and VLAN 20 on the other trunk"* |
 | 20 | Mesh AP | Consumer mesh in AP mode expected to carry tagged VLANs | *"Guest SSID maps to VLAN 30, but this node passes untagged only — clients landed in VLAN 10 with everything else"* |
+| 21 | Downstream router | Port forward set on the inner router only, behind a second NAT | *"Port forward on R2 was never reached — dropped at R1 NAT: no matching forward"* |
+| 22 | Router | Port forward points at a subnet the router cannot reach | *"Port forward to 10.99.0.10:443 dropped at R1: no interface on 10.99.0.0/24"* |
+| 23 | Router | DHCP hands out a resolver the client's VLAN cannot reach | *"Query to 192.168.10.1:53 left VLAN 30; dropped by rule VLAN30 -> VLAN10 deny"* |
 
 ## 5. STP
 
