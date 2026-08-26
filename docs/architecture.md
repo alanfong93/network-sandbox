@@ -3,9 +3,10 @@
 Headless TypeScript engine. Nothing here talks to a server. Persistence, when
 it lands, is a JSON file the user keeps — there is no database.
 
-This slice (GitHub #2) is the floor: types, reason codes, the catalogue
-table, `format`, and the built-in defaults profile. The 802.1Q pipeline
-itself is #4; the walk is #5; STP is #3.
+This slice is the floor plus the run context. Types, reason codes, the
+catalogue, `format`, and defaults landed in #2. #3 adds one run object and
+the converged spanning tree the pipeline will read. The 802.1Q pipeline
+itself is #4; the walk is #5.
 
 ## Modules
 
@@ -14,12 +15,17 @@ flowchart LR
     M[model.ts<br>SPEC section 2 types] --> F[format.ts]
     R[reasons.ts<br>step x outcome] --> F
     F --> C[catalogue.ts<br>23 rows]
-    D[defaults.ts<br>built-in profile] --> M
+    D[defaults.ts<br>built-in profile] --> S[stp.ts]
+    M --> S
+    S --> U[run.ts<br>one context per run]
+    U --> F
     style M color:#000
     style R color:#000
     style F color:#000
     style C color:#000
     style D color:#000
+    style S color:#000
+    style U color:#000
 ```
 
 | Module | Holds |
@@ -29,9 +35,35 @@ flowchart LR
 | `src/defaults.ts` | Every tunable the engine will read, including encapsulation overheads. Named `ieee-defaults` v1 (ADR 0012). |
 | `src/format.ts` | Turns a structured hop, trace, flow or warning into a sentence. |
 | `src/catalogue.ts` | The 23-row table. Row 20 is Stage 2. |
+| `src/stp.ts` | Converged 802.1D: root, root port, designated port, else blocking. Single instance. ADR 0011 warning. |
+| `src/run.ts` | One context per run: FDB, resolved MACs, hop budget, STP map, warnings. Discarded when the run ends. |
 
 There is no `switch (device.kind)`. There are no device kinds. A chassis
-carries functions; later issues dispatch on `Port.ownedBy`.
+carries functions; later issues dispatch on `Port.ownedBy`. A chassis with
+no `stp` function never appears in the STP map, so `portState` returns
+`forwarding` — the absence of a function, not a special case.
+
+## Run
+
+```mermaid
+flowchart TD
+    A[createRunContext topology] --> B[Collect chassis that have an stp function]
+    B --> C[Elect a root per connected component]
+    C --> D[Root port by lowest path cost]
+    D --> E[Designated port per segment]
+    E --> F[Everything else blocking]
+    F --> G[Shape check: parallel trunks, two or more VLANs in common]
+    G --> H[Return context]
+    style H fill:#d7f5d7,color:#000
+```
+
+STP port state is three values that exist without a clock: `forwarding`,
+`blocking`, `disabled` (ADR 0003). Listening and learning are absent.
+Disabled means the member port has no link. A linked port that is the only
+STP attachment on its LAN (an edge port facing a host or a chassis with no
+`stp` function) is designated and forwards — blocking exists to remove
+redundant bridge-to-bridge paths, not to black-hole access ports. The
+computed map lives on the run context; the topology is not mutated.
 
 ## Data model
 
@@ -51,13 +83,9 @@ erDiagram
     Flow ||--o| Frame : reply
 ```
 
-STP port state is three values that exist without a clock: `forwarding`,
-`blocking`, `disabled` (ADR 0003). Listening and learning are absent.
-
 ## Tests
 
 Per [ADR 0017](adr/0017-structure-in-engine-tests-wording-against-the-table.md):
-structural assertions live in engine tests (none yet — no engine); wording
-assertions compare `format(row.example)` to `row.expected` on the catalogue
-table. Those wording checks are green in this slice so later issues can
-reuse them.
+structural assertions name device, port, VLAN and STP state, and contain no
+prose. Wording assertions compare `format(...)` to `row.expected` on the
+catalogue table. Row 19 is a warning, not a hop.

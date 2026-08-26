@@ -9,6 +9,7 @@ export type FnId = string;
 export type Encapsulation = 'ethernet' | 'vlan-tag' | 'pppoe';
 export type HopAction = 'forwarded' | 'flooded' | 'dropped' | 'delivered';
 export type TransportProto = 'udp' | 'tcp';
+export type StpPortState = 'forwarding' | 'blocking' | 'disabled';
 
 export interface Topology {
   devices: Chassis[];
@@ -63,7 +64,7 @@ export type Fn =
       bridge: FnId;
       priority: number;
       baseMac: MacAddr;
-      state: Map<string, Map<string, 'forwarding' | 'blocking' | 'disabled'>>;
+      state: Map<string, Map<string, StpPortState>>;
     }
   | {
       kind: 'routing';
@@ -188,4 +189,9 @@ export function nativeVlanOf(port: BridgePort): VlanId | undefined {
   if (port.untaggedVlans.size !== 1) return undefined;
   const [vlan] = port.untaggedVlans;
   return vlan;
+}
+
+/** VLANs this port is a member of on egress (tagged ∪ untagged). */
+export function carriedVlans(port: BridgePort): Set<VlanId> {
+  return new Set([...port.taggedVlans, ...port.untaggedVlans]);
 }
