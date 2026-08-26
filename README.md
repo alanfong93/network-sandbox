@@ -10,7 +10,13 @@ Everything runs in the browser. No server, no account, no install.
 >
 > It does *not* promise that anything working here will work identically on your specific switch. Vendors differ in syntax, defaults and edge-case behaviour, and those differences are where a lot of real outages live. This sandbox is faithful to **IEEE 802.1Q / 802.1D** — the standard every vendor implements — not to any one vendor's box.
 
-**Status: design stage. Nothing is built yet.** Who it is for and what they must be able to do is in [`docs/PRODUCT.md`](docs/PRODUCT.md); the full technical spec is in [`docs/SPEC.md`](docs/SPEC.md), the decisions behind it in [`docs/adr/`](docs/adr/), and the project's vocabulary in [`CONTEXT.md`](CONTEXT.md).
+**Status: Stage 1 in progress.** The engine is a dependency-free TypeScript library — types, the failure catalogue, `format`, and defaults. It does not yet walk a topology. Who it is for is in [`docs/PRODUCT.md`](docs/PRODUCT.md); the spec is [`docs/SPEC.md`](docs/SPEC.md); decisions in [`docs/adr/`](docs/adr/); vocabulary in [`CONTEXT.md`](CONTEXT.md).
+
+```bash
+npm install
+npm test
+npm run build
+```
 
 ---
 

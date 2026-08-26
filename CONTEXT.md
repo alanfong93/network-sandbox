@@ -144,3 +144,29 @@ forbids timers.
   precondition is user-visible rather than an implementation detail.
 - **Do not add a cache** — not "just for realism", not keyed on the trace id. If
   resolution ever needs to persist, that supersedes ADR 0010 in writing first.
+
+### Pipeline step
+
+A stage of the 802.1Q (or subsequent) pipeline **within a single hop**. One pass
+through a device is one hop; the hop names the step that decided it.
+
+- **Do not call it:** *hop* (that is the whole device handling), *event*, *check*.
+
+### Reason code
+
+The product of a pipeline step and an outcome (`step:outcome`). Adding a code
+requires adding a step or an outcome, never a scenario ([ADR 0001](docs/adr/0001-execute-the-8021q-pipeline.md),
+[ADR 0017](docs/adr/0017-structure-in-engine-tests-wording-against-the-table.md)).
+
+- **Do not call it:** *error code*, *verdict*, *diagnosis id*, *row id*.
+- Engine tests read the reason code. Humans read `format`'s sentence.
+
+### Service
+
+A `Frame.payload.kind`. It carries `proto` and `dstPort` so a port-forward and a
+reachability query are comparable. Arrival is modelled; application replies
+are not ([ADR 0018](docs/adr/0018-services-are-reached-not-answered.md)).
+
+- **Do not call it:** *dns*, *application*, *session*.
+- The DHCP scope field that holds the advertised resolver address is
+  `resolver`, not `dns`. Nothing in the codebase resolves a name.
