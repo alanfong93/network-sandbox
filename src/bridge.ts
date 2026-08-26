@@ -1,4 +1,3 @@
-import { defaults } from './defaults';
 import { format, type HopFacts } from './format';
 import {
   carriedVlans,
