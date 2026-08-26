@@ -164,6 +164,44 @@ describe('spanning tree', () => {
     expect(portState(ctx, 'SW2', '2')).toBe('blocking');
   });
 
+  it('orders non-numeric port ids by their numeric parts', () => {
+    const topo = topology(
+      [
+        managedSwitch('SW1', 'aa:00:00:00:00:01', ['Fa0/9', 'Fa0/10'], [10, 20]),
+        managedSwitch('SW2', 'aa:00:00:00:00:02', ['Fa0/9', 'Fa0/10'], [10, 20]),
+      ],
+      [
+        link('l1', { device: 'SW1', port: 'Fa0/9' }, { device: 'SW2', port: 'Fa0/9' }),
+        link('l2', { device: 'SW1', port: 'Fa0/10' }, { device: 'SW2', port: 'Fa0/10' }),
+      ],
+    );
+    const ctx = createRunContext(topo);
+    expect(portState(ctx, 'SW1', 'Fa0/9')).toBe('forwarding');
+    expect(portState(ctx, 'SW1', 'Fa0/10')).toBe('forwarding');
+    expect(portState(ctx, 'SW2', 'Fa0/9')).toBe('forwarding');
+    expect(portState(ctx, 'SW2', 'Fa0/10')).toBe('blocking');
+  });
+
+  it('breaks equal-cost paths on the upstream bridge id', () => {
+    const topo = topology(
+      [
+        managedSwitch('SW1', 'aa:00:00:00:00:01', ['1', '2'], [10]),
+        managedSwitch('SW2', 'aa:00:00:00:00:02', ['1', '2'], [10]),
+        managedSwitch('SW3', 'aa:00:00:00:00:03', ['1', '2'], [10]),
+        managedSwitch('SW4', 'aa:00:00:00:00:04', ['1', '2'], [10]),
+      ],
+      [
+        link('a', { device: 'SW1', port: '1' }, { device: 'SW2', port: '1' }),
+        link('b', { device: 'SW1', port: '2' }, { device: 'SW3', port: '1' }),
+        link('c', { device: 'SW2', port: '2' }, { device: 'SW4', port: '1' }),
+        link('d', { device: 'SW3', port: '2' }, { device: 'SW4', port: '2' }),
+      ],
+    );
+    const ctx = createRunContext(topo);
+    expect(portState(ctx, 'SW4', '1')).toBe('forwarding');
+    expect(portState(ctx, 'SW4', '2')).toBe('blocking');
+  });
+
   it('marks an unlinked member port disabled', () => {
     const topo = topology(
       [managedSwitch('SW1', 'aa:00:00:00:00:01', ['1', '2'], [10])],
@@ -233,6 +271,39 @@ describe('spanning tree', () => {
     expect(stp?.kind === 'stp' ? stp.state.size : -1).toBe(0);
   });
 
+  it('forwards an edge port that faces only a non-stp device', () => {
+    const topo = topology(
+      [
+        managedSwitch('SW1', 'aa:00:00:00:00:01', ['1'], [10]),
+        unmanagedSwitch('USW1', ['1', '2']),
+      ],
+      [link('l1', { device: 'SW1', port: '1' }, { device: 'USW1', port: '1' })],
+    );
+    const ctx = createRunContext(topo);
+    expect(portState(ctx, 'SW1', '1')).toBe('forwarding');
+  });
+
+  it('forwards host-facing ports on both the root and the non-root', () => {
+    const topo = topology(
+      [
+        managedSwitch('SW1', 'aa:00:00:00:00:01', ['1', '2'], [10]),
+        managedSwitch('SW2', 'aa:00:00:00:00:02', ['1', '2'], [10]),
+        unmanagedSwitch('H1', ['1']),
+        unmanagedSwitch('H2', ['1']),
+      ],
+      [
+        link('up', { device: 'SW1', port: '1' }, { device: 'SW2', port: '1' }),
+        link('h1', { device: 'SW1', port: '2' }, { device: 'H1', port: '1' }),
+        link('h2', { device: 'SW2', port: '2' }, { device: 'H2', port: '1' }),
+      ],
+    );
+    const ctx = createRunContext(topo);
+    expect(portState(ctx, 'SW1', '1')).toBe('forwarding');
+    expect(portState(ctx, 'SW2', '1')).toBe('forwarding');
+    expect(portState(ctx, 'SW1', '2')).toBe('forwarding');
+    expect(portState(ctx, 'SW2', '2')).toBe('forwarding');
+  });
+
   it('treats an unmanaged switch as a shared LAN, not an stp bridge', () => {
     const topo = topology(
       [
@@ -290,6 +361,28 @@ describe('catalogue row 19', () => {
     expect(warning).toBeDefined();
     if (!warning || !row19) return;
     expect(format(warningAsFormatInput(warning))).toBe(row19.expected);
+  });
+
+  it('still fires when a third link does not share the two common VLANs', () => {
+    const sw1 = managedSwitch('SW1', 'aa:00:00:00:00:01', ['1', '2', '3'], [10, 20]);
+    const sw2 = managedSwitch('SW2', 'aa:00:00:00:00:02', ['1', '2', '3'], [10, 20]);
+    const br1 = sw1.functions.find((fn) => fn.kind === 'bridging');
+    const br2 = sw2.functions.find((fn) => fn.kind === 'bridging');
+    if (br1?.kind === 'bridging') br1.members[2] = trunk('3', [30]);
+    if (br2?.kind === 'bridging') br2.members[2] = trunk('3', [30]);
+    const topo = topology(
+      [sw1, sw2],
+      [
+        link('l1', { device: 'SW1', port: '1' }, { device: 'SW2', port: '1' }),
+        link('l2', { device: 'SW1', port: '2' }, { device: 'SW2', port: '2' }),
+        link('l3', { device: 'SW1', port: '3' }, { device: 'SW2', port: '3' }),
+      ],
+    );
+    const ctx = createRunContext(topo);
+    expect(ctx.warnings).toHaveLength(1);
+    expect(ctx.warnings[0]?.observation).toBe('single-instance-stp');
+    expect(ctx.warnings[0]?.facts.fromVlan).toBe(10);
+    expect(ctx.warnings[0]?.facts.toVlan).toBe(20);
   });
 
   it('does not fire when the parallel links share only one VLAN', () => {

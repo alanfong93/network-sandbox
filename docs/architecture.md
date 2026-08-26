@@ -59,8 +59,11 @@ flowchart TD
 
 STP port state is three values that exist without a clock: `forwarding`,
 `blocking`, `disabled` (ADR 0003). Listening and learning are absent.
-Disabled means the member port has no link. The computed map lives on the
-run context; the topology is not mutated.
+Disabled means the member port has no link. A linked port that is the only
+STP attachment on its LAN (an edge port facing a host or a chassis with no
+`stp` function) is designated and forwards — blocking exists to remove
+redundant bridge-to-bridge paths, not to black-hole access ports. The
+computed map lives on the run context; the topology is not mutated.
 
 ## Data model
 
