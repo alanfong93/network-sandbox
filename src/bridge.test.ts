@@ -252,6 +252,40 @@ describe('802.1Q pipeline', () => {
     expect(result.hop.action).toBe('forwarded');
   });
 
+  it('names stp-egress when the only flood candidate is blocked', () => {
+    const sw = switchBox('SW1', [trunk('1', [10]), trunk('2', [10])], { stp: true });
+    const ctx = createRunContext(topo([sw]));
+    ctx.stp.set('SW1', new Map([['1', 'forwarding'], ['2', 'blocking']]));
+    const result = bridgeFrame(ctx, {
+      device: 'SW1',
+      inPort: '1',
+      frame: frame({
+        src: 'aa:00:00:00:00:10',
+        dst: defaults.broadcastMac,
+        vlan: 10,
+      }),
+    });
+    expect(result.hop.step).toBe('stp-egress');
+    expect(result.hop.outPort).toBeUndefined();
+    expect(result.transmissions).toEqual([]);
+  });
+
+  it('leaves an untagged vlan-blind frame untagged and does not invent a PVID hop', () => {
+    const sw = switchBox(
+      'USW',
+      [access('1', 1), access('2', 1)],
+      { vlanAware: false },
+    );
+    const ctx = createRunContext(topo([sw]));
+    const result = bridgeFrame(ctx, {
+      device: 'USW',
+      inPort: '1',
+      frame: frame({ vlan: null }),
+    });
+    expect(result.hop.action).toBe('flooded');
+    expect(result.transmissions[0]?.frame.vlan).toBeNull();
+  });
+
   it('always records a non-empty reason on a successful forward', () => {
     const sw = switchBox('SW1', [access('1', 10), access('2', 10)]);
     const ctx = createRunContext(topo([sw]));

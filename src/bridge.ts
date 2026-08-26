@@ -219,12 +219,9 @@ export function bridgeFrame(ctx: RunContext, args: BridgeArgs): BridgeResult {
   if (bridge.vlanAware && !isVlanTagged(vlan)) {
     vlan = member.pvid;
   }
-  if (vlan === null) {
-    vlan = member.pvid;
-  }
 
   let admittedDespiteFilter = false;
-  if (!isMember(bridge, member, vlan)) {
+  if (vlan !== null && !isMember(bridge, member, vlan)) {
     if (member.ingressFiltering) {
       return drop({
         device: args.device,
@@ -238,15 +235,15 @@ export function bridgeFrame(ctx: RunContext, args: BridgeArgs): BridgeResult {
     admittedDespiteFilter = true;
   }
 
+  const tableVlan = fdbVlan(bridge, vlan ?? 0);
+
   if (!isGroupAddress(args.frame.srcMac)) {
-    learn(ctx, fdbVlan(bridge, vlan), args.frame.srcMac, args.device, args.inPort);
+    learn(ctx, tableVlan, args.frame.srcMac, args.device, args.inPort);
   }
 
   const dest = args.frame.dstMac;
   const flood = isGroupAddress(dest);
-  const known = flood
-    ? undefined
-    : lookup(ctx, fdbVlan(bridge, vlan), dest);
+  const known = flood ? undefined : lookup(ctx, tableVlan, dest);
 
   const candidates: string[] = [];
   if (known && known.device === args.device && known.port !== args.inPort) {
@@ -263,7 +260,7 @@ export function bridgeFrame(ctx: RunContext, args: BridgeArgs): BridgeResult {
   } else {
     for (const other of bridge.members) {
       if (other.port === args.inPort) continue;
-      if (bridge.vlanAware && !isMember(bridge, other, vlan)) continue;
+      if (vlan !== null && bridge.vlanAware && !isMember(bridge, other, vlan)) continue;
       candidates.push(other.port);
     }
   }
@@ -274,19 +271,17 @@ export function bridgeFrame(ctx: RunContext, args: BridgeArgs): BridgeResult {
     const outMember = memberOf(bridge, outPort);
     if (!outMember) continue;
     if (portState(ctx, args.device, outPort) !== 'forwarding') {
-      if (!flood && known) {
-        egressDrop = drop({
-          device: args.device,
-          fn: bridge.id,
-          inPort: args.inPort,
-          vlan,
-          step: 'stp-egress',
-          facts,
-        });
-      }
+      egressDrop = drop({
+        device: args.device,
+        fn: bridge.id,
+        inPort: args.inPort,
+        vlan,
+        step: 'stp-egress',
+        facts,
+      });
       continue;
     }
-    if (!isMember(bridge, outMember, vlan)) {
+    if (vlan !== null && !isMember(bridge, outMember, vlan)) {
       if (!flood && known) {
         egressDrop = drop({
           device: args.device,
@@ -302,7 +297,9 @@ export function bridgeFrame(ctx: RunContext, args: BridgeArgs): BridgeResult {
     }
     outgoing.push({
       outPort,
-      outVlan: egressVlan(bridge, outMember, vlan, args.frame.vlan),
+      outVlan: vlan === null
+        ? args.frame.vlan
+        : egressVlan(bridge, outMember, vlan, args.frame.vlan),
     });
   }
 
