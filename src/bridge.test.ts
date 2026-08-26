@@ -6,11 +6,12 @@ import type {
   BridgePort,
   Chassis,
   Frame,
+  Link,
   MacAddr,
   Topology,
   VlanId,
 } from './model';
-import { createRunContext, learn, lookup } from './run';
+import { createRunContext, learn, lookup, portState } from './run';
 
 function trunk(
   port: string,
@@ -47,7 +48,7 @@ function access(
 function switchBox(
   id: string,
   members: BridgePort[],
-  opts?: { vlanAware?: boolean; stp?: boolean },
+  opts?: { vlanAware?: boolean; stp?: boolean; mac?: MacAddr; priority?: number },
 ): Chassis {
   const vlanAware = opts?.vlanAware ?? true;
   const functions: Chassis['functions'] = [
@@ -64,8 +65,8 @@ function switchBox(
       kind: 'stp',
       id: 'stp',
       bridge: 'br',
-      priority: defaults.stp.priority,
-      baseMac: 'aa:00:00:00:00:01',
+      priority: opts.priority ?? defaults.stp.priority,
+      baseMac: opts.mac ?? 'aa:00:00:00:00:01',
       state: new Map(),
     });
   }
@@ -83,8 +84,8 @@ function switchBox(
   };
 }
 
-function topo(devices: Chassis[]): Topology {
-  return { devices, links: [], profiles: [] };
+function topo(devices: Chassis[], links: Link[] = []): Topology {
+  return { devices, links, profiles: [] };
 }
 
 function frame(partial: {
@@ -284,6 +285,90 @@ describe('802.1Q pipeline', () => {
     });
     expect(result.hop.action).toBe('flooded');
     expect(result.transmissions[0]?.frame.vlan).toBeNull();
+  });
+
+  it('drops a tagged frame on an access port when ingress filtering is on', () => {
+    const sw = switchBox('SW1', [
+      access('1', 10, { filtering: true }),
+      trunk('2', [10, 20]),
+    ]);
+    const ctx = createRunContext(topo([sw]));
+    const result = bridgeFrame(ctx, {
+      device: 'SW1',
+      inPort: '1',
+      frame: frame({ src: 'aa:00:00:00:00:10', vlan: 20 }),
+    });
+    expect(result.hop.step).toBe('ingress-filtering');
+    expect(result.hop.reasonCode).toBe('ingress-filtering:dropped');
+    expect(result.hop.action).toBe('dropped');
+    expect(result.transmissions).toEqual([]);
+    expect(lookup(ctx, 20, 'aa:00:00:00:00:10')).toBeUndefined();
+  });
+
+  it('drops a tagged frame when the port admits untagged-only', () => {
+    const sw = switchBox('SW1', [
+      trunk('1', [10, 20], { frames: 'untagged-only', untagged: [10] }),
+      trunk('2', [10, 20]),
+    ]);
+    const ctx = createRunContext(topo([sw]));
+    const result = bridgeFrame(ctx, {
+      device: 'SW1',
+      inPort: '1',
+      frame: frame({ vlan: 20 }),
+    });
+    expect(result.hop.step).toBe('acceptable-frame-types');
+    expect(result.hop.reasonCode).toBe('acceptable-frame-types:dropped');
+    expect(result.hop.action).toBe('dropped');
+    expect(result.transmissions).toEqual([]);
+  });
+
+  it('uses computeStp: blocked port does not learn and is never an outPort', () => {
+    const sw1 = switchBox('SW1', [trunk('1', [10]), trunk('2', [10])], {
+      stp: true,
+      mac: 'aa:00:00:00:00:01',
+    });
+    const sw2 = switchBox('SW2', [trunk('1', [10]), trunk('2', [10])], {
+      stp: true,
+      mac: 'aa:00:00:00:00:02',
+    });
+    const ctx = createRunContext(
+      topo(
+        [sw1, sw2],
+        [
+          {
+            id: 'l1',
+            a: { device: 'SW1', port: '1' },
+            b: { device: 'SW2', port: '1' },
+            medium: 'wired',
+          },
+          {
+            id: 'l2',
+            a: { device: 'SW1', port: '2' },
+            b: { device: 'SW2', port: '2' },
+            medium: 'wired',
+          },
+        ],
+      ),
+    );
+    expect(portState(ctx, 'SW2', '2')).toBe('blocking');
+
+    const ingress = bridgeFrame(ctx, {
+      device: 'SW2',
+      inPort: '2',
+      frame: frame({ src: 'aa:00:00:00:00:10', dst: 'aa:00:00:00:00:20', vlan: 10 }),
+    });
+    expect(ingress.hop.step).toBe('stp-ingress');
+    expect(lookup(ctx, 10, 'aa:00:00:00:00:10')).toBeUndefined();
+
+    learn(ctx, 10, 'aa:00:00:00:00:20', 'SW2', '2');
+    const egress = bridgeFrame(ctx, {
+      device: 'SW2',
+      inPort: '1',
+      frame: frame({ src: 'aa:00:00:00:00:30', dst: 'aa:00:00:00:00:20', vlan: 10 }),
+    });
+    expect(egress.hop.step).toBe('stp-egress');
+    expect(egress.hop.outPort).toBeUndefined();
+    expect(egress.transmissions).toEqual([]);
   });
 
   it('always records a non-empty reason on a successful forward', () => {
