@@ -22,8 +22,7 @@ export function hostWouldHandle(chassis: Chassis, frame: Frame): boolean {
     if (isGroupMac(frame.dstMac)) return frame.payload.dstIp === chassis.ip;
     return frame.dstMac === chassis.mac;
   }
-  if (frame.dstMac === chassis.mac) return true;
-  return frame.payload.dstIp === chassis.ip;
+  return frame.dstMac === chassis.mac;
 }
 
 export function handleHost(

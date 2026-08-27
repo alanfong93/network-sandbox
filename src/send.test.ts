@@ -11,6 +11,7 @@ import type {
   Topology,
   VlanId,
 } from './model';
+import { handleHost } from './host';
 import { createRunContext, getResolvedMac } from './run';
 import { needsArp, send } from './send';
 import { observationAsFormatInput, walkFrame } from './walk';
@@ -197,6 +198,9 @@ describe('catalogue row 7', () => {
     expect(flood?.fn).toBe('br');
     expect(flood?.vlan).toBe(10);
     expect(flood?.step).toBe('egress-tagging');
+    expect(flood?.reasonCode).toBe('egress-tagging:flooded');
+    expect(flood?.inPort).toBe('1');
+    expect(flood?.action).toBe('flooded');
     expect(
       result.hops.some((hop) => hop.step === 'arp' && hop.action === 'delivered'),
     ).toBe(false);
@@ -297,5 +301,127 @@ describe('ARP is conditional', () => {
       payload: { kind: 'icmp', srcIp: '192.168.10.10', dstIp: '8.8.8.8' },
     });
     expect(third.hops.some((hop) => hop.step === 'arp')).toBe(true);
+  });
+
+  it('ARPs an on-subnet destination, not the gateway', () => {
+    const topology = topo(
+      [
+        hostBox('H1', {
+          mac: 'aa:00:00:00:00:10',
+          ip: '192.168.10.10',
+          prefix: 24,
+          gateway: '192.168.10.1',
+        }),
+        hostBox('H2', {
+          mac: 'aa:00:00:00:00:20',
+          ip: '192.168.10.20',
+          prefix: 24,
+          gateway: '192.168.10.1',
+        }),
+        switchBox('SW1', [access('1', 10), access('2', 10)]),
+      ],
+      [
+        link('a', { device: 'H1', port: '1' }, { device: 'SW1', port: '1' }),
+        link('b', { device: 'H2', port: '1' }, { device: 'SW1', port: '2' }),
+      ],
+    );
+    const ctx = createRunContext(topology);
+    const result = send(ctx, {
+      from: 'H1',
+      dstIp: '192.168.10.20',
+      payload: { kind: 'icmp', srcIp: '192.168.10.10', dstIp: '192.168.10.20' },
+    });
+    const arp = result.hops.find(
+      (hop) => hop.step === 'arp' && hop.action === 'delivered' && hop.device === 'H2',
+    );
+    expect(arp?.device).toBe('H2');
+    expect(getResolvedMac(ctx, 'H1|192.168.10.20')).toBe('aa:00:00:00:00:20');
+    expect(getResolvedMac(ctx, 'H1|192.168.10.1')).toBeUndefined();
+    const delivered = result.hops.find(
+      (hop) => hop.device === 'H2' && hop.step === 'delivery',
+    );
+    expect(delivered?.action).toBe('delivered');
+    expect(delivered?.reasonCode).toBe('delivery:delivered');
+  });
+
+  it('does not deliver IP to a host when dstMac is another unicast', () => {
+    const topology = topo(
+      [
+        hostBox('H1', {
+          mac: 'aa:00:00:00:00:10',
+          ip: '192.168.10.10',
+          prefix: 24,
+        }),
+      ],
+      [],
+    );
+    const ctx = createRunContext(topology);
+    const result = handleHost(ctx, {
+      device: 'H1',
+      inPort: '1',
+      frame: {
+        srcMac: 'aa:00:00:00:00:99',
+        dstMac: 'aa:00:00:00:00:20',
+        vlan: null,
+        size: 64,
+        encapsulation: ['ethernet'],
+        payload: { kind: 'icmp', dstIp: '192.168.10.10' },
+        hops: [],
+      },
+    });
+    expect(result).toBeUndefined();
+  });
+});
+
+describe('inter-VLAN send', () => {
+  it('forwards ICMP after both ARPs when the firewall allows', () => {
+    const topology = topo(
+      [
+        hostBox('H1', {
+          mac: 'aa:00:00:00:00:10',
+          ip: '192.168.10.10',
+          prefix: 24,
+          gateway: '192.168.10.1',
+        }),
+        hostBox('H2', {
+          mac: 'aa:00:00:00:00:20',
+          ip: '192.168.20.20',
+          prefix: 24,
+          gateway: '192.168.20.1',
+        }),
+        switchBox('SW1', [
+          access('1', 10),
+          access('2', 20),
+          trunk('3', [10, 20]),
+        ]),
+        routerBox('R1', [
+          { vlan: 10, ip: '192.168.10.1', mac: 'aa:00:00:00:00:01' },
+          { vlan: 20, ip: '192.168.20.1', mac: 'aa:00:00:00:00:01' },
+        ]),
+      ],
+      [
+        link('a', { device: 'H1', port: '1' }, { device: 'SW1', port: '1' }),
+        link('b', { device: 'H2', port: '1' }, { device: 'SW1', port: '2' }),
+        link('c', { device: 'SW1', port: '3' }, { device: 'R1', port: '1' }),
+      ],
+    );
+    const ctx = createRunContext(topology);
+    const result = send(ctx, {
+      from: 'H1',
+      dstIp: '192.168.20.20',
+      payload: { kind: 'icmp', srcIp: '192.168.10.10', dstIp: '192.168.20.20' },
+    });
+    const delivered = result.hops.find(
+      (hop) => hop.device === 'H2' && hop.step === 'delivery',
+    );
+    expect(delivered?.fn).toBeUndefined();
+    expect(delivered?.step).toBe('delivery');
+    expect(delivered?.reasonCode).toBe('delivery:delivered');
+    expect(delivered?.action).toBe('delivered');
+    expect(
+      result.hops.some(
+        (hop) => hop.device === 'R1' && hop.step === 'route-lookup' && hop.action === 'forwarded',
+      ),
+    ).toBe(true);
   });
 });

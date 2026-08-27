@@ -54,12 +54,15 @@ export function routingWouldHandle(
   frame: Frame,
 ): boolean {
   const iface = matchIface(fn, inPort, frame.vlan);
-  if (!iface) return false;
   if (frame.payload.kind === 'arp') {
+    if (!iface) return false;
     if (isGroupMac(frame.dstMac)) return frame.payload.dstIp === iface.ip;
     return frame.dstMac === iface.mac;
   }
-  return true;
+  if (iface) return true;
+  return fn.ifaces.some(
+    (item) => item.id === inPort && item.mac === frame.dstMac,
+  );
 }
 
 function withVlan(frame: Frame, vlan: VlanId | null, hop: Hop): Frame {
@@ -134,10 +137,26 @@ export function routeFrame(ctx: RunContext, args: RouteArgs): RouteResult {
 
   const iface = matchIface(fn, args.inPort, args.frame.vlan);
   if (!iface) {
-    return { hops: [], transmissions: [] };
+    return {
+      hops: [
+        makeHop({
+          device: args.device,
+          fn: fn.id,
+          inPort: args.inPort,
+          vlan: args.frame.vlan,
+          action: 'dropped',
+          step: 'route-lookup',
+          outcome: 'dropped',
+        }),
+      ],
+      transmissions: [],
+    };
   }
 
   if (args.frame.payload.kind === 'arp' && isGroupMac(args.frame.dstMac)) {
+    if (args.frame.payload.dstIp !== iface.ip) {
+      return { hops: [], transmissions: [] };
+    }
     const hop = makeHop({
       device: args.device,
       fn: fn.id,

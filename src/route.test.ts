@@ -124,6 +124,48 @@ describe('routeFrame', () => {
     expect(result.transmissions).toEqual([]);
   });
 
+  it('does not answer a broadcast ARP for a different IP on a matching iface', () => {
+    const box = router();
+    const ctx = createRunContext(topo([box]));
+    const result = routeFrame(ctx, {
+      device: 'R1',
+      inPort: '1',
+      frame: {
+        srcMac: 'aa:00:00:00:00:10',
+        dstMac: defaults.broadcastMac,
+        vlan: 10,
+        size: 64,
+        encapsulation: ['ethernet', 'vlan-tag'],
+        payload: {
+          kind: 'arp',
+          srcIp: '192.168.10.10',
+          dstIp: '192.168.10.99',
+        },
+        hops: [],
+      },
+    });
+    expect(result.hops).toEqual([]);
+    expect(result.transmissions).toEqual([]);
+  });
+
+  it('drops a unicast IP to an iface MAC when no sub-interface matches the VLAN', () => {
+    const box = router();
+    const ctx = createRunContext(topo([box]));
+    const result = routeFrame(ctx, {
+      device: 'R1',
+      inPort: '1',
+      frame: ipFrame('192.168.10.1', 30),
+    });
+    expect(result.hops[0]?.device).toBe('R1');
+    expect(result.hops[0]?.fn).toBe('rt');
+    expect(result.hops[0]?.step).toBe('route-lookup');
+    expect(result.hops[0]?.reasonCode).toBe('route-lookup:dropped');
+    expect(result.hops[0]?.action).toBe('dropped');
+    expect(result.hops[0]?.vlan).toBe(30);
+    expect(result.hops[0]?.inPort).toBe('1');
+    expect(result.transmissions).toEqual([]);
+  });
+
   it('allows inter-VLAN when no rule matches', () => {
     const box = router();
     const ctx = createRunContext(topo([box]));
