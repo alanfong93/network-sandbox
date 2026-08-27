@@ -4,7 +4,8 @@ Headless TypeScript engine. Nothing here talks to a server. Persistence, when
 it lands, is a JSON file the user keeps — there is no database.
 
 This slice is the floor, the run context, one pass through a bridging
-function, and the topology walk that follows links.
+function, the topology walk that follows links, and L3: hosts, ARP, routing
+and the inter-VLAN firewall.
 
 ## Modules
 
@@ -18,9 +19,14 @@ flowchart LR
     S --> U[run.ts<br>one context per run]
     U --> B[bridge.ts<br>802.1Q one hop]
     U --> W[walk.ts<br>dispatch and flood tree]
+    U --> O[route.ts<br>L3 and firewall]
+    U --> N[send.ts<br>originate and ARP]
     W --> B
+    W --> O
+    N --> W
     B --> F
     W --> F
+    O --> F
     style M color:#000
     style R color:#000
     style F color:#000
@@ -30,6 +36,8 @@ flowchart LR
     style U color:#000
     style B color:#000
     style W color:#000
+    style O color:#000
+    style N color:#000
 ```
 
 | Module | Holds |
@@ -40,9 +48,13 @@ flowchart LR
 | `src/format.ts` | Turns a structured hop, trace, flow or warning into a sentence. |
 | `src/catalogue.ts` | The 23-row table. Row 20 is Stage 2. |
 | `src/stp.ts` | Converged 802.1D: root, root port, designated port, else blocking. Single instance. ADR 0011 warning. |
-| `src/run.ts` | One context per run: FDB, resolved MACs, hop budget, STP map, warnings. Discarded when the run ends. |
+| `src/run.ts` | One context per run: FDB, resolved MACs, pending L3 sends, hop budget, STP map, warnings. Discarded when the run ends. |
 | `src/bridge.ts` | One pass through one bridging function: STP ingress, acceptable frames, PVID, ingress filtering, learn, lookup, STP egress, membership, tagging. |
-| `src/walk.ts` | Dispatcher: read `Port.ownedBy`, hand the frame to that function's executor. Floods are a tree. `hopsLeft` is one budget across every branch. |
+| `src/walk.ts` | Dispatcher: read `Port.ownedBy`, hand the frame to that function's executor. Floods are a tree. `hopsLeft` is one budget across every branch. Hosts with addressing answer ARP and take delivery. |
+| `src/ip.ts` | IPv4 parse, subnet membership, longest-prefix match. No library. |
+| `src/route.ts` | One pass through one routing function: tagged sub-interface match, ARP, connected then static LPM, inter-VLAN allow/deny. |
+| `src/send.ts` | Originate from a sender. ARP only when the next-hop MAC is unknown. |
+| `src/host.ts` | Host chassis (no functions) answering ARP and taking delivery. |
 
 There is no `switch (device.kind)`. There are no device kinds. A chassis
 carries functions; the walk dispatches on `Port.ownedBy`. A chassis with
@@ -97,7 +109,8 @@ Per [ADR 0017](adr/0017-structure-in-engine-tests-wording-against-the-table.md):
 structural assertions name device, function, pipeline step, reason code, VLAN,
 port and action, and contain no prose. Wording assertions compare `format(...)`
 to `row.expected` on the catalogue table. Rows 2, 5, 6, 16 and 17 are traces
-assembled from a walk. Row 19 is a warning, not a hop.
+assembled from a walk. Row 7 is a trace assembled from `send`. Row 19 is a
+warning, not a hop.
 
 PVID is ingress only. Egress tagged/untagged is `untaggedVlans`. A VLAN ID of
 0 is priority-tagged and is classified to the PVID, matching 802.1Q; that case

@@ -32,6 +32,10 @@ export interface Chassis {
   radios: Radio[];
   functions: Fn[];
   internal: InternalEdge[];
+  mac?: MacAddr;
+  ip?: string;
+  prefix?: number;
+  gateway?: string;
 }
 
 export interface Port {
@@ -122,6 +126,7 @@ export interface RouterIface {
   vlan?: VlanId;
   ip: string;
   prefix: number;
+  mac: MacAddr;
 }
 
 export interface Route {
@@ -183,6 +188,13 @@ export interface Flow {
 }
 
 export type { PipelineStep, Outcome, ReasonCode };
+
+export function isGroupMac(mac: MacAddr): boolean {
+  const first = mac.split(':')[0];
+  if (first === undefined) return false;
+  const octet = Number.parseInt(first, 16);
+  return Number.isFinite(octet) && (octet & 1) === 1;
+}
 
 /** Native VLAN is derived for display, never stored (ADR 0008). */
 export function nativeVlanOf(port: BridgePort): VlanId | undefined {

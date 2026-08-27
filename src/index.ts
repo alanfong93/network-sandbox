@@ -25,7 +25,7 @@ export type {
   TransportProto,
   VlanId,
 } from './model';
-export { carriedVlans, nativeVlanOf } from './model';
+export { carriedVlans, isGroupMac, nativeVlanOf } from './model';
 
 export type { Outcome, PipelineStep, ReasonCode } from './reasons';
 export {
@@ -53,7 +53,7 @@ export { CATALOGUE } from './catalogue';
 export type { StpStateMap, StpWarning } from './stp';
 export { computeStp, detectSingleInstanceWarnings } from './stp';
 
-export type { FdbEntry, RunContext } from './run';
+export type { FdbEntry, PendingSend, RunContext } from './run';
 export {
   createRunContext,
   getResolvedMac,
@@ -68,4 +68,15 @@ export type { BridgeArgs, BridgeResult, Transmission } from './bridge';
 export { bridgeFrame } from './bridge';
 
 export type { WalkArgs, WalkObservation, WalkResult } from './walk';
-export { observationAsFormatInput, walkFrame } from './walk';
+export { observationAsFormatInput, peerOf, walkFrame } from './walk';
+
+export { inSubnet, longestPrefixMatch, parseIpv4 } from './ip';
+
+export type { RouteArgs, RouteResult } from './route';
+export { matchIface, routeFrame, routingWouldHandle } from './route';
+
+export type { HostResult } from './host';
+export { handleHost, hostWouldHandle, isAddressedHost, resolveKey } from './host';
+
+export type { SendArgs } from './send';
+export { needsArp, nextHopIp, send, senderVlan, vlanOfIp } from './send';

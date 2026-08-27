@@ -1,7 +1,8 @@
 # v1 Spec
 
 Design document. The engine skeleton, run context, spanning tree, 802.1Q
-bridging pass, and topology walk exist. Hosts, routing, NAT and DHCP do not.
+bridging pass, topology walk, hosts, ARP, routing and the inter-VLAN firewall
+exist. NAT and DHCP do not.
 
 This file describes *what* v1 is, and it gets archived when the phase closes. The
 *why* behind the load-bearing decisions lives in [`adr/`](adr/) and outlives it —
@@ -68,6 +69,8 @@ interface Chassis {
   radios: Radio[];
   functions: Fn[];
   internal: InternalEdge[];      // generated from the preset; inspectable, not user-rewirable
+  mac?: MacAddr; ip?: string; prefix?: number; gateway?: string;
+                                 // host addressing — not a function (ADR 0013)
 }
 
 interface Port {
@@ -125,6 +128,7 @@ interface RouterIface {
   id: string;
   vlan?: VlanId;                 // a TAGGED SUB-INTERFACE on a routed port - no bridge involved
   ip: string; prefix: number;
+  mac: MacAddr;                  // so the sub-interface can answer ARP
 }
 
 interface Route {

@@ -1,22 +1,29 @@
 # System flow
 
 The product workflow from [`PRODUCT.md`](PRODUCT.md). `createRunContext`
-computes spanning tree before any frame exists. `walkFrame` follows links
-and dispatches each arrival on `Port.ownedBy`. `bridgeFrame` is one hop
-through one bridging function.
+computes spanning tree before any frame exists. `send` originates from a
+host or other sender and ARPs only when that sender lacks its next-hop MAC.
+`walkFrame` follows links and dispatches each arrival on `Port.ownedBy`.
+`bridgeFrame` is one hop through one bridging function; `routeFrame` is one
+hop through one routing function.
 
 ```mermaid
 flowchart TD
     A[Describe the topology as data] --> C[createRunContext]
     C --> D[Converged STP state]
+    D --> S[send from a sender]
+    S --> P{Next-hop MAC<br>known?}
+    P -->|no, and needed| AR[ARP request is a frame]
+    AR --> Q[walkFrame queue]
+    P -->|yes or not needed| Q
     D --> W{Parallel trunks<br>two or more VLANs?}
     W -->|yes| X[ADR 0011 warning<br>not a Hop]
-    W -->|no| Q[walkFrame queue]
+    W -->|no| Q
     X --> Q
     Q --> B{hopsLeft?}
     B -->|0| Z[hop-budget hop]
-    B -->|yes| E[executor for ownedBy]
-    E --> F[One Hop per pass]
+    B -->|yes| E[executor for ownedBy<br>or host delivery]
+    E --> F[One or more Hops per pass]
     F --> T[Enqueue every transmission]
     T --> B
     Z --> G[format turns hops and traces into sentences]

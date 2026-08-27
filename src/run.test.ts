@@ -52,6 +52,7 @@ describe('run context', () => {
     const ctx2 = createRunContext(empty);
     expect(ctx1.fdb).not.toBe(ctx2.fdb);
     expect(ctx1.resolvedMacs).not.toBe(ctx2.resolvedMacs);
+    expect(ctx1.pendingSends).not.toBe(ctx2.pendingSends);
     expect(ctx1.stp).not.toBe(ctx2.stp);
     expect(ctx1.warnings).not.toBe(ctx2.warnings);
   });
