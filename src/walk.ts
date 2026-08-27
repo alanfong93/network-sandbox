@@ -146,7 +146,15 @@ function stpPriority(chassis: Chassis | undefined): number | undefined {
 }
 
 function note(observations: WalkObservation[], obs: WalkObservation): void {
-  if (observations.some((item) => item.observation === obs.observation)) return;
+  if (
+    observations.some(
+      (item) =>
+        item.observation === obs.observation &&
+        JSON.stringify(item.facts) === JSON.stringify(obs.facts),
+    )
+  ) {
+    return;
+  }
   observations.push(obs);
 }
 
