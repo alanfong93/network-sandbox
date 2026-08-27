@@ -187,6 +187,35 @@ describe('topology walk', () => {
       false,
     );
   });
+
+  it('does not name hop-budget on a chassis that has no bridging function', () => {
+    const hub = switchBox(
+      'HUB',
+      [access('0', 1), access('1', 1), access('2', 1)],
+      { vlanAware: false },
+    );
+    const leaf = switchBox('L1', [access('1', 1), access('2', 1)], {
+      vlanAware: false,
+    });
+    const ctx = createRunContext(
+      topo(
+        [hub, leaf, host('H1')],
+        [
+          link('h', { device: 'HUB', port: '1' }, { device: 'H1', port: '1' }),
+          link('l', { device: 'HUB', port: '2' }, { device: 'L1', port: '1' }),
+        ],
+      ),
+    );
+    ctx.hopsLeft = 1;
+    const result = walkFrame(ctx, {
+      device: 'HUB',
+      inPort: '0',
+      frame: frame({ vlan: null, dst: defaults.broadcastMac }),
+    });
+    const budget = result.hops.find((hop) => hop.step === 'hop-budget');
+    expect(budget?.device).toBe('L1');
+    expect(budget?.device).not.toBe('H1');
+  });
 });
 
 describe('catalogue row 2', () => {

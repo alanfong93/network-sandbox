@@ -153,6 +153,10 @@ export function walkFrame(ctx: RunContext, args: WalkArgs): WalkResult {
     const job = queue.shift();
     if (job === undefined) break;
 
+    const chassis = chassisOf(ctx, job.device);
+    const fn = chassis ? portFn(chassis, job.inPort) : undefined;
+    if (fn?.kind !== 'bridging') continue;
+
     if (ctx.hopsLeft <= 0) {
       hops.push(makeBudgetHop(job));
       const devices = [...visits.keys()];
@@ -169,8 +173,6 @@ export function walkFrame(ctx: RunContext, args: WalkArgs): WalkResult {
       break;
     }
 
-    const chassis = chassisOf(ctx, job.device);
-    const fn = chassis ? portFn(chassis, job.inPort) : undefined;
     const result = execute(ctx, job);
     if (!result) continue;
 
