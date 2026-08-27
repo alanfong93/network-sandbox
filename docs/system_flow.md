@@ -6,7 +6,8 @@ host or other sender and ARPs only when that sender lacks its next-hop MAC.
 `runFlow` sends a request, then — if it was delivered — the ICMP reply,
 against that same context. `walkFrame` follows links and dispatches each
 arrival on `Port.ownedBy`. `bridgeFrame` is one hop through one bridging
-function; `routeFrame` is one hop through one routing function.
+function; `routeFrame` is one hop through one routing function, including
+NAT masquerade and port-forwards when a `nat` function is present.
 
 ```mermaid
 flowchart TD
@@ -47,6 +48,8 @@ A drop is an outcome, not an error. The hop names the pipeline step that
 produced it. There is no pass/fail field on a hop.
 
 A flow — request plus reply sharing one run context — is how rows 9, 13 and
-15 are seen. `runFlow` is that driver. The reply reads the FDB and resolved
-MACs the request populated; a reply traced cold floods. `Flow.outcome` names
-which direction died. It is not a pass/fail field.
+15 are seen. `runFlow` is that driver. The reply reads the FDB, resolved
+MACs and NAT sessions the request populated; a reply traced cold floods.
+The dest replies to the source address it actually received, so a masqueraded
+request comes home without a return route. `Flow.outcome` names which
+direction died. It is not a pass/fail field.

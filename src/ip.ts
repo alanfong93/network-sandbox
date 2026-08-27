@@ -31,6 +31,24 @@ export interface PrefixCandidate<T> {
   value: T;
 }
 
+export function networkAddress(ip: string, prefix: number): string | undefined {
+  const n = parseIpv4(ip);
+  if (n === undefined) return undefined;
+  const net = (n & prefixMask(prefix)) >>> 0;
+  return [
+    (net >>> 24) & 255,
+    (net >>> 16) & 255,
+    (net >>> 8) & 255,
+    net & 255,
+  ].join('.');
+}
+
+export function formatPrefix(ip: string, prefix: number): string | undefined {
+  const net = networkAddress(ip, prefix);
+  if (net === undefined) return undefined;
+  return `${net}/${prefix}`;
+}
+
 export function longestPrefixMatch<T>(
   ip: string,
   candidates: readonly PrefixCandidate<T>[],

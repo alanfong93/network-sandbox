@@ -203,6 +203,18 @@ it lacks that MAC. Resolution is per-sender and lives only on the run context.
 - **Do not call it:** *cache*, *session*, *host* (a host is a chassis with no
   functions; not every sender is a host).
 
+### NAT
+
+A function attached to a routing function (`kind: 'nat'`, `on` names that
+routing function). Presence is NAT on; absence is NAT off. A newly placed
+router includes it ([ADR 0005](docs/adr/0005-nat-on-by-default.md)). Masquerade
+rewrites the source out the default-route iface; a port-forward matches
+`proto` and `outsidePort` on the way in ([ADR 0018](docs/adr/0018-services-are-reached-not-answered.md)).
+
+- **Do not call it:** *sub-router NAT*, *firewall* (the inter-VLAN allow/deny
+  list is a different function), *PAT* in user-facing copy.
+- Sessions live on the run context. They do not persist between runs.
+
 ### Service
 
 A `Frame.payload.kind`. It carries `proto` and `dstPort` so a port-forward and a

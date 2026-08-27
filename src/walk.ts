@@ -28,6 +28,7 @@ export interface WalkObservation {
 export interface WalkResult {
   hops: Hop[];
   observations: WalkObservation[];
+  deliveredFrame?: Frame;
 }
 
 interface Job {
@@ -166,6 +167,7 @@ export function observationAsFormatInput(obs: WalkObservation): TraceInput {
 export function walkFrame(ctx: RunContext, args: WalkArgs): WalkResult {
   const hops: Hop[] = [];
   const observations: WalkObservation[] = [];
+  let deliveredFrame: Frame | undefined;
   const queue: Job[] = [
     {
       device: args.device,
@@ -206,6 +208,13 @@ export function walkFrame(ctx: RunContext, args: WalkArgs): WalkResult {
 
     ctx.hopsLeft -= 1;
     hops.push(...result.hops);
+    if (
+      result.hops.some(
+        (item) => item.step === 'delivery' && item.action === 'delivered',
+      )
+    ) {
+      deliveredFrame = job.frame;
+    }
     visits.set(job.device, (visits.get(job.device) ?? 0) + 1);
     const primary = result.hops[0];
 
@@ -313,5 +322,12 @@ export function walkFrame(ctx: RunContext, args: WalkArgs): WalkResult {
     }
   }
 
-  return { hops, observations };
+  const translations = hops.filter(
+    (item) => item.step === 'nat' && item.reasonCode === 'nat:translated',
+  );
+  if (translations.length >= 2) {
+    note(observations, { observation: 'double-nat', facts: {} });
+  }
+
+  return { hops, observations, deliveredFrame };
 }
