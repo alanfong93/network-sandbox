@@ -1,4 +1,5 @@
 import type { FlowInput, HopFacts } from './format';
+import { formatPrefix } from './ip';
 import type { DeviceId, Flow, Frame, FramePayload, Hop, Topology } from './model';
 import type { RunContext } from './run';
 import { send, senderVlan, type SendArgs } from './send';
@@ -115,19 +116,20 @@ export function runFlow(ctx: RunContext, args: FlowArgs): FlowResult {
     };
   }
 
+  const seenSrc = requestWalk.deliveredFrame?.payload.srcIp ?? srcIp;
   const replyWalk = send(ctx, {
     from: dest,
-    dstIp: srcIp,
+    dstIp: seenSrc,
     payload: {
       kind: 'icmp',
       srcIp: args.dstIp,
-      dstIp: srcIp,
+      dstIp: seenSrc,
     },
   });
   const destChassis = ctx.topology.devices.find((item) => item.id === dest);
   const reply = asFrame(
     destChassis?.mac ?? '00:00:00:00:00:00',
-    { kind: 'icmp', srcIp: args.dstIp, dstIp: srcIp },
+    { kind: 'icmp', srcIp: args.dstIp, dstIp: seenSrc },
     replyWalk.hops,
   );
   const returned = deliveryDevice(replyWalk.hops) !== undefined;
@@ -149,6 +151,25 @@ export function runFlow(ctx: RunContext, args: FlowArgs): FlowResult {
         reachedVlan: senderVlan(ctx.topology, dest),
         fromVlan: drop.vlan ?? senderVlan(ctx.topology, dest),
         toVlan: senderVlan(ctx.topology, args.from),
+      },
+    });
+  }
+  const routeDrop = replyWalk.hops.find(
+    (hop) => hop.step === 'route-lookup' && hop.action === 'dropped',
+  );
+  if (outcome === 'reply-failed' && !drop && routeDrop) {
+    const via = [...requestPath].reverse().find((id) => id !== routeDrop.device);
+    observations.push({
+      observation: 'missing-return-route',
+      facts: {
+        otherIp: args.dstIp,
+        via,
+        ip: srcIp,
+        devices: [routeDrop.device],
+        prefix:
+          sender?.prefix !== undefined
+            ? formatPrefix(srcIp, sender.prefix)
+            : undefined,
       },
     });
   }

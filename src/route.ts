@@ -3,7 +3,7 @@ import { defaults } from './defaults';
 import type { HopFacts } from './format';
 import { makeHop } from './hop';
 import { resolveKey } from './host';
-import { inSubnet, longestPrefixMatch } from './ip';
+import { formatPrefix, inSubnet, longestPrefixMatch } from './ip';
 import {
   isGroupMac,
   type Chassis,
@@ -11,10 +11,19 @@ import {
   type Encapsulation,
   type Fn,
   type Frame,
+  type FramePayload,
   type Hop,
   type RouterIface,
   type VlanId,
 } from './model';
+import {
+  findNat,
+  matchForward,
+  matchSession,
+  otherForwardDevice,
+  recordSession,
+  wanIface,
+} from './nat';
 import {
   getResolvedMac,
   setResolvedMac,
@@ -215,22 +224,105 @@ export function routeFrame(ctx: RunContext, args: RouteArgs): RouteResult {
     };
   }
 
-  const dstIp = args.frame.payload.dstIp;
+  const nat = findNat(chassis, fn.id);
+  const wan = wanIface(fn);
+  let working: Frame = args.frame;
+  let skipSnat = false;
+  const extraHops: Hop[] = [];
+
+  let dstIp = working.payload.dstIp;
   if (dstIp !== undefined && fn.ifaces.some((item) => item.ip === dstIp)) {
-    return {
-      hops: [
-        makeHop({
-          device: args.device,
-          fn: fn.id,
-          inPort: args.inPort,
-          vlan: args.frame.vlan,
-          action: 'delivered',
-          step: 'delivery',
-          outcome: 'delivered',
-        }),
-      ],
-      transmissions: [],
-    };
+    const session = nat ? matchSession(ctx, args.device, working) : undefined;
+    if (session && nat) {
+      const payload: FramePayload = {
+        ...working.payload,
+        dstIp: session.insideIp,
+      };
+      const hop = makeHop({
+        device: args.device,
+        fn: nat.id,
+        inPort: args.inPort,
+        vlan: working.vlan,
+        action: 'forwarded',
+        step: 'nat',
+        outcome: 'translated',
+      });
+      extraHops.push(hop);
+      working = { ...working, payload, hops: [...working.hops, hop] };
+      dstIp = session.insideIp;
+      skipSnat = true;
+    } else if (
+      nat &&
+      wan &&
+      dstIp === wan.ip &&
+      working.payload.kind === 'service'
+    ) {
+      const fwd = matchForward(nat, working);
+      if (!fwd) {
+        const other = otherForwardDevice(ctx.topology, args.device);
+        return {
+          hops: [
+            makeHop({
+              device: args.device,
+              fn: nat.id,
+              inPort: args.inPort,
+              vlan: args.frame.vlan,
+              action: 'dropped',
+              step: 'port-forward',
+              outcome: 'dropped',
+              facts: other ? { otherDevice: other } : undefined,
+            }),
+          ],
+          transmissions: [],
+        };
+      }
+      if (
+        !fn.ifaces.some((item) => inSubnet(fwd.toIp, item.ip, item.prefix))
+      ) {
+        return {
+          hops: [
+            makeHop({
+              device: args.device,
+              fn: nat.id,
+              inPort: args.inPort,
+              vlan: args.frame.vlan,
+              action: 'dropped',
+              step: 'port-forward',
+              outcome: 'dropped',
+              facts: {
+                ip: fwd.toIp,
+                dstPort: fwd.toPort,
+                prefix: formatPrefix(fwd.toIp, 24),
+              },
+            }),
+          ],
+          transmissions: [],
+        };
+      }
+      const payload: FramePayload = {
+        ...working.payload,
+        dstIp: fwd.toIp,
+        dstPort: fwd.toPort,
+      };
+      working = { ...working, payload };
+      dstIp = fwd.toIp;
+      skipSnat = true;
+    } else {
+      return {
+        hops: [
+          makeHop({
+            device: args.device,
+            fn: fn.id,
+            inPort: args.inPort,
+            vlan: args.frame.vlan,
+            action: 'delivered',
+            step: 'delivery',
+            outcome: 'delivered',
+          }),
+        ],
+        transmissions: [],
+      };
+    }
   }
 
   if (dstIp === undefined) {
@@ -274,8 +366,8 @@ export function routeFrame(ctx: RunContext, args: RouteArgs): RouteResult {
       toVlan: egress.iface.vlan,
       ip: dstIp,
       dstPort:
-        args.frame.payload.kind === 'service'
-          ? args.frame.payload.dstPort
+        working.payload.kind === 'service'
+          ? working.payload.dstPort
           : undefined,
     };
     return {
@@ -306,20 +398,58 @@ export function routeFrame(ctx: RunContext, args: RouteArgs): RouteResult {
     outcome: 'forwarded',
   });
 
+  let payload = working.payload;
+  const natHops: Hop[] = [];
+  if (
+    nat &&
+    !skipSnat &&
+    wan &&
+    egress.iface.id === wan.id &&
+    egress.iface.vlan === wan.vlan
+  ) {
+    const srcIp = payload.srcIp;
+    if (srcIp !== undefined && srcIp !== wan.ip) {
+      recordSession(ctx, {
+        device: args.device,
+        insideIp: srcIp,
+        outsideIp: wan.ip,
+        remoteIp: dstIp,
+      });
+      payload = { ...payload, srcIp: wan.ip };
+      natHops.push(
+        makeHop({
+          device: args.device,
+          fn: nat.id,
+          inPort: args.inPort,
+          outPort: egress.iface.id,
+          vlan: args.frame.vlan,
+          action: 'forwarded',
+          step: 'nat',
+          outcome: 'translated',
+        }),
+      );
+    }
+  }
+
   const outVlan = egress.iface.vlan ?? null;
-  const ipFrame = withVlan(
+  let ipFrame = withVlan(
     {
-      ...args.frame,
+      ...working,
       srcMac: egress.iface.mac,
+      payload,
     },
     outVlan,
     hop,
   );
+  for (const natHop of natHops) {
+    ipFrame = { ...ipFrame, hops: [...ipFrame.hops, natHop] };
+  }
 
   const mac = getResolvedMac(ctx, resolveKey(args.device, egress.nextHop));
+  const hops = [...extraHops, hop, ...natHops];
   if (mac) {
     return {
-      hops: [hop],
+      hops,
       transmissions: [
         {
           outPort: egress.iface.id,
@@ -358,11 +488,11 @@ export function routeFrame(ctx: RunContext, args: RouteArgs): RouteResult {
       srcIp: egress.iface.ip,
       dstIp: egress.nextHop,
     },
-    hops: [...args.frame.hops, hop, arpHop],
+    hops: [...ipFrame.hops, arpHop],
   };
 
   return {
-    hops: [hop, arpHop],
+    hops: [...hops, arpHop],
     transmissions: [{ outPort: egress.iface.id, frame: arp }],
   };
 }

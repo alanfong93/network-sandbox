@@ -148,6 +148,12 @@ export function send(ctx: RunContext, args: SendArgs): WalkResult {
         facts: { ip: nextHop, fromVlan, otherVlan },
       });
     }
+    if (nextHop === args.dstIp) {
+      observations.push({
+        observation: 'local-subnet',
+        facts: { ip: args.dstIp },
+      });
+    }
     return { hops, observations };
   }
 
@@ -161,5 +167,6 @@ export function send(ctx: RunContext, args: SendArgs): WalkResult {
   return {
     hops: [...hops, ...ipWalk.hops],
     observations: [...observations, ...ipWalk.observations],
+    deliveredFrame: ipWalk.deliveredFrame,
   };
 }

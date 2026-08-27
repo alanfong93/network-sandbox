@@ -27,12 +27,20 @@ export interface PendingSend {
   frame: Frame;
 }
 
+export interface NatSession {
+  device: DeviceId;
+  insideIp: string;
+  outsideIp: string;
+  remoteIp: string;
+}
+
 export interface RunContext {
   readonly topology: Topology;
   hopsLeft: number;
   fdb: Map<VlanId, Map<MacAddr, FdbEntry>>;
   resolvedMacs: Map<string, MacAddr>;
   pendingSends: PendingSend[];
+  natSessions: NatSession[];
   stp: StpStateMap;
   warnings: StpWarning[];
 }
@@ -50,6 +58,7 @@ export function createRunContext(topology: Topology): RunContext {
     fdb: new Map(),
     resolvedMacs: new Map(),
     pendingSends: [],
+    natSessions: [],
     stp,
     warnings: detectSingleInstanceWarnings(topology, stp),
   };

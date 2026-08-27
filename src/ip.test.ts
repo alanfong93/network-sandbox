@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { inSubnet, longestPrefixMatch, parseIpv4 } from './ip';
+import { formatPrefix, inSubnet, longestPrefixMatch, networkAddress, parseIpv4 } from './ip';
 
 describe('ip', () => {
   it('parses dotted IPv4', () => {
@@ -13,6 +13,11 @@ describe('ip', () => {
     expect(inSubnet('192.168.10.50', '192.168.10.1', 24)).toBe(true);
     expect(inSubnet('192.168.11.50', '192.168.10.1', 24)).toBe(false);
     expect(inSubnet('10.0.0.1', '10.0.0.0', 8)).toBe(true);
+  });
+
+  it('masks an address down to its network', () => {
+    expect(networkAddress('192.168.50.10', 24)).toBe('192.168.50.0');
+    expect(formatPrefix('10.99.0.10', 24)).toBe('10.99.0.0/24');
   });
 
   it('picks the longest matching prefix', () => {

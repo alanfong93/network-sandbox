@@ -53,7 +53,7 @@ export { CATALOGUE } from './catalogue';
 export type { StpStateMap, StpWarning } from './stp';
 export { computeStp, detectSingleInstanceWarnings } from './stp';
 
-export type { FdbEntry, PendingSend, RunContext } from './run';
+export type { FdbEntry, NatSession, PendingSend, RunContext } from './run';
 export {
   createRunContext,
   getResolvedMac,
@@ -70,10 +70,20 @@ export { bridgeFrame } from './bridge';
 export type { WalkArgs, WalkObservation, WalkResult } from './walk';
 export { observationAsFormatInput, peerOf, walkFrame } from './walk';
 
-export { inSubnet, longestPrefixMatch, parseIpv4 } from './ip';
+export { formatPrefix, inSubnet, longestPrefixMatch, networkAddress, parseIpv4 } from './ip';
 
 export type { RouteArgs, RouteResult } from './route';
 export { matchIface, routeFrame, routingWouldHandle } from './route';
+
+export type { NatFn, RoutingFn } from './nat';
+export {
+  findNat,
+  matchForward,
+  matchSession,
+  otherForwardDevice,
+  recordSession,
+  wanIface,
+} from './nat';
 
 export type { HostResult } from './host';
 export { handleHost, hostWouldHandle, isAddressedHost, resolveKey } from './host';
