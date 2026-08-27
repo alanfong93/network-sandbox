@@ -3,6 +3,7 @@ import { defaults } from './defaults';
 import { resolveKey } from './host';
 import { inSubnet } from './ip';
 import type {
+  Bytes,
   Chassis,
   DeviceId,
   Frame,
@@ -25,6 +26,7 @@ export interface SendArgs {
   dstIp: string;
   payload: FramePayload;
   dstMac?: MacAddr;
+  size?: Bytes;
 }
 
 export function nextHopIp(sender: Chassis, dstIp: string): string | undefined {
@@ -107,12 +109,13 @@ function originFrame(
   chassis: Chassis,
   dstMac: MacAddr,
   payload: FramePayload,
+  size?: Bytes,
 ): Frame {
   return {
     srcMac: chassis.mac ?? '00:00:00:00:00:00',
     dstMac,
     vlan: null,
-    size: 64,
+    size: size ?? 64,
     encapsulation: ['ethernet'],
     payload,
     hops: [],
@@ -136,7 +139,7 @@ export function send(ctx: RunContext, args: SendArgs): WalkResult {
     const walked = walkFrame(ctx, {
       device: far.device,
       inPort: far.port,
-      frame: originFrame(chassis, dstMac, payload),
+      frame: originFrame(chassis, dstMac, payload, args.size),
       arrivedFrom: args.from,
     });
     return withDhcpObservations(ctx, args, chassis, walked);
@@ -192,7 +195,7 @@ export function send(ctx: RunContext, args: SendArgs): WalkResult {
   const ipWalk = walkFrame(ctx, {
     device: far.device,
     inPort: far.port,
-    frame: originFrame(chassis, mac, payload),
+    frame: originFrame(chassis, mac, payload, args.size),
     arrivedFrom: args.from,
   });
   return {

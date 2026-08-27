@@ -1,4 +1,4 @@
-import { defaults } from './defaults';
+import { builtinProfile, defaults, type EngineProfile } from './defaults';
 import type { WarningInput } from './format';
 import type {
   DeviceId,
@@ -36,6 +36,7 @@ export interface NatSession {
 
 export interface RunContext {
   readonly topology: Topology;
+  readonly profile: EngineProfile;
   hopsLeft: number;
   fdb: Map<VlanId, Map<MacAddr, FdbEntry>>;
   resolvedMacs: Map<string, MacAddr>;
@@ -50,10 +51,14 @@ export interface RunContext {
  * when the run ends. Nothing here is stored on the module. `hopsLeft` is spent
  * by the walk across the whole flood tree.
  */
-export function createRunContext(topology: Topology): RunContext {
+export function createRunContext(
+  topology: Topology,
+  profile: EngineProfile = builtinProfile,
+): RunContext {
   const stp = computeStp(topology);
   return {
     topology,
+    profile,
     hopsLeft: defaults.maxHops,
     fdb: new Map(),
     resolvedMacs: new Map(),

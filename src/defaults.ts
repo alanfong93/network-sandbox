@@ -1,13 +1,22 @@
 import type { Bytes, Encapsulation } from './model';
 
+export type UnmanagedTag = 'pass' | 'strip';
+
+export interface EngineProfile {
+  id: string;
+  version: string;
+  unmanagedTag: UnmanagedTag;
+}
+
 /**
  * Every tunable the engine reads. Behavioural numbers are not inlined at use
  * sites. This object is itself the built-in profile (ADR 0012).
  */
-export const builtinProfile = {
+export const builtinProfile: EngineProfile = {
   id: 'ieee-defaults',
   version: '1',
-} as const;
+  unmanagedTag: 'pass',
+};
 
 export const defaults = {
   maxHops: 100,
