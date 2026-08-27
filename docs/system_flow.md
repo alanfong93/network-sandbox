@@ -3,15 +3,18 @@
 The product workflow from [`PRODUCT.md`](PRODUCT.md). `createRunContext`
 computes spanning tree before any frame exists. `send` originates from a
 host or other sender and ARPs only when that sender lacks its next-hop MAC.
-`walkFrame` follows links and dispatches each arrival on `Port.ownedBy`.
-`bridgeFrame` is one hop through one bridging function; `routeFrame` is one
-hop through one routing function.
+`runFlow` sends a request, then — if it was delivered — the ICMP reply,
+against that same context. `walkFrame` follows links and dispatches each
+arrival on `Port.ownedBy`. `bridgeFrame` is one hop through one bridging
+function; `routeFrame` is one hop through one routing function.
 
 ```mermaid
 flowchart TD
     A[Describe the topology as data] --> C[createRunContext]
     C --> D[Converged STP state]
     D --> S[send from a sender]
+    D --> FL[runFlow request then reply]
+    FL --> S
     S --> P{Next-hop MAC<br>known?}
     P -->|no, and needed| AR[ARP request is a frame]
     AR --> Q[walkFrame queue]
@@ -37,10 +40,13 @@ flowchart TD
     style Q fill:#d7f5d7,color:#000
     style G fill:#d7f5d7,color:#000
     style H fill:#d7f5d7,color:#000
+    style FL fill:#d7f5d7,color:#000
 ```
 
 A drop is an outcome, not an error. The hop names the pipeline step that
 produced it. There is no pass/fail field on a hop.
 
 A flow — request plus reply sharing one run context — is how rows 9, 13 and
-15 are seen. That driver is #7.
+15 are seen. `runFlow` is that driver. The reply reads the FDB and resolved
+MACs the request populated; a reply traced cold floods. `Flow.outcome` names
+which direction died. It is not a pass/fail field.

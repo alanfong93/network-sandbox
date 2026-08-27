@@ -154,7 +154,17 @@ Nothing in it survives to the next run ([ADR 0010](docs/adr/0010-arp-is-modelled
 
 - **Do not call it:** *session*, *simulation*, *world*, *cache*, *global state*.
 - Within one run, later frames (the reply) read the tables the request built.
-  That is #7, not a cache.
+  That is the flow driver, not a cache.
+
+### Flow
+
+A request and the reply it elicited, sharing one run context. Catalogue rows
+9, 13 and 15 cannot be seen from one direction.
+
+- `outcome` names which direction died (`request-failed`, `reply-failed`) or
+  that both arrived (`round-trip`). It is not pass/fail — there is no verdict
+  field ([ADR 0002](docs/adr/0002-trace-not-verdict.md)).
+- **Do not call it:** *ping*, *session*, *verdict*, *result*.
 
 ### Walk
 

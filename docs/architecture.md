@@ -4,8 +4,9 @@ Headless TypeScript engine. Nothing here talks to a server. Persistence, when
 it lands, is a JSON file the user keeps — there is no database.
 
 This slice is the floor, the run context, one pass through a bridging
-function, the topology walk that follows links, and L3: hosts, ARP, routing
-and the inter-VLAN firewall.
+function, the topology walk that follows links, L3: hosts, ARP, routing
+and the inter-VLAN firewall, and the flow driver that traces a request
+and its reply against one run context.
 
 ## Modules
 
@@ -21,12 +22,15 @@ flowchart LR
     U --> W[walk.ts<br>dispatch and flood tree]
     U --> O[route.ts<br>L3 and firewall]
     U --> N[send.ts<br>originate and ARP]
+    U --> L[flow.ts<br>request and reply]
     W --> B
     W --> O
     N --> W
+    L --> N
     B --> F
     W --> F
     O --> F
+    L --> F
     style M color:#000
     style R color:#000
     style F color:#000
@@ -38,6 +42,7 @@ flowchart LR
     style W color:#000
     style O color:#000
     style N color:#000
+    style L color:#000
 ```
 
 | Module | Holds |
@@ -54,6 +59,7 @@ flowchart LR
 | `src/ip.ts` | IPv4 parse, subnet membership, longest-prefix match. No library. |
 | `src/route.ts` | One pass through one routing function: tagged sub-interface match, ARP, connected then static LPM, inter-VLAN allow/deny. |
 | `src/send.ts` | Originate from a sender. ARP only when the next-hop MAC is unknown. |
+| `src/flow.ts` | Request then ICMP reply against one run context. Outcomes name which direction died; they are not pass/fail. |
 | `src/host.ts` | Host chassis (no functions) answering ARP and taking delivery. |
 
 There is no `switch (device.kind)`. There are no device kinds. A chassis
@@ -109,8 +115,8 @@ Per [ADR 0017](adr/0017-structure-in-engine-tests-wording-against-the-table.md):
 structural assertions name device, function, pipeline step, reason code, VLAN,
 port and action, and contain no prose. Wording assertions compare `format(...)`
 to `row.expected` on the catalogue table. Rows 2, 5, 6, 16 and 17 are traces
-assembled from a walk. Row 7 is a trace assembled from `send`. Row 19 is a
-warning, not a hop.
+assembled from a walk. Row 7 is a trace assembled from `send`. Rows 9 and 15
+are flows assembled from `runFlow`. Row 19 is a warning, not a hop.
 
 PVID is ingress only. Egress tagged/untagged is `untaggedVlans`. A VLAN ID of
 0 is priority-tagged and is classified to the PVID, matching 802.1Q; that case
