@@ -14,7 +14,7 @@ import type {
 } from './model';
 import { reasonCode } from './reasons';
 import { routingWouldHandle, routeFrame } from './route';
-import { lookup, type RunContext } from './run';
+import { lookup, portState, type RunContext } from './run';
 
 export interface WalkArgs {
   device: DeviceId;
@@ -166,13 +166,18 @@ function maxVisits(visits: Map<DeviceId, number>): number {
   return count;
 }
 
-function uniqueForwardDevices(hops: Hop[]): DeviceId[] {
-  const out: DeviceId[] = [];
-  for (const hop of hops) {
-    if (hop.action === 'dropped') continue;
-    if (out[out.length - 1] !== hop.device) out.push(hop.device);
+function blockedStpLink(
+  ctx: RunContext,
+): { a: DeviceId; b: DeviceId } | undefined {
+  for (const link of ctx.topology.links) {
+    if (!hasStp(chassisOf(ctx, link.a.device))) continue;
+    if (!hasStp(chassisOf(ctx, link.b.device))) continue;
+    const aState = portState(ctx, link.a.device, link.a.port);
+    const bState = portState(ctx, link.b.device, link.b.port);
+    if (aState !== 'blocking' && bState !== 'blocking') continue;
+    return { a: link.a.device, b: link.b.device };
   }
-  return out;
+  return undefined;
 }
 
 export function observationAsFormatInput(obs: WalkObservation): TraceInput {
@@ -360,35 +365,39 @@ export function walkFrame(ctx: RunContext, args: WalkArgs): WalkResult {
     }
   }
 
-  const path = uniqueForwardDevices(hops);
-  if (path.length >= 3) {
-    const start = path[0];
-    const end = path[path.length - 1];
-    if (start !== undefined && end !== undefined) {
-      let root: { device: DeviceId; priority: number } | undefined;
-      for (const id of path.slice(1, -1)) {
-        const priority = stpPriority(chassisOf(ctx, id));
-        if (priority === undefined) continue;
-        if (!root || priority < root.priority) {
-          root = { device: id, priority };
-        }
+  const forwarded = new Set(
+    hops.filter((hop) => hop.action !== 'dropped').map((hop) => hop.device),
+  );
+  const blocked = blockedStpLink(ctx);
+  if (
+    blocked &&
+    forwarded.has(blocked.a) &&
+    forwarded.has(blocked.b)
+  ) {
+    let root: { device: DeviceId; priority: number } | undefined;
+    for (const id of forwarded) {
+      if (id === blocked.a || id === blocked.b) continue;
+      const priority = stpPriority(chassisOf(ctx, id));
+      if (priority === undefined) continue;
+      if (!root || priority < root.priority) {
+        root = { device: id, priority };
       }
-      const startPriority = stpPriority(chassisOf(ctx, start));
-      const endPriority = stpPriority(chassisOf(ctx, end));
-      if (
-        root &&
-        (startPriority === undefined || root.priority < startPriority) &&
-        (endPriority === undefined || root.priority < endPriority)
-      ) {
-        note(observations, {
-          observation: 'stp-root',
-          facts: {
-            devices: [root.device],
-            priority: root.priority,
-            path: [start, end],
-          },
-        });
-      }
+    }
+    const aPriority = stpPriority(chassisOf(ctx, blocked.a));
+    const bPriority = stpPriority(chassisOf(ctx, blocked.b));
+    if (
+      root &&
+      (aPriority === undefined || root.priority < aPriority) &&
+      (bPriority === undefined || root.priority < bPriority)
+    ) {
+      note(observations, {
+        observation: 'stp-root',
+        facts: {
+          devices: [root.device],
+          priority: root.priority,
+          path: [blocked.a, blocked.b],
+        },
+      });
     }
   }
 

@@ -534,7 +534,7 @@ describe('catalogue row 17', () => {
   );
   const sw2 = switchBox(
     'SW2',
-    [trunk('1', [10]), trunk('2', [10]), access('3', 10)],
+    [trunk('1', [10]), trunk('2', [10]), access('3', 10), access('4', 10)],
     { stp: true, mac: 'aa:00:00:00:00:01' },
   );
   const sw3 = switchBox(
@@ -542,14 +542,16 @@ describe('catalogue row 17', () => {
     [trunk('1', [10]), trunk('2', [10])],
     { stp: true, mac: 'aa:00:00:00:00:03', priority: 4096 },
   );
+  const sw4 = switchBox('SW4', [access('1', 10), access('2', 10)]);
   const topology = topo(
-    [sw1, sw2, sw3, host('H1'), host('H2')],
+    [sw1, sw2, sw3, sw4, host('H1'), host('H2')],
     [
       link('12', { device: 'SW1', port: '1' }, { device: 'SW2', port: '1' }),
       link('13', { device: 'SW1', port: '2' }, { device: 'SW3', port: '1' }),
       link('23', { device: 'SW2', port: '2' }, { device: 'SW3', port: '2' }),
       link('h1', { device: 'SW1', port: '3' }, { device: 'H1', port: '1' }),
       link('h2', { device: 'SW2', port: '3' }, { device: 'H2', port: '1' }),
+      link('24', { device: 'SW2', port: '4' }, { device: 'SW4', port: '1' }),
     ],
   );
   const dest: MacAddr = 'aa:00:00:00:00:20';
@@ -588,5 +590,19 @@ describe('catalogue row 17', () => {
     expect(root).toBeDefined();
     if (!root || !row17) return;
     expect(format(observationAsFormatInput(root))).toBe(row17.expected);
+  });
+
+  it('names stp-root on a cold FDB, not only a pre-learned path', () => {
+    const ctx = createRunContext(topology);
+    expect(portState(ctx, 'SW1', '1')).toBe('blocking');
+    const result = walkFrame(ctx, {
+      device: 'SW1',
+      inPort: '3',
+      frame: frame({ vlan: null, dst: dest }),
+    });
+    const root = result.observations.find((obs) => obs.observation === 'stp-root');
+    expect(root?.facts.devices).toEqual(['SW3']);
+    expect(root?.facts.priority).toBe(4096);
+    expect(root?.facts.path).toEqual(['SW1', 'SW2']);
   });
 });
