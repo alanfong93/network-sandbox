@@ -96,8 +96,43 @@ function link(
   id: string,
   a: { device: string; port: string },
   b: { device: string; port: string },
+  medium: Link['medium'] = 'wired',
 ): Link {
-  return { id, a, b, medium: 'wired' };
+  return { id, a, b, medium };
+}
+
+function accessPoint(
+  id: string,
+  opts: { ssid: string; vlan: VlanId; uplink: BridgePort },
+): Chassis {
+  const wifi = access('wifi', opts.vlan);
+  return {
+    id,
+    label: id,
+    ports: [
+      { id: 'wifi', mtu: defaults.portMtu, ownedBy: 'wlan' },
+      { id: opts.uplink.port, mtu: defaults.portMtu, ownedBy: 'br' },
+    ],
+    radios: [{ id: 'radio0', band: '5' }],
+    functions: [
+      {
+        kind: 'wireless',
+        id: 'wlan',
+        radio: 'radio0',
+        mode: 'ap',
+        ssid: opts.ssid,
+        vlan: opts.vlan,
+      },
+      {
+        kind: 'bridging',
+        id: 'br',
+        vlanAware: true,
+        members: [wifi, opts.uplink],
+        fdb: new Map(),
+      },
+    ],
+    internal: [{ from: 'wlan', to: 'br' }],
+  };
 }
 
 function topo(devices: Chassis[], links: Link[] = []): Topology {
@@ -238,6 +273,64 @@ describe('topology walk', () => {
     const budget = result.hops.find((hop) => hop.step === 'hop-budget');
     expect(budget?.device).toBe('L1');
     expect(budget?.device).not.toBe('H1');
+  });
+});
+
+describe('wireless dispatch', () => {
+  it('classifies a client on an SSID then hops on the chassis bridge', () => {
+    const ap = accessPoint('AP1', {
+      ssid: 'guest',
+      vlan: 30,
+      uplink: access('1', 30),
+    });
+    const ctx = createRunContext(
+      topo(
+        [ap, host('C1')],
+        [
+          link(
+            'w',
+            { device: 'C1', port: '1' },
+            { device: 'AP1', port: 'wifi' },
+            'wireless',
+          ),
+        ],
+      ),
+    );
+    const result = walkFrame(ctx, {
+      device: 'AP1',
+      inPort: 'wifi',
+      frame: frame({ vlan: null, dst: defaults.broadcastMac }),
+      arrivedFrom: 'C1',
+    });
+    expect(result.hops[0]?.device).toBe('AP1');
+    expect(result.hops[0]?.fn).toBe('wlan');
+    expect(result.hops[0]?.inPort).toBe('wifi');
+    expect(result.hops[0]?.step).toBe('ssid-vlan');
+    expect(result.hops[0]?.reasonCode).toBe('ssid-vlan:classified');
+    expect(result.hops[0]?.vlan).toBe(30);
+    expect(result.hops[0]?.action).toBe('forwarded');
+    expect(result.hops[1]?.device).toBe('AP1');
+    expect(result.hops[1]?.fn).toBe('br');
+  });
+
+  it('names an unknown ownedBy even when a wireless function is present', () => {
+    const ap = accessPoint('AP1', {
+      ssid: 'guest',
+      vlan: 30,
+      uplink: access('1', 30),
+    });
+    ap.ports.push({ id: 'x', mtu: defaults.portMtu, ownedBy: 'ghost' });
+    const ctx = createRunContext(topo([ap]));
+    const result = walkFrame(ctx, {
+      device: 'AP1',
+      inPort: 'x',
+      frame: frame({ vlan: null }),
+    });
+    expect(result.hops[0]?.device).toBe('AP1');
+    expect(result.hops[0]?.fn).toBeUndefined();
+    expect(result.hops[0]?.step).toBe('delivery');
+    expect(result.hops[0]?.action).toBe('dropped');
+    expect(ctx.hopsLeft).toBe(defaults.maxHops);
   });
 });
 

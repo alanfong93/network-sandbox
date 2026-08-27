@@ -169,7 +169,9 @@ A request and the reply it elicited, sharing one run context. Catalogue rows
 ### Walk
 
 The dispatcher that follows links. At the far port it reads `Port.ownedBy`,
-finds that function, and hands the frame to that executor. An unknown or
+finds that function, and hands the frame to that executor. A `wireless`
+function classifies at `ssid-vlan` and the walk follows `InternalEdge` onto
+the chassis bridge. An unknown or
 broadcast destination goes out every eligible port, so the walk is a **tree**.
 `hopsLeft` is one budget across every branch, not a per-path depth limit.
 

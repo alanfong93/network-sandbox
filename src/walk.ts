@@ -8,6 +8,7 @@ import type {
   Chassis,
   DeviceId,
   Fn,
+  FnId,
   Frame,
   Hop,
   Topology,
@@ -15,6 +16,7 @@ import type {
 import { reasonCode } from './reasons';
 import { routingWouldHandle, routeFrame } from './route';
 import { lookup, portState, type RunContext } from './run';
+import { classifyWireless, wirelessWouldHandle } from './wireless';
 
 export interface WalkArgs {
   device: DeviceId;
@@ -39,13 +41,19 @@ interface Job {
   inPort: string;
   frame: Frame;
   arrivedFrom?: DeviceId;
+  dispatchFn?: FnId;
 }
 
 function chassisOf(ctx: RunContext, id: DeviceId): Chassis | undefined {
   return ctx.topology.devices.find((item) => item.id === id);
 }
 
-function portFn(chassis: Chassis, portId: string): Fn | undefined {
+function portFn(
+  chassis: Chassis,
+  portId: string,
+  dispatchFn?: FnId,
+): Fn | undefined {
+  if (dispatchFn) return chassis.functions.find((item) => item.id === dispatchFn);
   const port = chassis.ports.find((item) => item.id === portId);
   if (!port) return undefined;
   return chassis.functions.find((item) => item.id === port.ownedBy);
@@ -90,8 +98,9 @@ function makeBudgetHop(job: Job): Hop {
 function canHandle(ctx: RunContext, job: Job): boolean {
   const chassis = chassisOf(ctx, job.device);
   if (!chassis) return false;
-  const fn = portFn(chassis, job.inPort);
+  const fn = portFn(chassis, job.inPort, job.dispatchFn);
   if (fn?.kind === 'bridging') return true;
+  if (fn?.kind === 'wireless') return wirelessWouldHandle(fn);
   if (fn?.kind === 'isp-handoff') return handoffWouldHandle(fn);
   if (fn?.kind === 'routing') {
     return routingWouldHandle(fn, job.inPort, job.frame);
@@ -102,18 +111,32 @@ function canHandle(ctx: RunContext, job: Job): boolean {
 function execute(
   ctx: RunContext,
   job: Job,
-): { hops: Hop[]; transmissions: { outPort: string; frame: Frame }[] } | undefined {
+):
+  | {
+      hops: Hop[];
+      transmissions: { outPort: string; frame: Frame }[];
+      internal?: { fn: FnId; frame: Frame };
+    }
+  | undefined {
   const chassis = chassisOf(ctx, job.device);
   if (!chassis) return undefined;
-  const fn = portFn(chassis, job.inPort);
+  const fn = portFn(chassis, job.inPort, job.dispatchFn);
   if (fn?.kind === 'bridging') {
     const result = bridgeFrame(ctx, {
       device: job.device,
       inPort: job.inPort,
       frame: job.frame,
       arrivedFrom: job.arrivedFrom,
+      fn: fn.id,
     });
     return { hops: [result.hop], transmissions: result.transmissions };
+  }
+  if (fn?.kind === 'wireless') {
+    return classifyWireless(ctx, {
+      device: job.device,
+      inPort: job.inPort,
+      frame: job.frame,
+    });
   }
   if (fn?.kind === 'isp-handoff') {
     return handoffFrame(ctx, {
@@ -208,7 +231,7 @@ export function walkFrame(ctx: RunContext, args: WalkArgs): WalkResult {
     if (job === undefined) break;
 
     const chassis = chassisOf(ctx, job.device);
-    const fn = chassis ? portFn(chassis, job.inPort) : undefined;
+    const fn = chassis ? portFn(chassis, job.inPort, job.dispatchFn) : undefined;
     if (!canHandle(ctx, job)) {
       if (chassis) {
         hops.push(
@@ -317,6 +340,16 @@ export function walkFrame(ctx: RunContext, args: WalkArgs): WalkResult {
         });
       }
       if (entry) learnedAt.set(key, entry.port);
+    }
+
+    if (result.internal) {
+      queue.unshift({
+        device: job.device,
+        inPort: job.inPort,
+        frame: result.internal.frame,
+        arrivedFrom: job.arrivedFrom,
+        dispatchFn: result.internal.fn,
+      });
     }
 
     for (const tx of result.transmissions) {

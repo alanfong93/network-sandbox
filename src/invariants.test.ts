@@ -52,6 +52,13 @@ describe('invariants', () => {
     }
   });
 
+  it('does not switch on device.kind', () => {
+    for (const file of walk(srcDir)) {
+      const src = readFileSync(file, 'utf8');
+      expect(src, file).not.toMatch(/device\.kind/);
+    }
+  });
+
   it('has no runtime dependencies', () => {
     const pkg = JSON.parse(
       readFileSync(join(srcDir, '..', 'package.json'), 'utf8'),
