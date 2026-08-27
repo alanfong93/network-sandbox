@@ -215,6 +215,16 @@ rewrites the source out the default-route iface; a port-forward matches
   list is a different function), *PAT* in user-facing copy.
 - Sessions live on the run context. They do not persist between runs.
 
+### DHCP
+
+A pair of functions on a chassis (`dhcp-server` with `scopes`, `dhcp-relay`
+with a `helper` address). DISCOVER, OFFER, REQUEST and ACK are frames with
+their own hops. An OFFER's address is `poolStart` from the matching scope.
+There is no lease record, lease time or expiry ([ADR 0003](docs/adr/0003-converged-state-no-timers.md)).
+
+- **Do not call it:** *allocator*, *lease table*, *dns* (the scope field is
+  `resolver`; [ADR 0018](docs/adr/0018-services-are-reached-not-answered.md)).
+
 ### Service
 
 A `Frame.payload.kind`. It carries `proto` and `dstPort` so a port-forward and a

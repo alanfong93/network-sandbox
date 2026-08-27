@@ -7,7 +7,10 @@ host or other sender and ARPs only when that sender lacks its next-hop MAC.
 against that same context. `walkFrame` follows links and dispatches each
 arrival on `Port.ownedBy`. `bridgeFrame` is one hop through one bridging
 function; `routeFrame` is one hop through one routing function, including
-NAT masquerade and port-forwards when a `nat` function is present.
+NAT masquerade and port-forwards when a `nat` function is present, and
+DHCP when a `dhcp-server` or `dhcp-relay` function is present. A DHCP
+DISCOVER is a broadcast; OFFER, REQUEST and ACK are unicast frames in the
+same run. There is no lease record.
 
 ```mermaid
 flowchart TD

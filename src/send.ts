@@ -1,3 +1,4 @@
+import { dhcpObservations } from './dhcp';
 import { defaults } from './defaults';
 import { resolveKey } from './host';
 import { inSubnet } from './ip';
@@ -73,6 +74,35 @@ export function senderVlan(
   return bridge.members.find((member) => member.port === far.port)?.pvid;
 }
 
+function withDhcpObservations(
+  ctx: RunContext,
+  args: SendArgs,
+  chassis: Chassis,
+  walked: WalkResult,
+): WalkResult {
+  if (
+    args.payload.kind !== 'dhcp' ||
+    args.payload.dhcpType?.toLowerCase() !== 'discover'
+  ) {
+    return walked;
+  }
+  const fromVlan = senderVlan(ctx.topology, args.from);
+  const expectedVlan =
+    chassis.gateway !== undefined
+      ? vlanOfIp(ctx.topology, chassis.gateway)
+      : undefined;
+  return {
+    ...walked,
+    observations: [
+      ...walked.observations,
+      ...dhcpObservations(ctx.topology, walked.hops, walked.deliveredFrame, {
+        fromVlan,
+        expectedVlan,
+      }),
+    ],
+  };
+}
+
 function originFrame(
   chassis: Chassis,
   dstMac: MacAddr,
@@ -103,12 +133,13 @@ export function send(ctx: RunContext, args: SendArgs): WalkResult {
   if (!needsArp(payload, args.dstMac)) {
     const dstMac = args.dstMac ?? defaults.broadcastMac;
     if (!far) return { hops: [], observations: [] };
-    return walkFrame(ctx, {
+    const walked = walkFrame(ctx, {
       device: far.device,
       inPort: far.port,
       frame: originFrame(chassis, dstMac, payload),
       arrivedFrom: args.from,
     });
+    return withDhcpObservations(ctx, args, chassis, walked);
   }
 
   const nextHop = nextHopIp(chassis, args.dstIp);

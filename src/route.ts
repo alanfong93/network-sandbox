@@ -16,6 +16,7 @@ import {
   type RouterIface,
   type VlanId,
 } from './model';
+import { decideDhcp } from './dhcp';
 import {
   findNat,
   matchForward,
@@ -228,10 +229,45 @@ export function routeFrame(ctx: RunContext, args: RouteArgs): RouteResult {
   const wan = wanIface(fn);
   let working: Frame = args.frame;
   let skipSnat = false;
+  let skipLocal = false;
   const extraHops: Hop[] = [];
 
+  if (args.frame.payload.kind === 'dhcp') {
+    const decision = decideDhcp({
+      device: args.device,
+      chassis,
+      fn,
+      iface,
+      inPort: args.inPort,
+      frame: args.frame,
+    });
+    if (decision.action === 'respond') {
+      return {
+        hops: decision.hops,
+        transmissions: decision.transmissions,
+      };
+    }
+    if (decision.action === 'drop') {
+      return { hops: [], transmissions: [] };
+    }
+    if (decision.action === 'relay') {
+      extraHops.push(decision.hop);
+      working = {
+        ...working,
+        payload: decision.payload,
+        hops: [...working.hops, decision.hop],
+      };
+      skipSnat = true;
+      skipLocal = true;
+    }
+  }
+
   let dstIp = working.payload.dstIp;
-  if (dstIp !== undefined && fn.ifaces.some((item) => item.ip === dstIp)) {
+  if (
+    !skipLocal &&
+    dstIp !== undefined &&
+    fn.ifaces.some((item) => item.ip === dstIp)
+  ) {
     const session = nat ? matchSession(ctx, args.device, working) : undefined;
     if (session && nat) {
       const payload: FramePayload = {

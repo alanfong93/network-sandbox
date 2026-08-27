@@ -6,8 +6,8 @@ it lands, is a JSON file the user keeps — there is no database.
 This slice is the floor, the run context, one pass through a bridging
 function, the topology walk that follows links, L3: hosts, ARP, routing
 and the inter-VLAN firewall, the flow driver that traces a request
-and its reply against one run context, and NAT (masquerade plus port
-forwards).
+and its reply against one run context, NAT (masquerade plus port
+forwards), and DHCP as a message exchange (no leases).
 
 ## Modules
 
@@ -23,12 +23,15 @@ flowchart LR
     U --> W[walk.ts<br>dispatch and flood tree]
     U --> O[route.ts<br>L3 and firewall]
     U --> NA[nat.ts<br>masquerade and forwards]
+    U --> DH[dhcp.ts<br>server and relay]
     U --> N[send.ts<br>originate and ARP]
     U --> L[flow.ts<br>request and reply]
     W --> B
     W --> O
     O --> NA
+    O --> DH
     N --> W
+    N --> DH
     L --> N
     B --> F
     W --> F
@@ -45,6 +48,7 @@ flowchart LR
     style W color:#000
     style O color:#000
     style NA color:#000
+    style DH color:#000
     style N color:#000
     style L color:#000
 ```
@@ -61,9 +65,10 @@ flowchart LR
 | `src/bridge.ts` | One pass through one bridging function: STP ingress, acceptable frames, PVID, ingress filtering, learn, lookup, STP egress, membership, tagging. |
 | `src/walk.ts` | Dispatcher: read `Port.ownedBy`, hand the frame to that function's executor. Floods are a tree. `hopsLeft` is one budget across every branch. Hosts with addressing answer ARP and take delivery. |
 | `src/ip.ts` | IPv4 parse, subnet membership, longest-prefix match. No library. |
-| `src/route.ts` | One pass through one routing function: tagged sub-interface match, ARP, connected then static LPM, inter-VLAN allow/deny, then NAT. |
+| `src/route.ts` | One pass through one routing function: tagged sub-interface match, ARP, DHCP, connected then static LPM, inter-VLAN allow/deny, then NAT. |
 | `src/nat.ts` | NAT function on a routing function. Masquerade out the default-route iface; port-forwards match `proto` and `outsidePort`. Sessions live on the run context. |
-| `src/send.ts` | Originate from a sender. ARP only when the next-hop MAC is unknown. |
+| `src/dhcp.ts` | DHCP server and relay as sibling functions of routing. DISCOVER/OFFER/REQUEST/ACK are frames. An OFFER is `poolStart` from the matching scope. No lease record. |
+| `src/send.ts` | Originate from a sender. ARP only when the next-hop MAC is unknown. DHCP DISCOVER is broadcast. |
 | `src/flow.ts` | Request then ICMP reply against one run context. Outcomes name which direction died; they are not pass/fail. |
 | `src/host.ts` | Host chassis (no functions) answering ARP and taking delivery. |
 
@@ -122,7 +127,9 @@ port and action, and contain no prose. Wording assertions compare `format(...)`
 to `row.expected` on the catalogue table. Rows 2, 5, 6, 16 and 17 are traces
 assembled from a walk. Row 7 is a trace assembled from `send`. Rows 9, 13 and 15
 are flows assembled from `runFlow`. Rows 10 and 12 are traces from `send`.
-Rows 21 and 22 are hops. Row 19 is a warning, not a hop.
+Rows 3, 8, 11 and 14 are traces from a DHCP DISCOVER `send`. Row 23 is a
+firewall hop after a query to the advertised resolver. Rows 21 and 22 are hops.
+Row 19 is a warning, not a hop.
 
 PVID is ingress only. Egress tagged/untagged is `untaggedVlans`. A VLAN ID of
 0 is priority-tagged and is classified to the PVID, matching 802.1Q; that case

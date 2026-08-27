@@ -17,7 +17,14 @@ export function resolveKey(sender: string, ip: string): string {
 }
 
 export function hostWouldHandle(chassis: Chassis, frame: Frame): boolean {
-  if (!isAddressedHost(chassis) || chassis.mac === undefined) return false;
+  if (chassis.mac === undefined) return false;
+  if (frame.payload.kind === 'dhcp') {
+    const type = frame.payload.dhcpType?.toLowerCase();
+    if (type === 'discover') return false;
+    if (isGroupMac(frame.dstMac)) return type === 'offer' || type === 'ack';
+    return frame.dstMac === chassis.mac;
+  }
+  if (!isAddressedHost(chassis)) return false;
   if (frame.payload.kind === 'arp') {
     if (isGroupMac(frame.dstMac)) return frame.payload.dstIp === chassis.ip;
     return frame.dstMac === chassis.mac;
@@ -33,7 +40,29 @@ export function handleHost(
   if (!chassis || !hostWouldHandle(chassis, args.frame)) return undefined;
   const mac = chassis.mac;
   const ip = chassis.ip;
-  if (mac === undefined || ip === undefined) return undefined;
+  if (mac === undefined) return undefined;
+
+  if (args.frame.payload.kind === 'dhcp') {
+    const srcIp = args.frame.payload.srcIp;
+    if (srcIp !== undefined) {
+      setResolvedMac(ctx, resolveKey(args.device, srcIp), args.frame.srcMac);
+    }
+    return {
+      hops: [
+        makeHop({
+          device: args.device,
+          inPort: args.inPort,
+          vlan: args.frame.vlan,
+          action: 'delivered',
+          step: 'delivery',
+          outcome: 'delivered',
+        }),
+      ],
+      transmissions: [],
+    };
+  }
+
+  if (ip === undefined) return undefined;
 
   if (args.frame.payload.kind === 'arp' && isGroupMac(args.frame.dstMac)) {
     const hop = makeHop({
