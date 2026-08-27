@@ -79,6 +79,7 @@ function makeHop(args: {
   step: PipelineStep;
   outcome: Outcome;
   facts?: HopFacts;
+  provenance?: Hop['provenance'];
 }): Hop {
   const reason = format({
     kind: 'hop',
@@ -92,7 +93,7 @@ function makeHop(args: {
     outcome: args.outcome,
     facts: args.facts,
   });
-  return {
+  const hop: Hop = {
     device: args.device,
     fn: args.fn,
     inPort: args.inPort,
@@ -103,6 +104,8 @@ function makeHop(args: {
     reasonCode: reasonCode(args.step, args.outcome),
     reason,
   };
+  if (args.provenance) hop.provenance = args.provenance;
+  return hop;
 }
 
 function drop(
@@ -147,8 +150,9 @@ function egressVlan(
   port: BridgePort,
   vlan: VlanId,
   arrivedVlan: VlanId | null,
+  strip: boolean,
 ): VlanId | null {
-  if (!bridge.vlanAware) return arrivedVlan;
+  if (!bridge.vlanAware) return strip ? null : arrivedVlan;
   if (port.untaggedVlans.has(vlan)) return null;
   return vlan;
 }
@@ -288,7 +292,13 @@ export function bridgeFrame(ctx: RunContext, args: BridgeArgs): BridgeResult {
       outPort,
       outVlan: vlan === null
         ? args.frame.vlan
-        : egressVlan(bridge, outMember, vlan, args.frame.vlan),
+        : egressVlan(
+            bridge,
+            outMember,
+            vlan,
+            args.frame.vlan,
+            ctx.profile.unmanagedTag === 'strip',
+          ),
     });
   }
 
@@ -323,6 +333,14 @@ export function bridgeFrame(ctx: RunContext, args: BridgeArgs): BridgeResult {
         ? 'flooded'
         : 'forwarded',
     facts,
+    provenance:
+      !bridge.vlanAware && ctx.profile.unmanagedTag === 'strip'
+        ? {
+            profile: ctx.profile.id,
+            version: ctx.profile.version,
+            fields: ['unmanagedTag'],
+          }
+        : undefined,
   });
 
   return {

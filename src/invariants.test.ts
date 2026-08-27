@@ -41,6 +41,17 @@ describe('invariants', () => {
     }
   });
 
+  it('does not hard-code a PPPoE or Ethernet payload size', () => {
+    for (const file of walk(srcDir)) {
+      const src = readFileSync(file, 'utf8');
+      const posix = file.replaceAll('\\', '/');
+      expect(src, file).not.toMatch(/\b1492\b/);
+      if (!posix.endsWith('/defaults.ts')) {
+        expect(src, file).not.toMatch(/\b1500\b/);
+      }
+    }
+  });
+
   it('has no runtime dependencies', () => {
     const pkg = JSON.parse(
       readFileSync(join(srcDir, '..', 'package.json'), 'utf8'),

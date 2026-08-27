@@ -8,9 +8,11 @@ against that same context. `walkFrame` follows links and dispatches each
 arrival on `Port.ownedBy`. `bridgeFrame` is one hop through one bridging
 function; `routeFrame` is one hop through one routing function, including
 NAT masquerade and port-forwards when a `nat` function is present, and
-DHCP when a `dhcp-server` or `dhcp-relay` function is present. A DHCP
+DHCP when a `dhcp-server` or `dhcp-relay` function is present. `handoffFrame`
+is one hop through an `isp-handoff`. A DHCP
 DISCOVER is a broadcast; OFFER, REQUEST and ACK are unicast frames in the
-same run. There is no lease record.
+same run. There is no lease record. Usable MTU is computed from the
+encapsulation stack at egress; an oversized frame drops at `mtu`.
 
 ```mermaid
 flowchart TD
@@ -31,8 +33,11 @@ flowchart TD
     B -->|0| Z[hop-budget hop]
     B -->|yes| E[executor for ownedBy<br>or host delivery]
     E --> F[One or more Hops per pass]
-    F --> T[Enqueue every transmission]
+    F --> MTU{size > usableMtu?}
+    MTU -->|yes| MD[mtu drop hop]
+    MTU -->|no| T[Enqueue every transmission]
     T --> B
+    MD --> G
     Z --> G[format turns hops and traces into sentences]
     F --> G
     G --> H[Caller reads the trace]
@@ -45,6 +50,7 @@ flowchart TD
     style G fill:#d7f5d7,color:#000
     style H fill:#d7f5d7,color:#000
     style FL fill:#d7f5d7,color:#000
+    style MD fill:#ffd7d7,color:#000
 ```
 
 A drop is an outcome, not an error. The hop names the pipeline step that

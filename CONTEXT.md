@@ -225,6 +225,26 @@ There is no lease record, lease time or expiry ([ADR 0003](docs/adr/0003-converg
 - **Do not call it:** *allocator*, *lease table*, *dns* (the scope field is
   `resolver`; [ADR 0018](docs/adr/0018-services-are-reached-not-answered.md)).
 
+### Provenance
+
+Present on a hop when a profile influenced that step. Carries the profile id,
+version, and the field names that were read ([ADR 0012](docs/adr/0012-profiles-are-data-the-engine-is-the-only-executor.md)).
+The built-in profile's common path does not set it; a fixture that selects a
+different capability does.
+
+- **Do not call it:** *source*, *attribution* as a field name. The field is
+  `provenance`.
+
+### ISP handoff
+
+A function (`kind: 'isp-handoff'`) on the provider-facing chassis. Mode is
+`pppoe | dhcp | static`. `vlanTag` is the VLAN the customer WAN must carry.
+PPPoE is an encapsulation layer; usable MTU is computed from the stack and
+never stored.
+
+- **Do not call it:** *modem* or *ONT* as a device kind. The ONT is a chassis
+  carrying this function.
+
 ### Service
 
 A `Frame.payload.kind`. It carries `proto` and `dstPort` so a port-forward and a

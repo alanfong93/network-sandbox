@@ -1,6 +1,9 @@
 import { bridgeFrame } from './bridge';
+import { usableMtu } from './defaults';
 import { format, type HopFacts, type TraceInput } from './format';
+import { makeHop } from './hop';
 import { handleHost, hostWouldHandle } from './host';
+import { handoffFrame, handoffWouldHandle } from './isp';
 import type {
   Chassis,
   DeviceId,
@@ -89,6 +92,7 @@ function canHandle(ctx: RunContext, job: Job): boolean {
   if (!chassis) return false;
   const fn = portFn(chassis, job.inPort);
   if (fn?.kind === 'bridging') return true;
+  if (fn?.kind === 'isp-handoff') return handoffWouldHandle(fn);
   if (fn?.kind === 'routing') {
     return routingWouldHandle(fn, job.inPort, job.frame);
   }
@@ -110,6 +114,13 @@ function execute(
       arrivedFrom: job.arrivedFrom,
     });
     return { hops: [result.hop], transmissions: result.transmissions };
+  }
+  if (fn?.kind === 'isp-handoff') {
+    return handoffFrame(ctx, {
+      device: job.device,
+      inPort: job.inPort,
+      frame: job.frame,
+    });
   }
   if (fn?.kind === 'routing') {
     return routeFrame(ctx, {
@@ -280,11 +291,45 @@ export function walkFrame(ctx: RunContext, args: WalkArgs): WalkResult {
 
     for (const tx of result.transmissions) {
       const far = peerOf(ctx.topology, job.device, tx.outPort);
+      let frame = tx.frame;
+      if (far && frame.payload.kind !== 'arp') {
+        const peer = chassisOf(ctx, far.device);
+        const peerFn = peer ? portFn(peer, far.port) : undefined;
+        if (
+          peerFn?.kind === 'isp-handoff' &&
+          peerFn.mode === 'pppoe' &&
+          !frame.encapsulation.includes('pppoe')
+        ) {
+          frame = {
+            ...frame,
+            encapsulation: [...frame.encapsulation, 'pppoe'],
+          };
+        }
+      }
+      const outPort = chassis?.ports.find((item) => item.id === tx.outPort);
+      if (
+        outPort !== undefined &&
+        frame.size > usableMtu(outPort.mtu, frame.encapsulation)
+      ) {
+        hops.push(
+          makeHop({
+            device: job.device,
+            fn: fn?.id,
+            inPort: job.inPort,
+            outPort: tx.outPort,
+            vlan: frame.vlan,
+            action: 'dropped',
+            step: 'mtu',
+            outcome: 'dropped',
+          }),
+        );
+        continue;
+      }
       if (!far) continue;
       queue.push({
         device: far.device,
         inPort: far.port,
-        frame: tx.frame,
+        frame,
         arrivedFrom: job.device,
       });
     }

@@ -5,6 +5,7 @@ describe('defaults', () => {
   it('is a named built-in profile', () => {
     expect(builtinProfile.id).toBe('ieee-defaults');
     expect(builtinProfile.version).toBe('1');
+    expect(builtinProfile.unmanagedTag).toBe('pass');
   });
 
   it('turns NAT on for a newly placed router', () => {

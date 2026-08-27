@@ -35,6 +35,7 @@ export {
   reasonCodeIsProduct,
 } from './reasons';
 
+export type { EngineProfile, UnmanagedTag } from './defaults';
 export { builtinProfile, defaults, usableMtu } from './defaults';
 
 export type {
@@ -97,6 +98,9 @@ export {
 
 export type { HostResult } from './host';
 export { handleHost, hostWouldHandle, isAddressedHost, resolveKey } from './host';
+
+export type { HandoffArgs, HandoffResult, IspFn } from './isp';
+export { handoffFrame, handoffWouldHandle } from './isp';
 
 export type { SendArgs } from './send';
 export { needsArp, nextHopIp, send, senderVlan, vlanOfIp } from './send';

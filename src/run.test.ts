@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { defaults } from './defaults';
+import { builtinProfile, defaults } from './defaults';
 import type { Chassis, Topology } from './model';
 import {
   createRunContext,
@@ -27,6 +27,7 @@ describe('run context', () => {
   it('computes the converged state before any frame exists', () => {
     const ctx = createRunContext(empty);
     expect(ctx.hopsLeft).toBe(defaults.maxHops);
+    expect(ctx.profile).toBe(builtinProfile);
     expect(ctx.fdb.size).toBe(0);
     expect(ctx.resolvedMacs.size).toBe(0);
     expect(ctx.warnings).toEqual([]);

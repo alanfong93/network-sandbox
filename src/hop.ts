@@ -12,6 +12,7 @@ export function makeHop(args: {
   step: PipelineStep;
   outcome: Outcome;
   facts?: HopFacts;
+  provenance?: Hop['provenance'];
 }): Hop {
   const reason = format({
     kind: 'hop',
@@ -25,7 +26,7 @@ export function makeHop(args: {
     outcome: args.outcome,
     facts: args.facts,
   });
-  return {
+  const hop: Hop = {
     device: args.device,
     fn: args.fn,
     inPort: args.inPort,
@@ -36,4 +37,6 @@ export function makeHop(args: {
     reasonCode: reasonCode(args.step, args.outcome),
     reason,
   };
+  if (args.provenance) hop.provenance = args.provenance;
+  return hop;
 }
