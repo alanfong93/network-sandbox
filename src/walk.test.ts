@@ -183,6 +183,9 @@ describe('topology walk', () => {
     expect(ctx.hopsLeft).toBe(0);
     const leafHops = bridged.filter((hop) => hop.device.startsWith('L'));
     expect(leafHops.length).toBeLessThan(5);
+    expect(result.observations.some((obs) => obs.observation === 'loop')).toBe(
+      false,
+    );
   });
 });
 

@@ -156,13 +156,14 @@ export function walkFrame(ctx: RunContext, args: WalkArgs): WalkResult {
     if (ctx.hopsLeft <= 0) {
       hops.push(makeBudgetHop(job));
       const devices = [...visits.keys()];
+      const count = maxVisits(visits);
       if (
-        devices.length > 0 &&
+        count > 1 &&
         devices.every((id) => !hasStp(chassisOf(ctx, id)))
       ) {
         note(observations, {
           observation: 'loop',
-          facts: { count: maxVisits(visits) },
+          facts: { count },
         });
       }
       break;
