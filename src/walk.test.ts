@@ -372,6 +372,44 @@ describe('catalogue row 6', () => {
       true,
     );
   });
+
+  it('names a loop on the cycling unmanaged pair even if the walk entered from STP', () => {
+    const msw = switchBox(
+      'MSW',
+      [access('1', 1), access('2', 1)],
+      { stp: true, mac: 'aa:00:00:00:00:99' },
+    );
+    const a = switchBox(
+      'USW-A',
+      [access('1', 1), access('2', 1), access('3', 1)],
+      { vlanAware: false },
+    );
+    const b = switchBox(
+      'USW-B',
+      [access('1', 1), access('2', 1)],
+      { vlanAware: false },
+    );
+    const ctx = createRunContext(
+      topo(
+        [msw, a, b, host('H1')],
+        [
+          link('h', { device: 'MSW', port: '1' }, { device: 'H1', port: '1' }),
+          link('m', { device: 'MSW', port: '2' }, { device: 'USW-A', port: '1' }),
+          link('x', { device: 'USW-A', port: '2' }, { device: 'USW-B', port: '1' }),
+          link('y', { device: 'USW-A', port: '3' }, { device: 'USW-B', port: '2' }),
+        ],
+      ),
+    );
+    expect(portState(ctx, 'MSW', '1')).toBe('forwarding');
+    const result = walkFrame(ctx, {
+      device: 'MSW',
+      inPort: '1',
+      frame: frame({ vlan: null, dst: defaults.broadcastMac }),
+    });
+    const loop = result.observations.find((obs) => obs.observation === 'loop');
+    expect(loop?.observation).toBe('loop');
+    expect(loop?.facts.count).toBeGreaterThan(1);
+  });
 });
 
 describe('catalogue row 16', () => {
