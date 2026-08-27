@@ -6,7 +6,9 @@ import {
   type BridgePort,
   type DhcpScope,
   type FramePayload,
+  type Link,
   type PortForward,
+  type Radio,
 } from './model';
 
 describe('model', () => {
@@ -54,5 +56,17 @@ describe('model', () => {
   it('names the DHCP scope resolver field without implying name resolution', () => {
     expectTypeOf<DhcpScope>().toHaveProperty('resolver');
     expectTypeOf<DhcpScope>().not.toHaveProperty('dns');
+  });
+
+  it('does not put RF fields on Radio or Link', () => {
+    expectTypeOf<Radio>().toEqualTypeOf<{ id: string; band: '2.4' | '5' | '6' }>();
+    expectTypeOf<Radio>().not.toHaveProperty('power');
+    expectTypeOf<Radio>().not.toHaveProperty('channel');
+    expectTypeOf<Radio>().not.toHaveProperty('coverage');
+    expectTypeOf<Link>().not.toHaveProperty('power');
+    expectTypeOf<Link>().not.toHaveProperty('channel');
+    expectTypeOf<Link>().not.toHaveProperty('coverage');
+    expectTypeOf<Link>().not.toHaveProperty('rssi');
+    expectTypeOf<Link>().not.toHaveProperty('rate');
   });
 });

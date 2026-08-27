@@ -99,6 +99,9 @@ export {
 export type { HostResult } from './host';
 export { handleHost, hostWouldHandle, isAddressedHost, resolveKey } from './host';
 
+export type { WirelessArgs, WirelessFn, WirelessResult } from './wireless';
+export { classifyWireless, wirelessWouldHandle } from './wireless';
+
 export type { HandoffArgs, HandoffResult, IspFn } from './isp';
 export { handoffFrame, handoffWouldHandle } from './isp';
 

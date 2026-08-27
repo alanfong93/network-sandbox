@@ -31,6 +31,7 @@ export interface BridgeArgs {
   inPort: string;
   frame: Frame;
   arrivedFrom?: DeviceId;
+  fn?: FnId;
 }
 
 function chassisOf(ctx: RunContext, id: DeviceId): Chassis | undefined {
@@ -164,7 +165,9 @@ function egressVlan(
 export function bridgeFrame(ctx: RunContext, args: BridgeArgs): BridgeResult {
   const chassis = chassisOf(ctx, args.device);
   const port = chassis?.ports.find((item) => item.id === args.inPort);
-  const bridge = port && chassis ? bridgingFn(chassis, port.ownedBy) : undefined;
+  const owned = port && chassis ? bridgingFn(chassis, port.ownedBy) : undefined;
+  const bridge =
+    args.fn && chassis ? bridgingFn(chassis, args.fn) : owned;
   const member = bridge ? memberOf(bridge, args.inPort) : undefined;
   if (!chassis || !port || !bridge || !member) {
     throw new Error(

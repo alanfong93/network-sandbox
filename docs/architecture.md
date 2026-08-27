@@ -8,8 +8,9 @@ function, the topology walk that follows links, L3: hosts, ARP, routing
 and the inter-VLAN firewall, the flow driver that traces a request
 and its reply against one run context, NAT (masquerade plus port
 forwards), DHCP as a message exchange (no leases), the ISP handoff
-(PPPoE and a tagged WAN), a fixture profile seam, and the wired
-reference scenario.
+(PPPoE and a tagged WAN), a fixture profile seam, the wired
+reference scenario, and wireless dispatch: classify at `ssid-vlan`,
+then follow `InternalEdge` onto the chassis bridge.
 
 ## Modules
 
@@ -27,11 +28,13 @@ flowchart LR
     U --> NA[nat.ts<br>masquerade and forwards]
     U --> DH[dhcp.ts<br>server and relay]
     U --> ISP[isp.ts<br>PPPoE tagged WAN]
+    U --> WL[wireless.ts<br>ssid-vlan classify]
     U --> N[send.ts<br>originate and ARP]
     U --> L[flow.ts<br>request and reply]
     W --> B
     W --> O
     W --> ISP
+    W --> WL
     O --> NA
     O --> DH
     N --> W
@@ -55,6 +58,7 @@ flowchart LR
     style NA color:#000
     style DH color:#000
     style ISP color:#000
+    style WL color:#000
     style N color:#000
     style L color:#000
 ```
@@ -69,7 +73,7 @@ flowchart LR
 | `src/stp.ts` | Converged 802.1D: root, root port, designated port, else blocking. Single instance. ADR 0011 warning. |
 | `src/run.ts` | One context per run: FDB, resolved MACs, pending L3 sends, NAT sessions, hop budget, STP map, warnings, the active profile. Discarded when the run ends. |
 | `src/bridge.ts` | One pass through one bridging function: STP ingress, acceptable frames, PVID, ingress filtering, learn, lookup, STP egress, membership, tagging. |
-| `src/walk.ts` | Dispatcher: read `Port.ownedBy`, hand the frame to that function's executor. Floods are a tree. `hopsLeft` is one budget across every branch. Hosts with addressing answer ARP and take delivery. An arrival whose `ownedBy` cannot handle the frame is named as a hop on that chassis, not swallowed. Observations are keyed by name and facts, so two VLAN leaks on one walk both surface. `stp-root` is the blocked STP link plus the elected root the walk transited, not BFS hop order. Egress toward an `isp-handoff` in `pppoe` mode adds that layer; a frame larger than `usableMtu` drops at `mtu`. |
+| `src/walk.ts` | Dispatcher: read `Port.ownedBy`, hand the frame to that function's executor. A `wireless` function classifies at `ssid-vlan` and the walk follows `InternalEdge` onto the chassis bridge — still dispatch on the function, never `device.kind`. Floods are a tree. `hopsLeft` is one budget across every branch. Hosts with addressing answer ARP and take delivery. An arrival whose `ownedBy` cannot handle the frame is named as a hop on that chassis, not swallowed. Observations are keyed by name and facts, so two VLAN leaks on one walk both surface. `stp-root` is the blocked STP link plus the elected root the walk transited, not BFS hop order. Egress toward an `isp-handoff` in `pppoe` mode adds that layer; a frame larger than `usableMtu` drops at `mtu`. |
 | `src/ip.ts` | IPv4 parse, subnet membership, longest-prefix match. No library. |
 | `src/route.ts` | One pass through one routing function: tagged sub-interface match, ARP, DHCP, connected then static LPM, inter-VLAN allow/deny, then NAT. |
 | `src/nat.ts` | NAT function on a routing function. Masquerade out the default-route iface; port-forwards match `proto` and `outsidePort`. Sessions live on the run context. |
@@ -78,6 +82,7 @@ flowchart LR
 | `src/send.ts` | Originate from a sender. ARP only when the next-hop MAC is unknown. DHCP DISCOVER is broadcast. |
 | `src/flow.ts` | Request then ICMP reply against one run context. Outcomes name which direction died; they are not pass/fail. |
 | `src/host.ts` | Host chassis (no functions) answering ARP and taking delivery. |
+| `src/wireless.ts` | One pass through a wireless function: SSID to VLAN at `ssid-vlan`, then `InternalEdge` onto the chassis bridge. Not a second forwarder. Radio and link carry no RF fields. |
 
 There is no `switch (device.kind)`. There are no device kinds. A chassis
 carries functions; the walk dispatches on `Port.ownedBy`. A chassis with
