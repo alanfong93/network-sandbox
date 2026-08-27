@@ -12,7 +12,9 @@ NAT masquerade and port-forwards when a `nat` function is present, and
 DHCP when a `dhcp-server` or `dhcp-relay` function is present. `handoffFrame`
 is one hop through an `isp-handoff`. `classifyWireless` is one hop through a
 `wireless` function at `ssid-vlan`; the walk then follows `InternalEdge` onto
-the chassis bridge. A DHCP
+the chassis bridge. After bridging, a `destination-lookup` drop on a chassis
+addressed on that VLAN is existing host `arp`/`delivery`, not a management
+step. A DHCP
 DISCOVER is a broadcast; OFFER, REQUEST and ACK are unicast frames in the
 same run. There is no lease record. Usable MTU is computed from the
 encapsulation stack at egress; an oversized frame drops at `mtu`.

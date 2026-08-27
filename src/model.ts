@@ -36,6 +36,7 @@ export interface Chassis {
   ip?: string;
   prefix?: number;
   gateway?: string;
+  vlan?: VlanId;
 }
 
 export interface Port {
