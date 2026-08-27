@@ -5,7 +5,8 @@ computes spanning tree before any frame exists. `send` originates from a
 host or other sender and ARPs only when that sender lacks its next-hop MAC.
 `runFlow` sends a request, then — if it was delivered — the ICMP reply,
 against that same context. `walkFrame` follows links and dispatches each
-arrival on `Port.ownedBy`. `bridgeFrame` is one hop through one bridging
+arrival on `Port.ownedBy`. An arrival that no executor will handle is still
+a hop on that chassis — the walk does not swallow it. `bridgeFrame` is one hop through one bridging
 function; `routeFrame` is one hop through one routing function, including
 NAT masquerade and port-forwards when a `nat` function is present, and
 DHCP when a `dhcp-server` or `dhcp-relay` function is present. `handoffFrame`
