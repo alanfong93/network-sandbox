@@ -286,6 +286,47 @@ describe('catalogue row 2', () => {
     if (!leak || !row2) return;
     expect(format(observationAsFormatInput(leak))).toBe(row2.expected);
   });
+
+  it('keeps both vlan-leak observations when two mismatches sit on the path', () => {
+    const sw1 = switchBox('SW1', [
+      access('1', 10),
+      trunk('2', [], { pvid: 10, untagged: [10] }),
+    ]);
+    const sw2 = switchBox('SW2', [
+      trunk('1', [], { pvid: 20, untagged: [20] }),
+      trunk('2', [], { pvid: 20, untagged: [20] }),
+    ]);
+    const sw3 = switchBox('SW3', [
+      trunk('1', [], { pvid: 30, untagged: [30] }),
+      access('2', 30),
+    ]);
+    const ctx = createRunContext(
+      topo(
+        [sw1, sw2, sw3],
+        [
+          link('a', { device: 'SW1', port: '2' }, { device: 'SW2', port: '1' }),
+          link('b', { device: 'SW2', port: '2' }, { device: 'SW3', port: '1' }),
+        ],
+      ),
+    );
+    const result = walkFrame(ctx, {
+      device: 'SW1',
+      inPort: '1',
+      frame: frame({ vlan: null, dst: defaults.broadcastMac }),
+    });
+    const leaks = result.observations.filter((obs) => obs.observation === 'vlan-leak');
+    expect(leaks).toHaveLength(2);
+    expect(leaks[0]?.facts).toEqual({
+      fromVlan: 10,
+      toVlan: 20,
+      devices: ['SW1', 'SW2'],
+    });
+    expect(leaks[1]?.facts).toEqual({
+      fromVlan: 20,
+      toVlan: 30,
+      devices: ['SW2', 'SW3'],
+    });
+  });
 });
 
 describe('catalogue row 5', () => {
