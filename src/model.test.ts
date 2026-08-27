@@ -1,6 +1,7 @@
 import { describe, expect, it, expectTypeOf } from 'vitest';
 import {
   carriedVlans,
+  isGroupMac,
   nativeVlanOf,
   type BridgePort,
   type DhcpScope,
@@ -42,6 +43,12 @@ describe('model', () => {
     };
     expect(payload.proto).toBe(forward.proto);
     expect(payload.dstPort).toBe(forward.outsidePort);
+  });
+
+  it('treats broadcast and multicast MACs as group addresses', () => {
+    expect(isGroupMac('ff:ff:ff:ff:ff:ff')).toBe(true);
+    expect(isGroupMac('01:00:5e:00:00:01')).toBe(true);
+    expect(isGroupMac('aa:00:00:00:00:01')).toBe(false);
   });
 
   it('names the DHCP scope resolver field without implying name resolution', () => {

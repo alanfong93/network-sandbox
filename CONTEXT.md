@@ -184,6 +184,15 @@ requires adding a step or an outcome, never a scenario ([ADR 0001](docs/adr/0001
 - **Do not call it:** *error code*, *verdict*, *diagnosis id*, *row id*.
 - Engine tests read the reason code. Humans read `format`'s sentence.
 
+### Sender
+
+A chassis that originates a packet in a run (`send`). A host is one sender; a
+router forwarding out an iface is another. It ARPs for its next hop only when
+it lacks that MAC. Resolution is per-sender and lives only on the run context.
+
+- **Do not call it:** *cache*, *session*, *host* (a host is a chassis with no
+  functions; not every sender is a host).
+
 ### Service
 
 A `Frame.payload.kind`. It carries `proto` and `dstPort` so a port-forward and a

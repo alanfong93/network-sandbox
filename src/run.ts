@@ -2,6 +2,7 @@ import { defaults } from './defaults';
 import type { WarningInput } from './format';
 import type {
   DeviceId,
+  Frame,
   MacAddr,
   StpPortState,
   Topology,
@@ -19,11 +20,19 @@ export interface FdbEntry {
   port: string;
 }
 
+export interface PendingSend {
+  device: DeviceId;
+  outPort: string;
+  nextHopIp: string;
+  frame: Frame;
+}
+
 export interface RunContext {
   readonly topology: Topology;
   hopsLeft: number;
   fdb: Map<VlanId, Map<MacAddr, FdbEntry>>;
   resolvedMacs: Map<string, MacAddr>;
+  pendingSends: PendingSend[];
   stp: StpStateMap;
   warnings: StpWarning[];
 }
@@ -40,6 +49,7 @@ export function createRunContext(topology: Topology): RunContext {
     hopsLeft: defaults.maxHops,
     fdb: new Map(),
     resolvedMacs: new Map(),
+    pendingSends: [],
     stp,
     warnings: detectSingleInstanceWarnings(topology, stp),
   };

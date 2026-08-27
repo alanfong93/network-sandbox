@@ -1,5 +1,6 @@
-import { bridgeFrame, type BridgeResult } from './bridge';
+import { bridgeFrame } from './bridge';
 import { format, type HopFacts, type TraceInput } from './format';
+import { handleHost, hostWouldHandle } from './host';
 import type {
   Chassis,
   DeviceId,
@@ -9,6 +10,7 @@ import type {
   Topology,
 } from './model';
 import { reasonCode } from './reasons';
+import { routingWouldHandle, routeFrame } from './route';
 import { lookup, type RunContext } from './run';
 
 export interface WalkArgs {
@@ -45,7 +47,7 @@ function portFn(chassis: Chassis, portId: string): Fn | undefined {
   return chassis.functions.find((item) => item.id === port.ownedBy);
 }
 
-function peer(
+export function peerOf(
   topology: Topology,
   device: DeviceId,
   port: string,
@@ -81,19 +83,45 @@ function makeBudgetHop(job: Job): Hop {
   };
 }
 
-function execute(ctx: RunContext, job: Job): BridgeResult | undefined {
+function canHandle(ctx: RunContext, job: Job): boolean {
+  const chassis = chassisOf(ctx, job.device);
+  if (!chassis) return false;
+  const fn = portFn(chassis, job.inPort);
+  if (fn?.kind === 'bridging') return true;
+  if (fn?.kind === 'routing') {
+    return routingWouldHandle(fn, job.inPort, job.frame);
+  }
+  return hostWouldHandle(chassis, job.frame);
+}
+
+function execute(
+  ctx: RunContext,
+  job: Job,
+): { hops: Hop[]; transmissions: { outPort: string; frame: Frame }[] } | undefined {
   const chassis = chassisOf(ctx, job.device);
   if (!chassis) return undefined;
   const fn = portFn(chassis, job.inPort);
   if (fn?.kind === 'bridging') {
-    return bridgeFrame(ctx, {
+    const result = bridgeFrame(ctx, {
       device: job.device,
       inPort: job.inPort,
       frame: job.frame,
       arrivedFrom: job.arrivedFrom,
     });
+    return { hops: [result.hop], transmissions: result.transmissions };
   }
-  return undefined;
+  if (fn?.kind === 'routing') {
+    return routeFrame(ctx, {
+      device: job.device,
+      inPort: job.inPort,
+      frame: job.frame,
+    });
+  }
+  return handleHost(ctx, {
+    device: job.device,
+    inPort: job.inPort,
+    frame: job.frame,
+  });
 }
 
 function hasStp(chassis: Chassis | undefined): boolean {
@@ -155,7 +183,7 @@ export function walkFrame(ctx: RunContext, args: WalkArgs): WalkResult {
 
     const chassis = chassisOf(ctx, job.device);
     const fn = chassis ? portFn(chassis, job.inPort) : undefined;
-    if (fn?.kind !== 'bridging') continue;
+    if (!canHandle(ctx, job)) continue;
 
     if (ctx.hopsLeft <= 0) {
       hops.push(makeBudgetHop(job));
@@ -177,13 +205,14 @@ export function walkFrame(ctx: RunContext, args: WalkArgs): WalkResult {
     if (!result) continue;
 
     ctx.hopsLeft -= 1;
-    hops.push(result.hop);
+    hops.push(...result.hops);
     visits.set(job.device, (visits.get(job.device) ?? 0) + 1);
+    const primary = result.hops[0];
 
     if (
       fn?.kind === 'bridging' &&
       !fn.vlanAware &&
-      result.hop.action === 'flooded'
+      primary?.action === 'flooded'
     ) {
       note(observations, {
         observation: 'unmanaged-flood',
@@ -192,33 +221,38 @@ export function walkFrame(ctx: RunContext, args: WalkArgs): WalkResult {
     }
 
     if (
+      fn?.kind === 'bridging' &&
       job.arrivedFrom !== undefined &&
       job.frame.vlan === null &&
-      result.hop.vlan !== null
+      primary !== undefined &&
+      primary.vlan !== null
     ) {
-      const prior = hops.slice(0, -1);
+      const prior = hops.slice(0, -result.hops.length);
       const prev = [...prior]
         .reverse()
         .find((hop) => hop.device === job.arrivedFrom);
       if (
         prev?.vlan !== null &&
         prev?.vlan !== undefined &&
-        prev.vlan !== result.hop.vlan
+        prev.vlan !== primary.vlan
       ) {
         note(observations, {
           observation: 'vlan-leak',
           facts: {
             fromVlan: prev.vlan,
-            toVlan: result.hop.vlan,
+            toVlan: primary.vlan,
             devices: [job.arrivedFrom, job.device],
           },
         });
       }
     }
 
-    if (result.hop.action === 'forwarded' || result.hop.action === 'flooded') {
-      const tableVlan =
-        fn?.kind === 'bridging' && !fn.vlanAware ? 0 : (result.hop.vlan ?? 0);
+    if (
+      fn?.kind === 'bridging' &&
+      primary !== undefined &&
+      (primary.action === 'forwarded' || primary.action === 'flooded')
+    ) {
+      const tableVlan = !fn.vlanAware ? 0 : (primary.vlan ?? 0);
       const entry = lookup(ctx, tableVlan, job.frame.srcMac);
       const key = `${job.device}|${tableVlan}|${job.frame.srcMac}`;
       const previous = learnedAt.get(key);
@@ -236,7 +270,7 @@ export function walkFrame(ctx: RunContext, args: WalkArgs): WalkResult {
     }
 
     for (const tx of result.transmissions) {
-      const far = peer(ctx.topology, job.device, tx.outPort);
+      const far = peerOf(ctx.topology, job.device, tx.outPort);
       if (!far) continue;
       queue.push({
         device: far.device,
