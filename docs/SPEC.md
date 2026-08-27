@@ -1,7 +1,7 @@
 # v1 Spec
 
-Design document. The engine skeleton (types, catalogue, format, defaults) exists;
-the 802.1Q pipeline does not.
+Design document. The engine skeleton, run context, spanning tree, 802.1Q
+bridging pass, and topology walk exist. Hosts, routing, NAT and DHCP do not.
 
 This file describes *what* v1 is, and it gets archived when the phase closes. The
 *why* behind the load-bearing decisions lives in [`adr/`](adr/) and outlives it —

@@ -35,3 +35,6 @@ coverage/
 
 # Claude LOCAL
 .claude/CLAUDE.LOCAL.MD
+
+# local agent state
+.dev-loop-state.json

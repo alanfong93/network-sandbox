@@ -156,6 +156,18 @@ Nothing in it survives to the next run ([ADR 0010](docs/adr/0010-arp-is-modelled
 - Within one run, later frames (the reply) read the tables the request built.
   That is #7, not a cache.
 
+### Walk
+
+The dispatcher that follows links. At the far port it reads `Port.ownedBy`,
+finds that function, and hands the frame to that executor. An unknown or
+broadcast destination goes out every eligible port, so the walk is a **tree**.
+`hopsLeft` is one budget across every branch, not a per-path depth limit.
+
+- **Do not call it:** *simulate*, *flood loop*, *path finder*. A unicast can
+  still be a tree once something floods.
+- There is no `switch (device.kind)`. Adding a palette box selects functions;
+  it does not add a branch here.
+
 ### Pipeline step
 
 A stage of the 802.1Q (or subsequent) pipeline **within a single hop**. One pass

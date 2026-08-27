@@ -29,8 +29,9 @@ export interface RunContext {
 }
 
 /**
- * One run — a later `trace` or `runFlow` — creates one context. Discard it
- * when the run ends. Nothing here is stored on the module.
+ * One run — a later `walkFrame` or `runFlow` — creates one context. Discard it
+ * when the run ends. Nothing here is stored on the module. `hopsLeft` is spent
+ * by the walk across the whole flood tree.
  */
 export function createRunContext(topology: Topology): RunContext {
   const stp = computeStp(topology);
