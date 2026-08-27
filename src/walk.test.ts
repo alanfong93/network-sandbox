@@ -155,8 +155,31 @@ describe('topology walk', () => {
       inPort: '1',
       frame: frame({ vlan: null }),
     });
-    expect(result.hops).toEqual([]);
+    expect(result.hops[0]?.device).toBe('H1');
+    expect(result.hops[0]?.fn).toBeUndefined();
+    expect(result.hops[0]?.step).toBe('delivery');
+    expect(result.hops[0]?.action).toBe('dropped');
     expect(ctx.hopsLeft).toBe(defaults.maxHops);
+  });
+
+  it('names the arrival on a host-linked port instead of swallowing the frame', () => {
+    const sw = switchBox('SW1', [access('1', 10), access('2', 10)]);
+    const ctx = createRunContext(
+      topo(
+        [sw, host('H1')],
+        [link('h', { device: 'SW1', port: '2' }, { device: 'H1', port: '1' })],
+      ),
+    );
+    const result = walkFrame(ctx, {
+      device: 'SW1',
+      inPort: '1',
+      frame: frame({ vlan: null, dst: defaults.broadcastMac }),
+    });
+    expect(result.hops[0]?.device).toBe('SW1');
+    const arrived = result.hops.find((hop) => hop.device === 'H1');
+    expect(arrived?.device).toBe('H1');
+    expect(arrived?.step).toBe('delivery');
+    expect(arrived?.fn).toBeUndefined();
   });
 
   it('spends the hop budget across every flood branch, not per path', () => {

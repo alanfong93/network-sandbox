@@ -196,7 +196,22 @@ export function walkFrame(ctx: RunContext, args: WalkArgs): WalkResult {
 
     const chassis = chassisOf(ctx, job.device);
     const fn = chassis ? portFn(chassis, job.inPort) : undefined;
-    if (!canHandle(ctx, job)) continue;
+    if (!canHandle(ctx, job)) {
+      if (chassis) {
+        hops.push(
+          makeHop({
+            device: job.device,
+            fn: fn?.id,
+            inPort: job.inPort,
+            vlan: job.frame.vlan,
+            action: 'dropped',
+            step: 'delivery',
+            outcome: 'dropped',
+          }),
+        );
+      }
+      continue;
+    }
 
     if (ctx.hopsLeft <= 0) {
       hops.push(makeBudgetHop(job));
