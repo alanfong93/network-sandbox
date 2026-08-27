@@ -66,3 +66,6 @@ export {
 
 export type { BridgeArgs, BridgeResult, Transmission } from './bridge';
 export { bridgeFrame } from './bridge';
+
+export type { WalkArgs, WalkObservation, WalkResult } from './walk';
+export { observationAsFormatInput, walkFrame } from './walk';

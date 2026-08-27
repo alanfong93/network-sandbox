@@ -1,8 +1,9 @@
 # System flow
 
 The product workflow from [`PRODUCT.md`](PRODUCT.md). `createRunContext`
-computes spanning tree before any frame exists. `bridgeFrame` is one hop
-through one bridging function. The walk that follows links is #5.
+computes spanning tree before any frame exists. `walkFrame` follows links
+and dispatches each arrival on `Port.ownedBy`. `bridgeFrame` is one hop
+through one bridging function.
 
 ```mermaid
 flowchart TD
@@ -10,16 +11,23 @@ flowchart TD
     C --> D[Converged STP state]
     D --> W{Parallel trunks<br>two or more VLANs?}
     W -->|yes| X[ADR 0011 warning<br>not a Hop]
-    W -->|no| E[bridgeFrame: ingress / forward / egress]
-    X --> E
-    E --> F[One Hop per bridging pass]
-    F --> G[format turns hops and warnings into sentences]
+    W -->|no| Q[walkFrame queue]
+    X --> Q
+    Q --> B{hopsLeft?}
+    B -->|0| Z[hop-budget hop]
+    B -->|yes| E[executor for ownedBy]
+    E --> F[One Hop per pass]
+    F --> T[Enqueue every transmission]
+    T --> B
+    Z --> G[format turns hops and traces into sentences]
+    F --> G
     G --> H[Caller reads the trace]
     I[Wording test] --> G
     I --> J[catalogue.ts row]
     style C fill:#d7f5d7,color:#000
     style D fill:#d7f5d7,color:#000
     style E fill:#d7f5d7,color:#000
+    style Q fill:#d7f5d7,color:#000
     style G fill:#d7f5d7,color:#000
     style H fill:#d7f5d7,color:#000
 ```
