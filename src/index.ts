@@ -80,3 +80,6 @@ export { handleHost, hostWouldHandle, isAddressedHost, resolveKey } from './host
 
 export type { SendArgs } from './send';
 export { needsArp, nextHopIp, send, senderVlan, vlanOfIp } from './send';
+
+export type { FlowArgs, FlowObservation, FlowResult } from './flow';
+export { flowObservationAsFormatInput, runFlow } from './flow';

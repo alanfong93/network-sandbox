@@ -1,8 +1,8 @@
 # v1 Spec
 
 Design document. The engine skeleton, run context, spanning tree, 802.1Q
-bridging pass, topology walk, hosts, ARP, routing and the inter-VLAN firewall
-exist. NAT and DHCP do not.
+bridging pass, topology walk, hosts, ARP, routing, the inter-VLAN firewall
+and the request/reply flow driver exist. NAT and DHCP do not.
 
 This file describes *what* v1 is, and it gets archived when the phase closes. The
 *why* behind the load-bearing decisions lives in [`adr/`](adr/) and outlives it —
