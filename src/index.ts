@@ -85,6 +85,16 @@ export {
   wanIface,
 } from './nat';
 
+export type { DhcpDecision, DhcpRelayFn, DhcpServerFn } from './dhcp';
+export {
+  decideDhcp,
+  dhcpObservations,
+  findDhcpRelay,
+  findDhcpServer,
+  matchScope,
+  otherDhcpServer,
+} from './dhcp';
+
 export type { HostResult } from './host';
 export { handleHost, hostWouldHandle, isAddressedHost, resolveKey } from './host';
 

@@ -2,7 +2,8 @@
 
 Design document. The engine skeleton, run context, spanning tree, 802.1Q
 bridging pass, topology walk, hosts, ARP, routing, the inter-VLAN firewall,
-the request/reply flow driver and NAT exist. DHCP does not.
+the request/reply flow driver, NAT, and DHCP (server and relay as a
+message exchange) exist.
 
 This file describes *what* v1 is, and it gets archived when the phase closes. The
 *why* behind the load-bearing decisions lives in [`adr/`](adr/) and outlives it —

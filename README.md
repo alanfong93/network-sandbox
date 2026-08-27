@@ -10,7 +10,7 @@ Everything runs in the browser. No server, no account, no install.
 >
 > It does *not* promise that anything working here will work identically on your specific switch. Vendors differ in syntax, defaults and edge-case behaviour, and those differences are where a lot of real outages live. This sandbox is faithful to **IEEE 802.1Q / 802.1D** — the standard every vendor implements — not to any one vendor's box.
 
-**Status: Stage 1 in progress.** The engine is a dependency-free TypeScript library — types, the failure catalogue, `format`, defaults, converged STP, one 802.1Q bridging pass, a topology walk that floods as a tree under a global hop budget, hosts, ARP, routing, the inter-VLAN firewall, a flow driver that traces a request and its reply against one run context, and NAT (masquerade plus port forwards). Who it is for is in [`docs/PRODUCT.md`](docs/PRODUCT.md); the spec is [`docs/SPEC.md`](docs/SPEC.md); decisions in [`docs/adr/`](docs/adr/); vocabulary in [`CONTEXT.md`](CONTEXT.md).
+**Status: Stage 1 in progress.** The engine is a dependency-free TypeScript library — types, the failure catalogue, `format`, defaults, converged STP, one 802.1Q bridging pass, a topology walk that floods as a tree under a global hop budget, hosts, ARP, routing, the inter-VLAN firewall, a flow driver that traces a request and its reply against one run context, NAT (masquerade plus port forwards), and DHCP (DISCOVER/OFFER/REQUEST/ACK, no leases). Who it is for is in [`docs/PRODUCT.md`](docs/PRODUCT.md); the spec is [`docs/SPEC.md`](docs/SPEC.md); decisions in [`docs/adr/`](docs/adr/); vocabulary in [`CONTEXT.md`](CONTEXT.md).
 
 ```bash
 npm install

@@ -32,6 +32,15 @@ describe('invariants', () => {
     }
   });
 
+  it('does not keep a lease record, lease time or expiry', () => {
+    for (const file of walk(srcDir)) {
+      const src = readFileSync(file, 'utf8');
+      expect(src, file).not.toMatch(/\bleaseTime\b/);
+      expect(src, file).not.toMatch(/\bexpiry\b/i);
+      expect(src, file).not.toMatch(/\bleases\b/);
+    }
+  });
+
   it('has no runtime dependencies', () => {
     const pkg = JSON.parse(
       readFileSync(join(srcDir, '..', 'package.json'), 'utf8'),
