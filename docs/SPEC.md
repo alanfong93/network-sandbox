@@ -4,7 +4,9 @@ Design document. The engine skeleton, run context, spanning tree, 802.1Q
 bridging pass, topology walk, hosts, ARP, routing, the inter-VLAN firewall,
 the request/reply flow driver, NAT, DHCP (server and relay as a
 message exchange), the ISP handoff (PPPoE and a tagged WAN), a fixture
-profile seam, and the wired subset of the reference scenario exist.
+profile seam, the wired subset of the reference scenario, wireless
+dispatch at `ssid-vlan`, a tagged AP uplink, and AP management as
+ordinary host addressing exist.
 
 This file describes *what* v1 is, and it gets archived when the phase closes. The
 *why* behind the load-bearing decisions lives in [`adr/`](adr/) and outlives it —
@@ -72,7 +74,9 @@ interface Chassis {
   functions: Fn[];
   internal: InternalEdge[];      // generated from the preset; inspectable, not user-rewirable
   mac?: MacAddr; ip?: string; prefix?: number; gateway?: string;
-                                 // host addressing — not a function (ADR 0013)
+  vlan?: VlanId;                 // host addressing — not a function (ADR 0013).
+                                 // `vlan` is the VLAN that addressing answers on
+                                 // (management on a trunked AP). No new pipeline step.
 }
 
 interface Port {

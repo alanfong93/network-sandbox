@@ -9,8 +9,10 @@ and the inter-VLAN firewall, the flow driver that traces a request
 and its reply against one run context, NAT (masquerade plus port
 forwards), DHCP as a message exchange (no leases), the ISP handoff
 (PPPoE and a tagged WAN), a fixture profile seam, the wired
-reference scenario, and wireless dispatch: classify at `ssid-vlan`,
-then follow `InternalEdge` onto the chassis bridge.
+reference scenario, wireless dispatch: classify at `ssid-vlan`,
+then follow `InternalEdge` onto the chassis bridge, a tagged AP
+uplink, and AP management as existing host delivery on the chassis
+VLAN.
 
 ## Modules
 
@@ -65,7 +67,7 @@ flowchart LR
 
 | Module | Holds |
 |---|---|
-| `src/model.ts` | Topology, chassis, functions, frames, hops, flows. `nativeVlanOf` derives native VLAN from `untaggedVlans` — the field is not stored. |
+| `src/model.ts` | Topology, chassis, functions, frames, hops, flows. `nativeVlanOf` derives native VLAN from `untaggedVlans` — the field is not stored. Chassis `vlan` is the VLAN host addressing answers on. |
 | `src/reasons.ts` | `PIPELINE_STEPS`, `OUTCOMES`, `ReasonCode` as their product. |
 | `src/defaults.ts` | Every tunable the engine will read, including encapsulation overheads. Named `ieee-defaults` v1 (ADR 0012). `unmanagedTag: 'pass'` is the built-in capability; a fixture profile may select `'strip'`. Usable MTU is computed, never stored. |
 | `src/format.ts` | Turns a structured hop, trace, flow or warning into a sentence. |
@@ -73,7 +75,7 @@ flowchart LR
 | `src/stp.ts` | Converged 802.1D: root, root port, designated port, else blocking. Single instance. ADR 0011 warning. |
 | `src/run.ts` | One context per run: FDB, resolved MACs, pending L3 sends, NAT sessions, hop budget, STP map, warnings, the active profile. Discarded when the run ends. |
 | `src/bridge.ts` | One pass through one bridging function: STP ingress, acceptable frames, PVID, ingress filtering, learn, lookup, STP egress, membership, tagging. |
-| `src/walk.ts` | Dispatcher: read `Port.ownedBy`, hand the frame to that function's executor. A `wireless` function classifies at `ssid-vlan` and the walk follows `InternalEdge` onto the chassis bridge — still dispatch on the function, never `device.kind`. Floods are a tree. `hopsLeft` is one budget across every branch. Hosts with addressing answer ARP and take delivery. An arrival whose `ownedBy` cannot handle the frame is named as a hop on that chassis, not swallowed. Observations are keyed by name and facts, so two VLAN leaks on one walk both surface. `stp-root` is the blocked STP link plus the elected root the walk transited, not BFS hop order. Egress toward an `isp-handoff` in `pppoe` mode adds that layer; a frame larger than `usableMtu` drops at `mtu`. |
+| `src/walk.ts` | Dispatcher: read `Port.ownedBy`, hand the frame to that function's executor. A `wireless` function classifies at `ssid-vlan` and the walk follows `InternalEdge` onto the chassis bridge — still dispatch on the function, never `device.kind`. Floods are a tree. `hopsLeft` is one budget across every branch. Hosts with addressing answer ARP and take delivery. After a bridging `destination-lookup` drop, a chassis whose host addressing is on that VLAN still takes `arp`/`delivery` — not a management step. An arrival whose `ownedBy` cannot handle the frame is named as a hop on that chassis, not swallowed. Observations are keyed by name and facts, so two VLAN leaks on one walk both surface. `stp-root` is the blocked STP link plus the elected root the walk transited, not BFS hop order. Egress toward an `isp-handoff` in `pppoe` mode adds that layer; a frame larger than `usableMtu` drops at `mtu`. |
 | `src/ip.ts` | IPv4 parse, subnet membership, longest-prefix match. No library. |
 | `src/route.ts` | One pass through one routing function: tagged sub-interface match, ARP, DHCP, connected then static LPM, inter-VLAN allow/deny, then NAT. |
 | `src/nat.ts` | NAT function on a routing function. Masquerade out the default-route iface; port-forwards match `proto` and `outsidePort`. Sessions live on the run context. |
@@ -151,4 +153,5 @@ is not in the catalogue. `vlanAware: false` makes membership tests vacuous
 and leaves the on-wire tag untouched unless the active profile selects
 `unmanagedTag: 'strip'` — then the hop carries `provenance`. The wired
 reference scenario (SPEC.md §9 minus AP and mesh) is `src/wan.test.ts`. Row 5
-reproduces there as well as in `walk.test.ts`.
+reproduces there as well as in `walk.test.ts`. Tagged AP uplink and
+management VLAN (issue #30, no catalogue row) are `src/ap.test.ts`.

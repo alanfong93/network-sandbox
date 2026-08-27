@@ -247,6 +247,16 @@ never stored.
 - **Do not call it:** *modem* or *ONT* as a device kind. The ONT is a chassis
   carrying this function.
 
+### Management VLAN
+
+The VLAN chassis host addressing answers on (`Chassis.vlan`). The uplink
+trunk carries it like any other VLAN. Missing it from the trunk dies at
+`ingress-filtering` or `egress-membership`. Reaching the address is
+`arp`/`delivery`. There is no management pipeline step.
+
+- **Do not call it:** *management plane*, *CPU port*, *mgmt hop*. Those
+  names imply a special execution path.
+
 ### Service
 
 A `Frame.payload.kind`. It carries `proto` and `dstPort` so a port-forward and a

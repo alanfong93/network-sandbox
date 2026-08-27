@@ -12,6 +12,7 @@ import type {
   Frame,
   Hop,
   Topology,
+  VlanId,
 } from './model';
 import { reasonCode } from './reasons';
 import { routingWouldHandle, routeFrame } from './route';
@@ -95,6 +96,15 @@ function makeBudgetHop(job: Job): Hop {
   };
 }
 
+function chassisTakesLocal(
+  chassis: Chassis,
+  frame: Frame,
+  vlan: VlanId | null,
+): boolean {
+  if (chassis.vlan !== undefined && chassis.vlan !== vlan) return false;
+  return hostWouldHandle(chassis, frame);
+}
+
 function canHandle(ctx: RunContext, job: Job): boolean {
   const chassis = chassisOf(ctx, job.device);
   if (!chassis) return false;
@@ -129,6 +139,21 @@ function execute(
       arrivedFrom: job.arrivedFrom,
       fn: fn.id,
     });
+    const vlan = result.hop.vlan;
+    if (
+      result.hop.action === 'dropped' &&
+      result.hop.step !== 'destination-lookup'
+    ) {
+      return { hops: [result.hop], transmissions: result.transmissions };
+    }
+    if (chassisTakesLocal(chassis, job.frame, vlan)) {
+      const local = handleHost(ctx, {
+        device: job.device,
+        inPort: job.inPort,
+        frame: { ...job.frame, vlan },
+      });
+      if (local) return local;
+    }
     return { hops: [result.hop], transmissions: result.transmissions };
   }
   if (fn?.kind === 'wireless') {
