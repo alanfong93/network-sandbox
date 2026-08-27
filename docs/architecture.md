@@ -82,9 +82,11 @@ flowchart LR
 There is no `switch (device.kind)`. There are no device kinds. A chassis
 carries functions; the walk dispatches on `Port.ownedBy`. A chassis with
 no `stp` function never appears in the STP map, so `portState` returns
-`forwarding` — the absence of a function, not a special case. A loop
+  `forwarding` — the absence of a function, not a special case. A loop
 through two such chassis exhausts the hop budget because nothing blocked
-the redundant link.
+the redundant link. The `loop` observation is gated on chassis that took
+the most revisits in that storm, not every chassis the walk touched — an
+STP box on the way in does not hide an unmanaged cycle.
 
 ## Run
 

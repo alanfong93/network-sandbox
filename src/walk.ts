@@ -200,11 +200,13 @@ export function walkFrame(ctx: RunContext, args: WalkArgs): WalkResult {
 
     if (ctx.hopsLeft <= 0) {
       hops.push(makeBudgetHop(job));
-      const devices = [...visits.keys()];
       const count = maxVisits(visits);
+      const cycling = [...visits.entries()]
+        .filter(([, n]) => n === count)
+        .map(([id]) => id);
       if (
         count > 1 &&
-        devices.every((id) => !hasStp(chassisOf(ctx, id)))
+        cycling.every((id) => !hasStp(chassisOf(ctx, id)))
       ) {
         note(observations, {
           observation: 'loop',
