@@ -6,13 +6,17 @@ import type { BridgePort, Chassis, Frame, Link, Topology, VlanId } from './model
 import { createRunContext } from './run';
 import { observationAsFormatInput, walkFrame } from './walk';
 
-function trunk(port: string, tagged: VlanId[]): BridgePort {
+function trunk(
+  port: string,
+  tagged: VlanId[],
+  opts?: { untagged?: VlanId[] },
+): BridgePort {
   return {
     port,
     mode: 'trunk',
     pvid: 1,
     taggedVlans: new Set(tagged),
-    untaggedVlans: new Set(),
+    untaggedVlans: new Set(opts?.untagged ?? []),
     acceptableFrameTypes: 'all',
     ingressFiltering: true,
   };
@@ -66,10 +70,10 @@ function host(id: string): Chassis {
 
 function meshNode(
   id: string,
-  opts: { canTag: boolean; preset?: string },
+  opts: { canTag: boolean; preset?: string; uplink?: BridgePort },
 ): Chassis {
   const wifi = access('wifi', 30);
-  const uplink = trunk('1', [10, 20, 30]);
+  const uplink = opts.uplink ?? trunk('1', [10, 20, 30]);
   return {
     id,
     label: id,
@@ -233,6 +237,48 @@ describe('tagged-capable contrast', () => {
     expect(classify?.vlan).toBe(30);
     const landed = result.hops.find((hop) => hop.device === 'SW1');
     expect(landed?.vlan).toBe(30);
+    expect(
+      result.observations.some((obs) => obs.observation === 'ssid-untagged'),
+    ).toBe(false);
+  });
+});
+
+describe('tagged-capable native VLAN', () => {
+  it('stays a vlan-leak and does not steal ssid-untagged', () => {
+    const topology = topo(
+      [
+        host('C1'),
+        meshNode('AP1', {
+          canTag: true,
+          uplink: trunk('1', [10, 20], { untagged: [30] }),
+        }),
+        switchBox('SW1', [access('1', 10), access('2', 10)]),
+        host('H10'),
+      ],
+      [
+        link(
+          'w',
+          { device: 'C1', port: '1' },
+          { device: 'AP1', port: 'wifi' },
+          'wireless',
+        ),
+        link('u', { device: 'AP1', port: '1' }, { device: 'SW1', port: '1' }),
+        link('h', { device: 'SW1', port: '2' }, { device: 'H10', port: '1' }),
+      ],
+    );
+    const ctx = createRunContext(topology);
+    const result = walkFrame(ctx, {
+      device: 'AP1',
+      inPort: 'wifi',
+      frame: frame(),
+      arrivedFrom: 'C1',
+    });
+    const leak = result.observations.find(
+      (obs) => obs.observation === 'vlan-leak',
+    );
+    expect(leak?.facts.fromVlan).toBe(30);
+    expect(leak?.facts.toVlan).toBe(10);
+    expect(leak?.facts.devices).toEqual(['AP1', 'SW1']);
     expect(
       result.observations.some((obs) => obs.observation === 'ssid-untagged'),
     ).toBe(false);

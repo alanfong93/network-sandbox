@@ -340,7 +340,15 @@ export function walkFrame(ctx: RunContext, args: WalkArgs): WalkResult {
             (hop) =>
               hop.device === job.arrivedFrom && hop.step === 'ssid-vlan',
           );
-        if (mapped?.vlan !== null && mapped?.vlan !== undefined) {
+        const fromBridge = chassisOf(ctx, job.arrivedFrom)?.functions.find(
+          (item) => item.kind === 'bridging',
+        );
+        if (
+          fromBridge?.kind === 'bridging' &&
+          fromBridge.canTag === false &&
+          mapped?.vlan !== null &&
+          mapped?.vlan !== undefined
+        ) {
           note(observations, {
             observation: 'ssid-untagged',
             facts: {
