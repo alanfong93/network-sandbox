@@ -334,14 +334,30 @@ export function walkFrame(ctx: RunContext, args: WalkArgs): WalkResult {
         prev?.vlan !== undefined &&
         prev.vlan !== primary.vlan
       ) {
-        note(observations, {
-          observation: 'vlan-leak',
-          facts: {
-            fromVlan: prev.vlan,
-            toVlan: primary.vlan,
-            devices: [job.arrivedFrom, job.device],
-          },
-        });
+        const mapped = [...prior]
+          .reverse()
+          .find(
+            (hop) =>
+              hop.device === job.arrivedFrom && hop.step === 'ssid-vlan',
+          );
+        if (mapped?.vlan !== null && mapped?.vlan !== undefined) {
+          note(observations, {
+            observation: 'ssid-untagged',
+            facts: {
+              mappedVlan: mapped.vlan,
+              landedVlan: primary.vlan,
+            },
+          });
+        } else {
+          note(observations, {
+            observation: 'vlan-leak',
+            facts: {
+              fromVlan: prev.vlan,
+              toVlan: primary.vlan,
+              devices: [job.arrivedFrom, job.device],
+            },
+          });
+        }
       }
     }
 

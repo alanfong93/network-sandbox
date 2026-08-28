@@ -11,8 +11,9 @@ forwards), DHCP as a message exchange (no leases), the ISP handoff
 (PPPoE and a tagged WAN), a fixture profile seam, the wired
 reference scenario, wireless dispatch: classify at `ssid-vlan`,
 then follow `InternalEdge` onto the chassis bridge, a tagged AP
-uplink, and AP management as existing host delivery on the chassis
-VLAN.
+uplink, AP management as existing host delivery on the chassis
+VLAN, and untagged-only as `canTag: false` on bridging (catalogue
+row 20).
 
 ## Modules
 
@@ -74,8 +75,8 @@ flowchart LR
 | `src/catalogue.ts` | The 23-row table. Row 20 is Stage 2. |
 | `src/stp.ts` | Converged 802.1D: root, root port, designated port, else blocking. Single instance. ADR 0011 warning. |
 | `src/run.ts` | One context per run: FDB, resolved MACs, pending L3 sends, NAT sessions, hop budget, STP map, warnings, the active profile. Discarded when the run ends. |
-| `src/bridge.ts` | One pass through one bridging function: STP ingress, acceptable frames, PVID, ingress filtering, learn, lookup, STP egress, membership, tagging. |
-| `src/walk.ts` | Dispatcher: read `Port.ownedBy`, hand the frame to that function's executor. A `wireless` function classifies at `ssid-vlan` and the walk follows `InternalEdge` onto the chassis bridge — still dispatch on the function, never `device.kind`. Floods are a tree. `hopsLeft` is one budget across every branch. Hosts with addressing answer ARP and take delivery. After a bridging `destination-lookup` drop, a chassis whose host addressing is on that VLAN still takes `arp`/`delivery` — not a management step. An arrival whose `ownedBy` cannot handle the frame is named as a hop on that chassis, not swallowed. Observations are keyed by name and facts, so two VLAN leaks on one walk both surface. `stp-root` is the blocked STP link plus the elected root the walk transited, not BFS hop order. Egress toward an `isp-handoff` in `pppoe` mode adds that layer; a frame larger than `usableMtu` drops at `mtu`. |
+| `src/bridge.ts` | One pass through one bridging function: STP ingress, acceptable frames, PVID, ingress filtering, learn, lookup, STP egress, membership, tagging. `canTag: false` keeps the classified VLAN and emits untagged. |
+| `src/walk.ts` | Dispatcher: read `Port.ownedBy`, hand the frame to that function's executor. A `wireless` function classifies at `ssid-vlan` and the walk follows `InternalEdge` onto the chassis bridge — still dispatch on the function, never `device.kind`. Floods are a tree. `hopsLeft` is one budget across every branch. Hosts with addressing answer ARP and take delivery. After a bridging `destination-lookup` drop, a chassis whose host addressing is on that VLAN still takes `arp`/`delivery` — not a management step. An arrival whose `ownedBy` cannot handle the frame is named as a hop on that chassis, not swallowed. Observations are keyed by name and facts, so two VLAN leaks on one walk both surface. When the previous device classified at `ssid-vlan` and the far end's PVID differs, the observation is `ssid-untagged` (mapped vs landed VLAN), not `vlan-leak`. `stp-root` is the blocked STP link plus the elected root the walk transited, not BFS hop order. Egress toward an `isp-handoff` in `pppoe` mode adds that layer; a frame larger than `usableMtu` drops at `mtu`. |
 | `src/ip.ts` | IPv4 parse, subnet membership, longest-prefix match. No library. |
 | `src/route.ts` | One pass through one routing function: tagged sub-interface match, ARP, DHCP, connected then static LPM, inter-VLAN allow/deny, then NAT. |
 | `src/nat.ts` | NAT function on a routing function. Masquerade out the default-route iface; port-forwards match `proto` and `outsidePort`. Sessions live on the run context. |
@@ -141,7 +142,8 @@ Per [ADR 0017](adr/0017-structure-in-engine-tests-wording-against-the-table.md):
 structural assertions name device, function, pipeline step, reason code, VLAN,
 port and action, and contain no prose. Wording assertions compare `format(...)`
 to `row.expected` on the catalogue table. Rows 2, 5, 6, 16 and 17 are traces
-assembled from a walk. Row 7 is a trace assembled from `send`. Rows 9, 13 and 15
+assembled from a walk. Row 20 is a trace assembled from a walk
+(`src/mesh.test.ts`). Row 7 is a trace assembled from `send`. Rows 9, 13 and 15
 are flows assembled from `runFlow`. Rows 10 and 12 are traces from `send`.
 Rows 3, 8, 11 and 14 are traces from a DHCP DISCOVER `send`. Row 23 is a
 firewall hop after a query to the advertised resolver. Rows 21 and 22 are hops.
@@ -151,7 +153,10 @@ PVID is ingress only. Egress tagged/untagged is `untaggedVlans`. A VLAN ID of
 0 is priority-tagged and is classified to the PVID, matching 802.1Q; that case
 is not in the catalogue. `vlanAware: false` makes membership tests vacuous
 and leaves the on-wire tag untouched unless the active profile selects
-`unmanagedTag: 'strip'` — then the hop carries `provenance`. The wired
+`unmanagedTag: 'strip'` — then the hop carries `provenance`.
+`canTag: false` is a separate capability: membership still uses VLANs,
+egress is always untagged. A preset writes that field; the engine does
+not branch on a vendor name. The wired
 reference scenario (SPEC.md §9 minus AP and mesh) is `src/wan.test.ts`. Row 5
 reproduces there as well as in `walk.test.ts`. Tagged AP uplink and
 management VLAN (issue #30, no catalogue row) are `src/ap.test.ts`.

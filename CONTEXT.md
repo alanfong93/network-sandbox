@@ -120,6 +120,19 @@ two.
 - **Do not call it:** *device type*, *device class*. There are no device types — there
   is a chassis, and there are functions.
 
+### Untagged-only
+
+A **capability** on a bridging function (`canTag: false`). The engine still
+classifies the SSID's mapped VLAN; it cannot emit an 802.1Q tag. The far end's
+PVID is where clients land. Catalogue row 20.
+[ADR 0019](docs/adr/0019-untagged-only-is-a-capability.md).
+
+- Analogous to `vlanAware: false`: preset data selects the field; the engine is
+  the only executor ([ADR 0012](docs/adr/0012-profiles-are-data-the-engine-is-the-only-executor.md)).
+- **Not an access uplink.** An access port that is not a member of the mapped
+  VLAN drops the frame, so `mappedVlan` never stays in the pipeline.
+- **Do not call it:** *access mode*, *native VLAN*, a vendor name.
+
 ### Radio
 
 A shared transmitter on a chassis. It exists **so that several `wireless` functions can
