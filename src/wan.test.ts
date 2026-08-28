@@ -22,11 +22,15 @@ import { createRunContext } from './run';
 import { send } from './send';
 import { observationAsFormatInput, walkFrame } from './walk';
 
-function trunk(port: string, tagged: VlanId[]): BridgePort {
+function trunk(
+  port: string,
+  tagged: VlanId[],
+  opts?: { pvid?: VlanId },
+): BridgePort {
   return {
     port,
     mode: 'trunk',
-    pvid: defaults.pvid,
+    pvid: opts?.pvid ?? defaults.pvid,
     taggedVlans: new Set(tagged),
     untaggedVlans: new Set(),
     acceptableFrameTypes: 'all',
@@ -165,17 +169,102 @@ function link(
   id: string,
   a: { device: string; port: string },
   b: { device: string; port: string },
+  medium: Link['medium'] = 'wired',
 ): Link {
-  return { id, a, b, medium: 'wired' };
+  return { id, a, b, medium };
+}
+
+function accessPoint(id: string): Chassis {
+  const ssids = [
+    { fn: 'wlan10', port: 'wifi10', ssid: 'main', vlan: 10 as VlanId },
+    { fn: 'wlan20', port: 'wifi20', ssid: 'iot', vlan: 20 as VlanId },
+    { fn: 'wlan30', port: 'wifi30', ssid: 'guest', vlan: 30 as VlanId },
+  ];
+  return {
+    id,
+    label: id,
+    ports: [
+      ...ssids.map((item) => ({
+        id: item.port,
+        mtu: defaults.portMtu,
+        ownedBy: item.fn,
+      })),
+      { id: '1', mtu: defaults.portMtu, ownedBy: 'br' },
+    ],
+    radios: [{ id: 'radio0', band: '5' }],
+    functions: [
+      ...ssids.map((item) => ({
+        kind: 'wireless' as const,
+        id: item.fn,
+        radio: 'radio0',
+        mode: 'ap' as const,
+        ssid: item.ssid,
+        vlan: item.vlan,
+      })),
+      {
+        kind: 'bridging',
+        id: 'br',
+        vlanAware: true,
+        members: [
+          ...ssids.map((item) => access(item.port, item.vlan)),
+          trunk('1', [10, 20, 30]),
+        ],
+        fdb: new Map(),
+      },
+    ],
+    internal: ssids.map((item) => ({ from: item.fn, to: 'br' })),
+  };
+}
+
+function meshNode(id: string, ssidVlan: VlanId): Chassis {
+  const wifi = access('wifi', ssidVlan);
+  return {
+    id,
+    label: id,
+    preset: 'consumer-mesh',
+    ports: [
+      { id: 'wifi', mtu: defaults.portMtu, ownedBy: 'wlan' },
+      { id: '1', mtu: defaults.portMtu, ownedBy: 'br' },
+      { id: 'bh', mtu: defaults.portMtu, ownedBy: 'br' },
+    ],
+    radios: [{ id: 'radio0', band: '5' }],
+    functions: [
+      {
+        kind: 'wireless',
+        id: 'wlan',
+        radio: 'radio0',
+        mode: 'mesh',
+        ssid: 'mesh',
+        vlan: ssidVlan,
+      },
+      {
+        kind: 'bridging',
+        id: 'br',
+        vlanAware: true,
+        canTag: false,
+        members: [
+          wifi,
+          trunk('1', [10, 20, 30], { pvid: 10 }),
+          access('bh', 10),
+        ],
+        fdb: new Map(),
+      },
+    ],
+    internal: [{ from: 'wlan', to: 'br' }],
+  };
 }
 
 function topo(devices: Chassis[], links: Link[]): Topology {
   return { devices, links, profiles: [] };
 }
 
-/** SPEC.md §9 wired subset. AP and mesh are Stage 2. */
-function referenceScenario(opts?: { wanVlan?: VlanId | null }): Topology {
+/** SPEC.md §9 reference scenario, including AP and mesh. */
+function referenceScenario(opts?: {
+  wanVlan?: VlanId | null;
+  meshSsidVlan?: VlanId;
+}): Topology {
   const wanVlan = opts?.wanVlan === undefined ? 500 : opts.wanVlan;
+  const meshSsidVlan = opts?.meshSsidVlan ?? 10;
   const wanIface: RouterIface = {
     id: 'wan',
     vlan: wanVlan === null ? undefined : wanVlan,
@@ -188,6 +277,24 @@ function referenceScenario(opts?: { wanVlan?: VlanId | null }): Topology {
       hostBox('H10', {
         mac: 'aa:00:00:00:00:10',
         ip: '192.168.10.10',
+        prefix: 24,
+        gateway: '192.168.10.1',
+      }),
+      hostBox('H30', {
+        mac: 'aa:00:00:00:00:30',
+        ip: '192.168.30.20',
+        prefix: 24,
+        gateway: '192.168.30.1',
+      }),
+      hostBox('C30', {
+        mac: 'aa:00:00:00:00:31',
+        ip: '192.168.30.10',
+        prefix: 24,
+        gateway: '192.168.30.1',
+      }),
+      hostBox('CMESH', {
+        mac: 'aa:00:00:00:00:12',
+        ip: '192.168.10.20',
         prefix: 24,
         gateway: '192.168.10.1',
       }),
@@ -204,9 +311,18 @@ function referenceScenario(opts?: { wanVlan?: VlanId | null }): Topology {
       ),
       switchBox(
         'MSW',
-        [trunk('1', [10, 20, 30]), access('2', 10)],
+        [
+          trunk('1', [10, 20, 30]),
+          access('2', 10),
+          trunk('3', [10, 20, 30]),
+          access('4', 10),
+          access('5', 30),
+        ],
         { stp: true, mac: 'aa:00:00:00:00:02' },
       ),
+      accessPoint('AP'),
+      meshNode('MESH1', meshSsidVlan),
+      meshNode('MESH2', meshSsidVlan),
       routerBox(
         'RTR',
         [
@@ -237,6 +353,27 @@ function referenceScenario(opts?: { wanVlan?: VlanId | null }): Topology {
       link('t', { device: 'MSW', port: '1' }, { device: 'RTR', port: 'lan' }),
       link('w', { device: 'RTR', port: 'wan' }, { device: 'ONT', port: '1' }),
       link('i', { device: 'ONT', port: '2' }, { device: 'NET', port: '1' }),
+      link('ap', { device: 'MSW', port: '3' }, { device: 'AP', port: '1' }),
+      link('m1', { device: 'MSW', port: '4' }, { device: 'MESH1', port: '1' }),
+      link(
+        'bh',
+        { device: 'MESH1', port: 'bh' },
+        { device: 'MESH2', port: 'bh' },
+        'wireless',
+      ),
+      link(
+        'g',
+        { device: 'C30', port: '1' },
+        { device: 'AP', port: 'wifi30' },
+        'wireless',
+      ),
+      link(
+        'mc',
+        { device: 'CMESH', port: '1' },
+        { device: 'MESH2', port: 'wifi' },
+        'wireless',
+      ),
+      link('h30', { device: 'MSW', port: '5' }, { device: 'H30', port: '1' }),
     ],
   );
 }
@@ -248,6 +385,7 @@ const stripProfile: EngineProfile = {
 };
 
 const row5 = CATALOGUE.find((row) => row.id === 5);
+const row20 = CATALOGUE.find((row) => row.id === 20);
 
 describe('reference scenario (wired subset)', () => {
   it('a VLAN 10 host reaches the internet via PPPoE over tagged VLAN 500', () => {
@@ -320,6 +458,101 @@ describe('reference scenario (wired subset)', () => {
     expect(flood?.facts.portCount).toBe(5);
     if (!flood || !row5) return;
     expect(format(observationAsFormatInput(flood))).toBe(row5.expected);
+  });
+});
+
+describe('reference scenario (access point and mesh)', () => {
+  it('a client on the AP guest SSID is delivered in VLAN 30', () => {
+    const ctx = createRunContext(referenceScenario());
+    const result = send(ctx, {
+      from: 'C30',
+      dstIp: '192.168.30.20',
+      payload: { kind: 'icmp', srcIp: '192.168.30.10', dstIp: '192.168.30.20' },
+    });
+    const classify = result.hops.find(
+      (hop) => hop.device === 'AP' && hop.fn === 'wlan30',
+    );
+    expect(classify?.step).toBe('ssid-vlan');
+    expect(classify?.reasonCode).toBe('ssid-vlan:classified');
+    expect(classify?.vlan).toBe(30);
+    expect(classify?.action).toBe('forwarded');
+    const uplink = result.hops.find(
+      (hop) => hop.device === 'AP' && hop.fn === 'br' && hop.outPort === '1',
+    );
+    expect(uplink?.vlan).toBe(30);
+    expect(uplink?.action).toBe('forwarded');
+    expect(uplink?.step).toBe('egress-tagging');
+    const dest = result.hops.find(
+      (hop) =>
+        hop.device === 'H30' &&
+        hop.step === 'delivery' &&
+        hop.action === 'delivered',
+    );
+    expect(dest?.device).toBe('H30');
+    expect(dest?.reasonCode).toBe('delivery:delivered');
+  });
+
+  it('a client on the mesh is delivered in VLAN 10', () => {
+    const ctx = createRunContext(referenceScenario());
+    const result = send(ctx, {
+      from: 'CMESH',
+      dstIp: '192.168.10.10',
+      payload: { kind: 'icmp', srcIp: '192.168.10.20', dstIp: '192.168.10.10' },
+    });
+    const classify = result.hops.find(
+      (hop) => hop.device === 'MESH2' && hop.step === 'ssid-vlan',
+    );
+    expect(classify?.fn).toBe('wlan');
+    expect(classify?.vlan).toBe(10);
+    expect(classify?.reasonCode).toBe('ssid-vlan:classified');
+    const bridged = result.hops.find(
+      (hop) => hop.device === 'MESH2' && hop.fn === 'br',
+    );
+    expect(bridged?.vlan).toBe(10);
+    const dest = result.hops.find(
+      (hop) =>
+        hop.device === 'H10' &&
+        hop.step === 'delivery' &&
+        hop.action === 'delivered',
+    );
+    expect(dest?.device).toBe('H10');
+    expect(dest?.reasonCode).toBe('delivery:delivered');
+  });
+
+  it('row 20 reproduces inside the same fixture', () => {
+    expect(row20).toBeDefined();
+    const ctx = createRunContext(referenceScenario({ meshSsidVlan: 30 }));
+    const result = walkFrame(ctx, {
+      device: 'MESH1',
+      inPort: 'wifi',
+      frame: {
+        srcMac: 'aa:00:00:00:00:31',
+        dstMac: defaults.broadcastMac,
+        vlan: null,
+        size: 64,
+        encapsulation: ['ethernet'],
+        payload: { kind: 'icmp' },
+        hops: [],
+      },
+      arrivedFrom: 'C30',
+    });
+    const classify = result.hops.find(
+      (hop) => hop.device === 'MESH1' && hop.step === 'ssid-vlan',
+    );
+    expect(classify?.fn).toBe('wlan');
+    expect(classify?.vlan).toBe(30);
+    expect(classify?.action).toBe('forwarded');
+    expect(classify?.reasonCode).toBe('ssid-vlan:classified');
+    const landed = result.hops.find((hop) => hop.device === 'MSW');
+    expect(landed?.fn).toBe('br');
+    expect(landed?.vlan).toBe(10);
+    const untagged = result.observations.find(
+      (obs) => obs.observation === 'ssid-untagged',
+    );
+    expect(untagged?.facts.mappedVlan).toBe(30);
+    expect(untagged?.facts.landedVlan).toBe(10);
+    if (!untagged || !row20) return;
+    expect(format(observationAsFormatInput(untagged))).toBe(row20.expected);
   });
 });
 

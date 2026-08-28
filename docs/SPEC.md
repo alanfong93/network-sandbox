@@ -4,7 +4,7 @@ Design document. The engine skeleton, run context, spanning tree, 802.1Q
 bridging pass, topology walk, hosts, ARP, routing, the inter-VLAN firewall,
 the request/reply flow driver, NAT, DHCP (server and relay as a
 message exchange), the ISP handoff (PPPoE and a tagged WAN), a fixture
-profile seam, the wired subset of the reference scenario, wireless
+profile seam, the reference scenario (including AP and mesh), wireless
 dispatch at `ssid-vlan`, a tagged AP uplink, and AP management as
 ordinary host addressing exist.
 
