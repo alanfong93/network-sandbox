@@ -60,6 +60,7 @@ export type Fn =
       kind: 'bridging';
       id: FnId;
       vlanAware: boolean;
+      canTag?: boolean;
       members: BridgePort[];
       fdb: Map<string, string>;
     }

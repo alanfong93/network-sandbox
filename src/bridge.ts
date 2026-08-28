@@ -153,6 +153,7 @@ function egressVlan(
   arrivedVlan: VlanId | null,
   strip: boolean,
 ): VlanId | null {
+  if (bridge.canTag === false) return null;
   if (!bridge.vlanAware) return strip ? null : arrivedVlan;
   if (port.untaggedVlans.has(vlan)) return null;
   return vlan;

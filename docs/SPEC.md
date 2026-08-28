@@ -99,6 +99,7 @@ interface InternalEdge { from: FnId | string; to: FnId | string; }
 
 type Fn =
   | { kind: 'bridging'; id: FnId; vlanAware: boolean;
+      canTag?: boolean;                                        // false -> cannot emit 802.1Q tags (consumer mesh)
       members: BridgePort[]; fdb: Map<string, string> }        // vlanAware=false -> one flat, VLAN-blind table
   | { kind: 'stp'; id: FnId; bridge: FnId; priority: number; baseMac: MacAddr;
       // Keyed by instance. v1 ships exactly ONE instance (ADR 0011); MSTP (802.1s)

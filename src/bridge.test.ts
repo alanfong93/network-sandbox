@@ -48,7 +48,13 @@ function access(
 function switchBox(
   id: string,
   members: BridgePort[],
-  opts?: { vlanAware?: boolean; stp?: boolean; mac?: MacAddr; priority?: number },
+  opts?: {
+    vlanAware?: boolean;
+    canTag?: boolean;
+    stp?: boolean;
+    mac?: MacAddr;
+    priority?: number;
+  },
 ): Chassis {
   const vlanAware = opts?.vlanAware ?? true;
   const functions: Chassis['functions'] = [
@@ -56,6 +62,7 @@ function switchBox(
       kind: 'bridging',
       id: 'br',
       vlanAware,
+      canTag: opts?.canTag,
       members,
       fdb: new Map(),
     },
@@ -220,6 +227,29 @@ describe('802.1Q pipeline', () => {
     expect(result.hop.action).toBe('forwarded');
     expect(result.transmissions[0]?.frame.vlan).toBe(10);
     expect(result.transmissions[0]?.frame.encapsulation).toContain('vlan-tag');
+  });
+
+  it('emits untagged when canTag is false while keeping the classified VLAN', () => {
+    const sw = switchBox(
+      'MESH',
+      [access('1', 30), trunk('2', [10, 20, 30])],
+      { canTag: false },
+    );
+    const ctx = createRunContext(topo([sw]));
+    learn(ctx, 30, 'aa:00:00:00:00:20', 'MESH', '2');
+    const result = bridgeFrame(ctx, {
+      device: 'MESH',
+      inPort: '1',
+      frame: frame({ vlan: 30 }),
+    });
+    expect(result.hop.vlan).toBe(30);
+    expect(result.hop.action).toBe('forwarded');
+    expect(result.hop.step).toBe('egress-tagging');
+    expect(result.transmissions[0]?.outPort).toBe('2');
+    expect(result.transmissions[0]?.frame.vlan).toBeNull();
+    expect(result.transmissions[0]?.frame.encapsulation).not.toContain(
+      'vlan-tag',
+    );
   });
 
   it('treats membership as vacuous when vlanAware is false', () => {
