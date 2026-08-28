@@ -60,6 +60,12 @@ flowchart TD
     style MD fill:#ffd7d7,color:#000
 ```
 
+A wireless client is a host. `send` originates from it the same way as
+from a wired host; the first hop is `ssid-vlan` on the AP or mesh node
+the client joined. The SPEC.md §9 reference fixture includes both boxes:
+a tagged-capable AP with three SSIDs, and two consumer mesh nodes on a
+`medium: 'wireless'` backhaul that cannot tag.
+
 A drop is an outcome, not an error. The hop names the pipeline step that
 produced it. There is no pass/fail field on a hop.
 

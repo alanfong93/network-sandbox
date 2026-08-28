@@ -8,8 +8,8 @@ function, the topology walk that follows links, L3: hosts, ARP, routing
 and the inter-VLAN firewall, the flow driver that traces a request
 and its reply against one run context, NAT (masquerade plus port
 forwards), DHCP as a message exchange (no leases), the ISP handoff
-(PPPoE and a tagged WAN), a fixture profile seam, the wired
-reference scenario, wireless dispatch: classify at `ssid-vlan`,
+(PPPoE and a tagged WAN), a fixture profile seam, the reference
+scenario (SPEC.md §9, including AP and mesh), wireless dispatch: classify at `ssid-vlan`,
 then follow `InternalEdge` onto the chassis bridge, a tagged AP
 uplink, AP management as existing host delivery on the chassis
 VLAN, and untagged-only as `canTag: false` on bridging (catalogue
@@ -143,7 +143,7 @@ structural assertions name device, function, pipeline step, reason code, VLAN,
 port and action, and contain no prose. Wording assertions compare `format(...)`
 to `row.expected` on the catalogue table. Rows 2, 5, 6, 16 and 17 are traces
 assembled from a walk. Row 20 is a trace assembled from a walk
-(`src/mesh.test.ts`). Row 7 is a trace assembled from `send`. Rows 9, 13 and 15
+(`src/mesh.test.ts`, and again in the reference fixture). Row 7 is a trace assembled from `send`. Rows 9, 13 and 15
 are flows assembled from `runFlow`. Rows 10 and 12 are traces from `send`.
 Rows 3, 8, 11 and 14 are traces from a DHCP DISCOVER `send`. Row 23 is a
 firewall hop after a query to the advertised resolver. Rows 21 and 22 are hops.
@@ -156,7 +156,8 @@ and leaves the on-wire tag untouched unless the active profile selects
 `unmanagedTag: 'strip'` — then the hop carries `provenance`.
 `canTag: false` is a separate capability: membership still uses VLANs,
 egress is always untagged. A preset writes that field; the engine does
-not branch on a vendor name. The wired
-reference scenario (SPEC.md §9 minus AP and mesh) is `src/wan.test.ts`. Row 5
-reproduces there as well as in `walk.test.ts`. Tagged AP uplink and
+not branch on a vendor name. The
+reference scenario (SPEC.md §9, including AP and mesh) is `src/wan.test.ts`.
+Row 5 reproduces there as well as in `walk.test.ts`; row 20 reproduces
+there as well as in `src/mesh.test.ts`. Tagged AP uplink and
 management VLAN (issue #30, no catalogue row) are `src/ap.test.ts`.
