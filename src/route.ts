@@ -300,8 +300,10 @@ export function routeFrame(ctx: RunContext, args: RouteArgs): RouteResult {
       skipSnat = true;
     } else if (
       nat &&
-      wan &&
-      dstIp === wan.ip &&
+      (wan !== undefined || wanIface(fn) !== undefined) &&
+      [wan, wanIface(fn)].some(
+        (candidate) => candidate !== undefined && candidate.ip === dstIp,
+      ) &&
       working.payload.kind === 'service'
     ) {
       const fwd = matchForward(nat, working);

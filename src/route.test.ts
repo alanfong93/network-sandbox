@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { CATALOGUE } from './catalogue';
 import { defaults } from './defaults';
-import type { Chassis, Frame, Topology, VlanId } from './model';
+import type { Chassis, Frame, PortForward, Topology, VlanId } from './model';
 import { createRunContext } from './run';
 import { routeFrame } from './route';
 
@@ -184,7 +184,10 @@ describe('routeFrame', () => {
 const row24 = CATALOGUE.find((row) => row.id === 24);
 
 /** Two WANs: WAN1 is the plain default, WAN2 may carry a fromVlan selector. */
-function dualWanRouter(opts?: { wan2Selector?: VlanId; nat?: boolean }): Chassis {
+function dualWanRouter(opts?: {
+  wan2Selector?: VlanId;
+  nat?: boolean | PortForward[];
+}): Chassis {
   const functions: Chassis['functions'] = [
     {
       kind: 'routing',
@@ -224,8 +227,13 @@ function dualWanRouter(opts?: { wan2Selector?: VlanId; nat?: boolean }): Chassis
       firewall: [],
     },
   ];
-  if (opts?.nat) {
-    functions.push({ kind: 'nat', id: 'nat', on: 'rt', portForwards: [] });
+  if (opts?.nat !== undefined) {
+    functions.push({
+      kind: 'nat',
+      id: 'nat',
+      on: 'rt',
+      portForwards: opts.nat === true ? [] : opts.nat,
+    });
   }
   return {
     id: 'R1',
@@ -339,6 +347,65 @@ describe('policy routing (Route.fromVlan)', () => {
     const nat = result.hops.find((hop) => hop.reasonCode === 'nat:translated');
     expect(nat?.outPort).toBe('wan1');
     expect(ctx.pendingSends[0]?.frame.payload.srcIp).toBe('198.51.100.2');
+    expect(ctx.natSessions[0]?.outsideIp).toBe('198.51.100.2');
+  });
+
+  it('a hairpin service frame to WAN1 public IP still hits the port-forward when the selector default is WAN2', () => {
+    const box = dualWanRouter({
+      wan2Selector: 30,
+      nat: [
+        { proto: 'tcp', outsidePort: 443, toIp: '192.168.30.10', toPort: 443 },
+      ],
+    });
+    const ctx = createRunContext(topo([box]));
+    const result = routeFrame(ctx, {
+      device: 'R1',
+      inPort: '1',
+      frame: {
+        ...vlan30Frame('198.51.100.2'),
+        payload: {
+          kind: 'service',
+          proto: 'tcp',
+          srcIp: '192.168.30.10',
+          dstIp: '198.51.100.2',
+          dstPort: 443,
+        },
+      },
+    });
+    const delivered = result.hops.find(
+      (hop) => hop.step === 'delivery' && hop.device === 'R1',
+    );
+    expect(delivered).toBeUndefined();
+    expect(result.transmissions[0]?.frame.payload.dstIp).toBe('192.168.30.10');
+  });
+
+  it('a hairpin service frame to WAN2 public IP hits the port-forward under the same selector', () => {
+    const box = dualWanRouter({
+      wan2Selector: 30,
+      nat: [
+        { proto: 'tcp', outsidePort: 443, toIp: '192.168.30.10', toPort: 443 },
+      ],
+    });
+    const ctx = createRunContext(topo([box]));
+    const result = routeFrame(ctx, {
+      device: 'R1',
+      inPort: '1',
+      frame: {
+        ...vlan30Frame('203.0.113.2'),
+        payload: {
+          kind: 'service',
+          proto: 'tcp',
+          srcIp: '192.168.30.10',
+          dstIp: '203.0.113.2',
+          dstPort: 443,
+        },
+      },
+    });
+    const delivered = result.hops.find(
+      (hop) => hop.step === 'delivery' && hop.device === 'R1',
+    );
+    expect(delivered).toBeUndefined();
+    expect(result.transmissions[0]?.frame.payload.dstIp).toBe('192.168.30.10');
   });
 
   it('a frame from another VLAN is destination-only even when a selector exists', () => {
