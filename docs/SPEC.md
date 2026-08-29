@@ -280,6 +280,7 @@ The product is really this table. Each row is a reproducible mistake with a spec
 | 21 | Downstream router | Port forward set on the inner router only, behind a second NAT | *"Port forward on R2 was never reached — dropped at R1 NAT: no matching forward"* |
 | 22 | Router | Port forward points at a subnet the router cannot reach | *"Port forward to 10.99.0.10:443 dropped at R1: no interface on 10.99.0.0/24"* |
 | 23 | Router | DHCP hands out a resolver the client's VLAN cannot reach | *"Query to 192.168.10.1:53 left VLAN 30; dropped by rule VLAN30 -> VLAN10 deny"* |
+| 24 | Multi-WAN router | Second WAN route added for VLAN 30 without its fromVlan selector | *"VLAN 30 frame forwarded via 198.51.100.1 by destination-only lookup - no route carries a VLAN 30 selector"* |
 
 ## 5. STP
 

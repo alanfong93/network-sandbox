@@ -1,6 +1,6 @@
 import type { FormatInput } from './format';
 
-export type CatalogueStage = 1 | 2;
+export type CatalogueStage = 1 | 2 | 3;
 
 export interface CatalogueRow {
   id: number;
@@ -347,6 +347,24 @@ export const CATALOGUE: readonly CatalogueRow[] = [
         fromVlan: 30,
         toVlan: 10,
       },
+    },
+  },
+  {
+    id: 24,
+    device: 'Multi-WAN router',
+    mistake: 'Second WAN route added for VLAN 30 without its fromVlan selector',
+    expected:
+      'VLAN 30 frame forwarded via 198.51.100.1 by destination-only lookup - no route carries a VLAN 30 selector',
+    stage: 3,
+    example: {
+      kind: 'hop',
+      device: 'R1',
+      outPort: 'wan1',
+      vlan: 30,
+      action: 'forwarded',
+      step: 'route-lookup',
+      outcome: 'forwarded',
+      facts: { fromVlan: 30, via: '198.51.100.1' },
     },
   },
 ];

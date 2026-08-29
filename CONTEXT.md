@@ -223,7 +223,8 @@ it lacks that MAC. Resolution is per-sender and lives only on the run context.
 A function attached to a routing function (`kind: 'nat'`, `on` names that
 routing function). Presence is NAT on; absence is NAT off. A newly placed
 router includes it ([ADR 0005](docs/adr/0005-nat-on-by-default.md)). Masquerade
-rewrites the source out the default-route iface; a port-forward matches
+rewrites the source out the default-route iface (the selector-aware default for the
+frame's VLAN - see Selector); a port-forward matches
 `proto` and `outsidePort` on the way in ([ADR 0018](docs/adr/0018-services-are-reached-not-answered.md)).
 
 - **Do not call it:** *sub-router NAT*, *firewall* (the inter-VLAN allow/deny
@@ -249,6 +250,18 @@ different capability does.
 
 - **Do not call it:** *source*, *attribution* as a field name. The field is
   `provenance`.
+
+### Selector
+
+The optional `Route.fromVlan` field - a route's source-VLAN match. Present, the
+route matches only frames arriving on that VLAN's sub-interface and beats any
+destination-only route at the same prefix length (policy routing, the first
+multi-WAN behaviour, SPEC.md 6 stage 3). Absent, lookup is destination-only LPM
+exactly as before. Catalogue row 24 is the multi-WAN box where the selector was
+never installed and the frame falls through to the plain default.
+
+- **Do not call it:** *source routing*, *PBR* (a vendor feature name), *tag*.
+  "Policy routing" is the accepted prose; the field name is `fromVlan`.
 
 ### ISP handoff
 
