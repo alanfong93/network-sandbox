@@ -460,22 +460,25 @@ export function routeFrame(ctx: RunContext, args: RouteArgs): RouteResult {
 
   let payload = working.payload;
   const natHops: Hop[] = [];
-  if (
-    nat &&
-    !skipSnat &&
-    wan &&
-    egress.iface.id === wan.id &&
-    egress.iface.vlan === wan.vlan
-  ) {
+  // Masquerade when the frame leaves via any default-route iface for this
+  // VLAN - the selector-aware pick or the plain default. The selector pick
+  // alone would miss connected egress on the other WAN.
+  const natOut = [wan, wanIface(fn)].find(
+    (candidate) =>
+      candidate !== undefined &&
+      egress.iface.id === candidate.id &&
+      egress.iface.vlan === candidate.vlan,
+  );
+  if (nat && !skipSnat && natOut) {
     const srcIp = payload.srcIp;
-    if (srcIp !== undefined && srcIp !== wan.ip) {
+    if (srcIp !== undefined && srcIp !== natOut.ip) {
       recordSession(ctx, {
         device: args.device,
         insideIp: srcIp,
-        outsideIp: wan.ip,
+        outsideIp: natOut.ip,
         remoteIp: dstIp,
       });
-      payload = { ...payload, srcIp: wan.ip };
+      payload = { ...payload, srcIp: natOut.ip };
       natHops.push(
         makeHop({
           device: args.device,

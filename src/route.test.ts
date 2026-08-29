@@ -313,6 +313,34 @@ describe('policy routing (Route.fromVlan)', () => {
     expect(ctx.pendingSends[0]?.frame.payload.srcIp).toBe('198.51.100.2');
   });
 
+  it('a selector default beats a more-specific destination-only route (policy tier)', () => {
+    const box = dualWanRouter({ wan2Selector: 30 });
+    const rt = box.functions[0];
+    if (rt?.kind !== 'routing') throw new Error('expected routing');
+    rt.routes.unshift({ dest: '8.8.8.0', prefix: 24, via: '198.51.100.1' });
+    const ctx = createRunContext(topo([box]));
+    const result = routeFrame(ctx, {
+      device: 'R1',
+      inPort: '1',
+      frame: vlan30Frame('8.8.8.8'),
+    });
+    expect(result.hops[0]?.reasonCode).toBe('route-lookup:forwarded');
+    expect(result.hops[0]?.outPort).toBe('wan2');
+  });
+
+  it('NAT still masquerades a connected WAN1 host when the selector default is WAN2', () => {
+    const box = dualWanRouter({ wan2Selector: 30, nat: true });
+    const ctx = createRunContext(topo([box]));
+    const result = routeFrame(ctx, {
+      device: 'R1',
+      inPort: '1',
+      frame: vlan30Frame('198.51.100.50'),
+    });
+    const nat = result.hops.find((hop) => hop.reasonCode === 'nat:translated');
+    expect(nat?.outPort).toBe('wan1');
+    expect(ctx.pendingSends[0]?.frame.payload.srcIp).toBe('198.51.100.2');
+  });
+
   it('a frame from another VLAN is destination-only even when a selector exists', () => {
     const box = dualWanRouter({ wan2Selector: 30 });
     const rt = box.functions[0];
@@ -325,10 +353,15 @@ describe('policy routing (Route.fromVlan)', () => {
       mac: 'aa:00:00:00:00:01',
     });
     const ctx = createRunContext(topo([box]));
+    const vlan20 = vlan30Frame('8.8.8.8');
     const result = routeFrame(ctx, {
       device: 'R1',
       inPort: '1',
-      frame: { ...vlan30Frame('8.8.8.8'), vlan: 20 },
+      frame: {
+        ...vlan20,
+        vlan: 20,
+        payload: { ...vlan20.payload, srcIp: '192.168.20.10' },
+      },
     });
     expect(result.hops[0]?.reasonCode).toBe('route-lookup:forwarded');
     expect(result.hops[0]?.outPort).toBe('wan1');

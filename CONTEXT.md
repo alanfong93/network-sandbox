@@ -254,11 +254,15 @@ different capability does.
 ### Selector
 
 The optional `Route.fromVlan` field - a route's source-VLAN match. Present, the
-route matches only frames arriving on that VLAN's sub-interface and beats any
-destination-only route at the same prefix length (policy routing, the first
-multi-WAN behaviour, SPEC.md 6 stage 3). Absent, lookup is destination-only LPM
-exactly as before. Catalogue row 24 is the multi-WAN box where the selector was
-never installed and the frame falls through to the plain default.
+route belongs to the frame VLAN's selector tier: for a frame arriving on that
+VLAN's sub-interface, only routes carrying its selector are consulted first, and
+a selector default outranks even a more-specific destination-only route. That is
+how policy routing behaves on real gear (a Linux `ip rule` source lookup
+consults its own table, never the main one; Cisco PBR sets the next-hop and
+bypasses the RIB). Absent - no route carries the frame VLAN's selector - lookup
+is destination-only LPM exactly as before. Catalogue row 24 is the multi-WAN box
+where the selector was never installed and the frame falls through to the plain
+default.
 
 - **Do not call it:** *source routing*, *PBR* (a vendor feature name), *tag*.
   "Policy routing" is the accepted prose; the field name is `fromVlan`.
