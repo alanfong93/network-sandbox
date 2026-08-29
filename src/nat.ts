@@ -7,6 +7,7 @@ import type {
   PortForward,
   RouterIface,
   Topology,
+  VlanId,
 } from './model';
 import type { NatSession, RunContext } from './run';
 
@@ -32,8 +33,21 @@ export function matchForward(
   );
 }
 
-export function wanIface(fn: RoutingFn): RouterIface | undefined {
-  const def = fn.routes.find((route) => route.prefix === 0);
+export function wanIface(
+  fn: RoutingFn,
+  fromVlan?: VlanId,
+): RouterIface | undefined {
+  // The same two-tier pick as route lookup: a default carrying the frame
+  // VLAN's selector wins; otherwise the destination-only default as before.
+  const def =
+    (fromVlan !== undefined
+      ? fn.routes.find(
+          (route) => route.prefix === 0 && route.fromVlan === fromVlan,
+        )
+      : undefined) ??
+    fn.routes.find(
+      (route) => route.prefix === 0 && route.fromVlan === undefined,
+    );
   if (!def) return undefined;
   return fn.ifaces.find((iface) => inSubnet(def.via, iface.ip, iface.prefix));
 }

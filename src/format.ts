@@ -127,6 +127,9 @@ function formatHop(input: HopInput): string {
   if (code === 'port-forward:dropped' && f.ip !== undefined) {
     return `Port forward to ${f.ip}:${f.dstPort} dropped at ${input.device}: no interface on ${f.prefix}`;
   }
+  if (code === 'route-lookup:forwarded' && f.fromVlan !== undefined && f.via !== undefined) {
+    return `VLAN ${f.fromVlan} frame forwarded via ${f.via} by destination-only lookup - no route carries a VLAN ${f.fromVlan} selector`;
+  }
   if (code === 'mtu:dropped') {
     return `Dropped at ${input.device} port ${portOf(input)} (egress): frame exceeds usable MTU`;
   }

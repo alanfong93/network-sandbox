@@ -13,6 +13,7 @@ import {
   type Frame,
   type FramePayload,
   type Hop,
+  type Route,
   type RouterIface,
   type VlanId,
 } from './model';
@@ -100,7 +101,8 @@ function withVlan(frame: Frame, vlan: VlanId | null, hop: Hop): Frame {
 function lookupEgress(
   fn: RoutingFn,
   dstIp: string,
-): { iface: RouterIface; nextHop: string } | undefined {
+  fromVlan?: VlanId,
+): { iface: RouterIface; nextHop: string; route?: Route } | undefined {
   const connected = fn.ifaces.map((iface) => ({
     dest: iface.ip,
     prefix: iface.prefix,
@@ -108,18 +110,27 @@ function lookupEgress(
   }));
   const hit = longestPrefixMatch(dstIp, connected);
   if (hit) return hit;
-  const routes = fn.routes.map((route) => ({
+  const toCandidate = (route: Route) => ({
     dest: route.dest,
     prefix: route.prefix,
     value: route,
-  }));
-  const route = longestPrefixMatch(dstIp, routes);
+  });
+  // Selector tier first: a route carrying fromVlan matches only frames of
+  // that VLAN and beats any destination-only route. Absent fromVlan on the
+  // frame (or no matching selector) falls back to destination-only LPM.
+  const selected = fn.routes.filter(
+    (route) => fromVlan !== undefined && route.fromVlan === fromVlan,
+  );
+  const destOnly = fn.routes.filter((route) => route.fromVlan === undefined);
+  const route =
+    longestPrefixMatch(dstIp, selected.map(toCandidate)) ??
+    longestPrefixMatch(dstIp, destOnly.map(toCandidate));
   if (!route) return undefined;
   const iface = fn.ifaces.find((item) =>
     inSubnet(route.via, item.ip, item.prefix),
   );
   if (!iface) return undefined;
-  return { iface, nextHop: route.via };
+  return { iface, nextHop: route.via, route };
 }
 
 function firewallDrop(
@@ -226,7 +237,7 @@ export function routeFrame(ctx: RunContext, args: RouteArgs): RouteResult {
   }
 
   const nat = findNat(chassis, fn.id);
-  const wan = wanIface(fn);
+  const wan = wanIface(fn, iface.vlan);
   let working: Frame = args.frame;
   let skipSnat = false;
   let skipLocal = false;
@@ -289,8 +300,10 @@ export function routeFrame(ctx: RunContext, args: RouteArgs): RouteResult {
       skipSnat = true;
     } else if (
       nat &&
-      wan &&
-      dstIp === wan.ip &&
+      (wan !== undefined || wanIface(fn) !== undefined) &&
+      [wan, wanIface(fn)].some(
+        (candidate) => candidate !== undefined && candidate.ip === dstIp,
+      ) &&
       working.payload.kind === 'service'
     ) {
       const fwd = matchForward(nat, working);
@@ -378,7 +391,7 @@ export function routeFrame(ctx: RunContext, args: RouteArgs): RouteResult {
     };
   }
 
-  const egress = lookupEgress(fn, dstIp);
+  const egress = lookupEgress(fn, dstIp, iface.vlan);
   if (!egress) {
     return {
       hops: [
@@ -423,6 +436,16 @@ export function routeFrame(ctx: RunContext, args: RouteArgs): RouteResult {
     };
   }
 
+  // Catalogue row 24: on a multi-WAN box, a tagged frame that fell through to
+  // a selectorless default names what it missed - no route carries its VLAN's
+  // selector, so the pick was destination-only.
+  const selectorMiss =
+    iface.vlan !== undefined &&
+    egress.route !== undefined &&
+    egress.route.fromVlan === undefined &&
+    egress.route.prefix === 0 &&
+    fn.routes.filter((route) => route.prefix === 0).length > 1 &&
+    !fn.routes.some((route) => route.fromVlan === iface.vlan);
   const hop = makeHop({
     device: args.device,
     fn: fn.id,
@@ -432,26 +455,32 @@ export function routeFrame(ctx: RunContext, args: RouteArgs): RouteResult {
     action: 'forwarded',
     step: 'route-lookup',
     outcome: 'forwarded',
+    facts: selectorMiss
+      ? { fromVlan: iface.vlan, via: egress.nextHop }
+      : undefined,
   });
 
   let payload = working.payload;
   const natHops: Hop[] = [];
-  if (
-    nat &&
-    !skipSnat &&
-    wan &&
-    egress.iface.id === wan.id &&
-    egress.iface.vlan === wan.vlan
-  ) {
+  // Masquerade when the frame leaves via any default-route iface for this
+  // VLAN - the selector-aware pick or the plain default. The selector pick
+  // alone would miss connected egress on the other WAN.
+  const natOut = [wan, wanIface(fn)].find(
+    (candidate) =>
+      candidate !== undefined &&
+      egress.iface.id === candidate.id &&
+      egress.iface.vlan === candidate.vlan,
+  );
+  if (nat && !skipSnat && natOut) {
     const srcIp = payload.srcIp;
-    if (srcIp !== undefined && srcIp !== wan.ip) {
+    if (srcIp !== undefined && srcIp !== natOut.ip) {
       recordSession(ctx, {
         device: args.device,
         insideIp: srcIp,
-        outsideIp: wan.ip,
+        outsideIp: natOut.ip,
         remoteIp: dstIp,
       });
-      payload = { ...payload, srcIp: wan.ip };
+      payload = { ...payload, srcIp: natOut.ip };
       natHops.push(
         makeHop({
           device: args.device,
