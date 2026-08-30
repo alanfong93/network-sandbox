@@ -484,8 +484,14 @@ export function walkFrame(ctx: RunContext, args: WalkArgs): WalkResult {
     }
   }
 
+  // Double NAT counts source translations, and a SNAT hop always names its
+  // egress port. The DNAT rewrite hop and the return-leg hop carry no
+  // outPort (egress is unresolved or not theirs) and are not source picks.
   const translations = hops.filter(
-    (item) => item.step === 'nat' && item.reasonCode === 'nat:translated',
+    (item) =>
+      item.step === 'nat' &&
+      item.reasonCode === 'nat:translated' &&
+      item.outPort !== undefined,
   );
   if (translations.length >= 2) {
     note(observations, { observation: 'double-nat', facts: {} });

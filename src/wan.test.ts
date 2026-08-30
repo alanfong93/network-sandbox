@@ -933,6 +933,38 @@ describe('reference scenario (second WAN)', () => {
   });
 });
 
+describe('hairpin forward walk', () => {
+  it('a hairpin port-forward is one source translation - no double-nat observation', () => {
+    const topology = referenceScenario();
+    const rtr = topology.devices.find((device) => device.id === 'RTR');
+    const nat = rtr?.functions.find((fn) => fn.kind === 'nat');
+    if (nat?.kind !== 'nat') throw new Error('fixture: RTR NAT missing');
+    nat.portForwards.push({
+      proto: 'tcp',
+      outsidePort: 443,
+      toIp: '192.168.10.10',
+      toPort: 443,
+    });
+    const ctx = createRunContext(topology);
+    const result = send(ctx, {
+      from: 'H10',
+      dstIp: '192.0.2.2',
+      payload: { kind: 'service', proto: 'tcp', dstPort: 443, srcPort: 40000 },
+    });
+    const translations = result.hops.filter(
+      (hop) => hop.step === 'nat' && hop.reasonCode === 'nat:translated',
+    );
+    expect(translations).toHaveLength(2);
+    expect(translations[0]?.reason).toBe(
+      'Port forward rewrote the destination to 192.168.10.10:443 at RTR',
+    );
+    expect(translations[1]?.outPort).toBe('lan');
+    expect(
+      result.observations.some((obs) => obs.observation === 'double-nat'),
+    ).toBe(false);
+  });
+});
+
 describe('equal-cost defaults (ECMP)', () => {
   const forwardedLookup = (hops: { device: string; fn?: string; step: string; action: string }[]) =>
     hops.find(

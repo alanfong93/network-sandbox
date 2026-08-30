@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { CATALOGUE } from './catalogue';
 import { defaults } from './defaults';
 import { resolveKey } from './host';
-import type { Chassis, Frame, PortForward, Topology, VlanId } from './model';
+import type { Chassis, Frame, MacAddr, PortForward, Topology, VlanId } from './model';
 import { createRunContext, setResolvedMac } from './run';
 import { routeFrame } from './route';
 
@@ -461,6 +461,37 @@ describe('masquerade beyond the default pick', () => {
       remoteIp: '8.8.8.8',
     });
   });
+
+  it('a masqueraded service session records the port tuple for its return leg', () => {
+    const box = dualWanRouter({ nat: true });
+    const ctx = createRunContext(topo([box]));
+    const result = routeFrame(ctx, {
+      device: 'R1',
+      inPort: '1',
+      frame: {
+        ...vlan30Frame('8.8.8.8'),
+        payload: {
+          kind: 'service',
+          proto: 'tcp',
+          srcIp: '192.168.30.10',
+          dstIp: '8.8.8.8',
+          dstPort: 80,
+          srcPort: 40000,
+        },
+      },
+    });
+    const nat = result.hops.find((hop) => hop.reasonCode === 'nat:translated');
+    expect(nat?.outPort).toBe('wan1');
+    expect(ctx.natSessions[0]).toEqual({
+      device: 'R1',
+      insideIp: '192.168.30.10',
+      outsideIp: '198.51.100.2',
+      remoteIp: '8.8.8.8',
+      proto: 'tcp',
+      toPort: 80,
+      clientPort: 40000,
+    });
+  });
 });
 
 describe('hairpin NAT', () => {
@@ -471,15 +502,53 @@ describe('hairpin NAT', () => {
       ],
     });
 
-  const hairpinRequest = (): Frame => ({
-    ...vlan30Frame('198.51.100.2'),
+  const clientA = {
+    mac: 'aa:00:00:00:00:10' as const,
+    ip: '192.168.30.10',
+    port: 40000,
+  };
+  const clientB = {
+    mac: 'aa:00:00:00:00:11' as const,
+    ip: '192.168.30.11',
+    port: 40001,
+  };
+
+  const hairpinRequest = (
+    client: { mac: MacAddr; ip: string; port: number } = clientA,
+  ): Frame => ({
+    srcMac: client.mac,
+    dstMac: 'aa:00:00:00:00:01',
+    vlan: 30,
+    size: 128,
+    encapsulation: ['ethernet', 'vlan-tag'],
     payload: {
       kind: 'service',
       proto: 'tcp',
-      srcIp: '192.168.30.10',
+      srcIp: client.ip,
       dstIp: '198.51.100.2',
       dstPort: 443,
+      srcPort: client.port,
     },
+    hops: [],
+  });
+
+  const hairpinReply = (
+    client: { mac: MacAddr; port: number } = clientA,
+  ): Frame => ({
+    srcMac: 'aa:00:00:00:00:50',
+    dstMac: 'aa:00:00:00:00:01',
+    vlan: 30,
+    size: 128,
+    encapsulation: ['ethernet', 'vlan-tag'],
+    payload: {
+      kind: 'service',
+      proto: 'tcp',
+      srcIp: '192.168.30.50',
+      dstIp: '192.168.30.1',
+      dstPort: client.port,
+      srcPort: 443,
+    },
+    hops: [],
   });
 
   it('SNATs a DNAT frame whose target is in the ingress VLAN subnet to the ingress iface IP', () => {
@@ -497,6 +566,7 @@ describe('hairpin NAT', () => {
       srcIp: '192.168.30.1',
       dstIp: '192.168.30.50',
       dstPort: 443,
+      srcPort: 40000,
     });
     expect(ctx.natSessions[0]).toEqual({
       device: 'R1',
@@ -504,6 +574,10 @@ describe('hairpin NAT', () => {
       outsideIp: '192.168.30.1',
       remoteIp: '192.168.30.50',
       origDstIp: '198.51.100.2',
+      proto: 'tcp',
+      outsidePort: 443,
+      toPort: 443,
+      clientPort: 40000,
     });
   });
 
@@ -519,6 +593,52 @@ describe('hairpin NAT', () => {
     const back = routeFrame(ctx, {
       device: 'R1',
       inPort: '1',
+      frame: hairpinReply(),
+    });
+    const reply = back.transmissions[0]?.frame;
+    expect(reply?.payload.dstIp).toBe('192.168.30.10');
+    expect(reply?.payload.srcIp).toBe('198.51.100.2');
+    expect(reply?.payload.srcPort).toBe(443);
+    expect(reply?.payload.dstPort).toBe(40000);
+    expect(reply?.dstMac).toBe('aa:00:00:00:00:10');
+    expect(
+      back.hops.find((hop) => hop.reasonCode === 'nat:translated')?.action,
+    ).toBe('forwarded');
+  });
+
+  it('two hairpin clients of one forwarded service each receive their own returns', () => {
+    const box = hairpinRouter();
+    const ctx = createRunContext(topo([box]));
+    routeFrame(ctx, { device: 'R1', inPort: '1', frame: hairpinRequest(clientA) });
+    routeFrame(ctx, { device: 'R1', inPort: '1', frame: hairpinRequest(clientB) });
+    expect(ctx.natSessions).toHaveLength(2);
+    setResolvedMac(ctx, resolveKey('R1', '192.168.30.10'), 'aa:00:00:00:00:10');
+    setResolvedMac(ctx, resolveKey('R1', '192.168.30.11'), 'aa:00:00:00:00:11');
+    const backA = routeFrame(ctx, {
+      device: 'R1',
+      inPort: '1',
+      frame: hairpinReply(clientA),
+    });
+    const backB = routeFrame(ctx, {
+      device: 'R1',
+      inPort: '1',
+      frame: hairpinReply(clientB),
+    });
+    expect(backA.transmissions[0]?.frame.payload.dstIp).toBe('192.168.30.10');
+    expect(backA.transmissions[0]?.frame.payload.srcIp).toBe('198.51.100.2');
+    expect(backA.transmissions[0]?.frame.dstMac).toBe('aa:00:00:00:00:10');
+    expect(backB.transmissions[0]?.frame.payload.dstIp).toBe('192.168.30.11');
+    expect(backB.transmissions[0]?.frame.payload.srcIp).toBe('198.51.100.2');
+    expect(backB.transmissions[0]?.frame.dstMac).toBe('aa:00:00:00:00:11');
+  });
+
+  it('a server-to-router-LAN-IP frame is delivered to the router while hairpin sessions exist', () => {
+    const box = hairpinRouter();
+    const ctx = createRunContext(topo([box]));
+    routeFrame(ctx, { device: 'R1', inPort: '1', frame: hairpinRequest() });
+    const back = routeFrame(ctx, {
+      device: 'R1',
+      inPort: '1',
       frame: {
         srcMac: 'aa:00:00:00:00:50',
         dstMac: 'aa:00:00:00:00:01',
@@ -529,13 +649,84 @@ describe('hairpin NAT', () => {
         hops: [],
       },
     });
+    expect(back.hops[0]?.step).toBe('delivery');
+    expect(back.hops[0]?.action).toBe('delivered');
+    expect(back.hops.some((hop) => hop.step === 'nat')).toBe(false);
+  });
+
+  it('a server frame whose ports name no session is delivered to the router', () => {
+    const box = hairpinRouter();
+    const ctx = createRunContext(topo([box]));
+    routeFrame(ctx, { device: 'R1', inPort: '1', frame: hairpinRequest() });
+    const back = routeFrame(ctx, {
+      device: 'R1',
+      inPort: '1',
+      frame: {
+        srcMac: 'aa:00:00:00:00:50',
+        dstMac: 'aa:00:00:00:00:01',
+        vlan: 30,
+        size: 128,
+        encapsulation: ['ethernet', 'vlan-tag'],
+        payload: {
+          kind: 'service',
+          proto: 'tcp',
+          srcIp: '192.168.30.50',
+          dstIp: '192.168.30.1',
+          dstPort: 55555,
+          srcPort: 443,
+        },
+        hops: [],
+      },
+    });
+    expect(back.hops[0]?.step).toBe('delivery');
+    expect(back.hops[0]?.action).toBe('delivered');
+    expect(back.hops.some((hop) => hop.step === 'nat')).toBe(false);
+  });
+
+  it('the reply source port is restored to the port the client contacted', () => {
+    const box = dualWanRouter({
+      nat: [
+        { proto: 'tcp', outsidePort: 8443, toIp: '192.168.30.50', toPort: 443 },
+      ],
+    });
+    const ctx = createRunContext(topo([box]));
+    const request = hairpinRequest();
+    routeFrame(ctx, {
+      device: 'R1',
+      inPort: '1',
+      frame: {
+        ...request,
+        payload: { ...request.payload, dstPort: 8443 },
+      },
+    });
+    setResolvedMac(ctx, resolveKey('R1', '192.168.30.10'), 'aa:00:00:00:00:10');
+    const back = routeFrame(ctx, {
+      device: 'R1',
+      inPort: '1',
+      frame: hairpinReply(),
+    });
     const reply = back.transmissions[0]?.frame;
     expect(reply?.payload.dstIp).toBe('192.168.30.10');
     expect(reply?.payload.srcIp).toBe('198.51.100.2');
-    expect(reply?.dstMac).toBe('aa:00:00:00:00:10');
-    expect(
-      back.hops.find((hop) => hop.reasonCode === 'nat:translated')?.action,
-    ).toBe('forwarded');
+    expect(reply?.payload.srcPort).toBe(8443);
+    expect(reply?.payload.dstPort).toBe(40000);
+  });
+
+  it('the forward trace carries the DNAT rewrite as its own named nat hop', () => {
+    const box = hairpinRouter();
+    const ctx = createRunContext(topo([box]));
+    const result = routeFrame(ctx, {
+      device: 'R1',
+      inPort: '1',
+      frame: hairpinRequest(),
+    });
+    const natHops = result.hops.filter((hop) => hop.step === 'nat');
+    expect(natHops).toHaveLength(2);
+    expect(natHops[0]?.reasonCode).toBe('nat:translated');
+    expect(natHops[0]?.reason).toBe(
+      'Port forward rewrote the destination to 192.168.30.50:443 at R1',
+    );
+    expect(natHops[1]?.reason).toBe('forwarded at R1 port 1 (nat)');
   });
 
   it('a client on another VLAN hairpins to the server-side iface IP and round-trips', () => {
@@ -554,15 +745,20 @@ describe('hairpin NAT', () => {
       device: 'R1',
       inPort: '1',
       frame: {
-        ...vlan30Frame('198.51.100.2'),
+        srcMac: 'aa:00:00:00:00:20',
+        dstMac: 'aa:00:00:00:00:01',
         vlan: 20,
+        size: 128,
+        encapsulation: ['ethernet', 'vlan-tag'],
         payload: {
           kind: 'service',
           proto: 'tcp',
           srcIp: '192.168.20.10',
           dstIp: '198.51.100.2',
           dstPort: 443,
+          srcPort: 40000,
         },
+        hops: [],
       },
     });
     expect(ctx.pendingSends[0]?.frame.payload).toEqual({
@@ -571,6 +767,7 @@ describe('hairpin NAT', () => {
       srcIp: '192.168.30.1',
       dstIp: '192.168.30.50',
       dstPort: 443,
+      srcPort: 40000,
     });
     expect(ctx.natSessions[0]).toEqual({
       device: 'R1',
@@ -578,6 +775,10 @@ describe('hairpin NAT', () => {
       outsideIp: '192.168.30.1',
       remoteIp: '192.168.30.50',
       origDstIp: '198.51.100.2',
+      proto: 'tcp',
+      outsidePort: 443,
+      toPort: 443,
+      clientPort: 40000,
     });
     setResolvedMac(ctx, resolveKey('R1', '192.168.20.10'), 'aa:00:00:00:00:20');
     const back = routeFrame(ctx, {
@@ -589,13 +790,159 @@ describe('hairpin NAT', () => {
         vlan: 30,
         size: 128,
         encapsulation: ['ethernet', 'vlan-tag'],
-        payload: { kind: 'icmp', srcIp: '192.168.30.50', dstIp: '192.168.30.1' },
+        payload: {
+          kind: 'service',
+          proto: 'tcp',
+          srcIp: '192.168.30.50',
+          dstIp: '192.168.30.1',
+          dstPort: 40000,
+          srcPort: 443,
+        },
         hops: [],
       },
     });
     const reply = back.transmissions[0]?.frame;
     expect(reply?.payload.dstIp).toBe('192.168.20.10');
     expect(reply?.payload.srcIp).toBe('198.51.100.2');
+  });
+
+  it('a portless return among address-twin sessions names the first-wins pick', () => {
+    const box = hairpinRouter();
+    const ctx = createRunContext(topo([box]));
+    ctx.natSessions.push(
+      {
+        device: 'R1',
+        insideIp: '192.168.30.10',
+        outsideIp: '198.51.100.2',
+        remoteIp: '8.8.8.8',
+      },
+      {
+        device: 'R1',
+        insideIp: '192.168.30.11',
+        outsideIp: '198.51.100.2',
+        remoteIp: '8.8.8.8',
+      },
+    );
+    setResolvedMac(ctx, resolveKey('R1', '192.168.30.10'), 'aa:00:00:00:00:10');
+    const back = routeFrame(ctx, {
+      device: 'R1',
+      inPort: 'wan1',
+      frame: {
+        srcMac: 'aa:00:00:00:00:ee',
+        dstMac: 'aa:00:00:00:00:02',
+        vlan: null,
+        size: 128,
+        encapsulation: ['ethernet'],
+        payload: { kind: 'icmp', srcIp: '8.8.8.8', dstIp: '198.51.100.2' },
+        hops: [],
+      },
+    });
+    expect(back.transmissions[0]?.frame.payload.dstIp).toBe('192.168.30.10');
+    const natHop = back.hops.find(
+      (hop) => hop.step === 'nat' && hop.reasonCode === 'nat:translated',
+    );
+    expect(natHop?.reason).toBe(
+      'Return leg matched the first of 2 address-keyed sessions - no ports on the frame to disambiguate them',
+    );
+  });
+
+  it('a return whose port tuple matches two sessions names the collision', () => {
+    const box = hairpinRouter();
+    const ctx = createRunContext(topo([box]));
+    routeFrame(ctx, { device: 'R1', inPort: '1', frame: hairpinRequest(clientA) });
+    const requestB = hairpinRequest(clientB);
+    routeFrame(ctx, {
+      device: 'R1',
+      inPort: '1',
+      frame: { ...requestB, payload: { ...requestB.payload, srcPort: 40000 } },
+    });
+    expect(ctx.natSessions).toHaveLength(2);
+    setResolvedMac(ctx, resolveKey('R1', '192.168.30.10'), 'aa:00:00:00:00:10');
+    const back = routeFrame(ctx, {
+      device: 'R1',
+      inPort: '1',
+      frame: hairpinReply(clientA),
+    });
+    expect(back.transmissions[0]?.frame.payload.dstIp).toBe('192.168.30.10');
+    const natHop = back.hops.find(
+      (hop) => hop.step === 'nat' && hop.reasonCode === 'nat:translated',
+    );
+    expect(natHop?.reason).toBe(
+      'Return leg matched the first of 2 sessions sharing its port tuple - client port 40000 collided',
+    );
+  });
+
+  it('a service return without port identity is delivered to the router', () => {
+    const box = hairpinRouter();
+    const ctx = createRunContext(topo([box]));
+    routeFrame(ctx, { device: 'R1', inPort: '1', frame: hairpinRequest() });
+    const back = routeFrame(ctx, {
+      device: 'R1',
+      inPort: '1',
+      frame: {
+        srcMac: 'aa:00:00:00:00:50',
+        dstMac: 'aa:00:00:00:00:01',
+        vlan: 30,
+        size: 128,
+        encapsulation: ['ethernet', 'vlan-tag'],
+        payload: {
+          kind: 'service',
+          proto: 'tcp',
+          srcIp: '192.168.30.50',
+          dstIp: '192.168.30.1',
+          dstPort: 40000,
+        },
+        hops: [],
+      },
+    });
+    expect(back.hops[0]?.step).toBe('delivery');
+    expect(back.hops[0]?.action).toBe('delivered');
+    expect(back.hops.some((hop) => hop.step === 'nat')).toBe(false);
+  });
+
+  it('an address-only tie behind a service frame without a source port names the missing port', () => {
+    const box = hairpinRouter();
+    const ctx = createRunContext(topo([box]));
+    ctx.natSessions.push(
+      {
+        device: 'R1',
+        insideIp: '192.168.30.10',
+        outsideIp: '192.168.30.1',
+        remoteIp: '192.168.30.50',
+      },
+      {
+        device: 'R1',
+        insideIp: '192.168.30.11',
+        outsideIp: '192.168.30.1',
+        remoteIp: '192.168.30.50',
+      },
+    );
+    const back = routeFrame(ctx, {
+      device: 'R1',
+      inPort: '1',
+      frame: {
+        srcMac: 'aa:00:00:00:00:50',
+        dstMac: 'aa:00:00:00:00:01',
+        vlan: 30,
+        size: 128,
+        encapsulation: ['ethernet', 'vlan-tag'],
+        payload: {
+          kind: 'service',
+          proto: 'tcp',
+          srcIp: '192.168.30.50',
+          dstIp: '192.168.30.1',
+          dstPort: 40000,
+        },
+        hops: [],
+      },
+    });
+    expect(back.transmissions[0]?.frame.payload.dstIp).toBe('192.168.30.10');
+    const natHop = back.hops.find(
+      (hop) => hop.step === 'nat' && hop.reasonCode === 'nat:translated',
+    );
+    expect(natHop?.reason).toBe(
+      'Return leg matched the first of 2 address-keyed sessions - the service frame carries no source port to disambiguate them',
+    );
   });
 
   it('an external DNAT keeps its public source and records no session', () => {

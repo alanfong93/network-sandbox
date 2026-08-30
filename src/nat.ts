@@ -82,20 +82,82 @@ export function wanIface(
   return undefined;
 }
 
+/**
+ * What a return-leg lookup found, and what it had to choose from (ADR 0023).
+ * `ambiguous` is true when first-match-wins chose among several sessions the
+ * frame cannot disambiguate, and `ambiguity` names why: a shared port tuple
+ * for a ported frame, or no usable port identity for a portless one. The
+ * route hop renders the pick either way.
+ */
+export interface SessionMatch {
+  session?: NatSession;
+  candidates: number;
+  ambiguous: boolean;
+  ambiguity?: 'port-tuple' | 'address-only';
+}
+
 export function matchSession(
   ctx: RunContext,
   device: DeviceId,
   frame: Frame,
 ): NatSession | undefined {
-  const dst = frame.payload.dstIp;
-  const src = frame.payload.srcIp;
-  if (dst === undefined || src === undefined) return undefined;
-  return ctx.natSessions.find(
+  return matchSessionDetail(ctx, device, frame).session;
+}
+
+export function matchSessionDetail(
+  ctx: RunContext,
+  device: DeviceId,
+  frame: Frame,
+): SessionMatch {
+  const payload = frame.payload;
+  const dst = payload.dstIp;
+  const src = payload.srcIp;
+  if (dst === undefined || src === undefined) {
+    return { candidates: 0, ambiguous: false };
+  }
+  const candidates = ctx.natSessions.filter(
     (item) =>
       item.device === device &&
       item.outsideIp === dst &&
       item.remoteIp === src,
   );
+  if (candidates.length === 0) {
+    return { candidates: 0, ambiguous: false };
+  }  // A frame carrying port identity names its session exactly: the server
+  // replies from its service port (session toPort) to the client's ephemeral
+  // (session clientPort). No address-only fallback here - that fallback is
+  // the diversion this key removes (issue #51). Two sessions can still share
+  // the tuple (same-port clients - the engine never translates source
+  // ports); first-match-wins stands and the tie is named.
+  if (
+    payload.kind === 'service' &&
+    payload.srcPort !== undefined &&
+    payload.dstPort !== undefined
+  ) {
+    const tuple = candidates.filter(
+      (item) =>
+        item.proto === payload.proto &&
+        item.toPort === payload.srcPort &&
+        item.clientPort === payload.dstPort,
+    );
+    return {
+      session: tuple[0],
+      candidates: tuple.length,
+      ambiguous: tuple.length > 1,
+      ...(tuple.length > 1 ? { ambiguity: 'port-tuple' as const } : {}),
+    };
+  }
+  // A frame without port identity (ICMP-style, or a service frame whose
+  // ports are absent) cannot name a session; only sessions without port
+  // identity match it. First-match-wins stands - dropping the return would
+  // break masquerade ping - and the route hop names the pick.
+  const portless = candidates.filter((item) => item.proto === undefined);
+  return {
+    session: portless[0],
+    candidates: portless.length,
+    ambiguous: portless.length > 1,
+    ...(portless.length > 1 ? { ambiguity: 'address-only' as const } : {}),
+  };
 }
 
 export function recordSession(
@@ -108,7 +170,11 @@ export function recordSession(
       item.insideIp === session.insideIp &&
       item.outsideIp === session.outsideIp &&
       item.remoteIp === session.remoteIp &&
-      item.origDstIp === session.origDstIp,
+      item.origDstIp === session.origDstIp &&
+      item.proto === session.proto &&
+      item.outsidePort === session.outsidePort &&
+      item.toPort === session.toPort &&
+      item.clientPort === session.clientPort,
   );
   if (!exists) ctx.natSessions.push(session);
 }

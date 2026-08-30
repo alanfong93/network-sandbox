@@ -6,6 +6,7 @@ import type {
   MacAddr,
   StpPortState,
   Topology,
+  TransportProto,
   VlanId,
 } from './model';
 import {
@@ -39,6 +40,29 @@ export interface NatSession {
    * masquerade sessions, whose returns need no source rewrite.
    */
   origDstIp?: string;
+  /**
+   * Port identity (ADR 0023): present only for sessions created from a
+   * service payload. A return leg that carries ports matches the session
+   * exactly on this tuple; a portless frame (ICMP-style) never matches a
+   * port-carrying session, so management frames to the router's own IP
+   * reach the router while service sessions live.
+   */
+  proto?: TransportProto;
+  /**
+   * Hairpin DNAT only: the public port the client contacted. The return
+   * leg's source port is restored to it - the port analogue of the
+   * `origDstIp` restore. An external DNAT records no session at all, so
+   * hairpin is the only DNAT path that carries it.
+   */
+  outsidePort?: number;
+  /**
+   * The server-side port: `toPort` of the forward for a DNAT session, the
+   * remote's service port for plain masquerade. Return legs arrive with
+   * this as their source port.
+   */
+  toPort?: number;
+  /** The client's ephemeral source port; return legs carry it as dstPort. */
+  clientPort?: number;
 }
 
 export interface RunContext {
