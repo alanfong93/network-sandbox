@@ -259,6 +259,10 @@ export function routeFrame(ctx: RunContext, args: RouteArgs): RouteResult {
   let working: Frame = args.frame;
   let skipSnat = false;
   let skipLocal = false;
+  // A DNAT that lands back in the ingress VLAN's own subnet is hairpin: the
+  // frame leaves via the same iface it arrived on, and masquerade applies
+  // there too (ADR 0021). Undefined for every other frame.
+  let hairpin: RouterIface | undefined;
   const extraHops: Hop[] = [];
 
   if (args.frame.payload.kind === 'dhcp') {
@@ -373,7 +377,11 @@ export function routeFrame(ctx: RunContext, args: RouteArgs): RouteResult {
       };
       working = { ...working, payload };
       dstIp = fwd.toIp;
-      skipSnat = true;
+      hairpin = inSubnet(fwd.toIp, iface.ip, iface.prefix) ? iface : undefined;
+      // An external client DNATed to a LAN server keeps its public source
+      // address; a hairpin client is rewritten so the server's reply returns
+      // through the router (ADR 0021).
+      if (!hairpin) skipSnat = true;
     } else {
       return {
         hops: [
@@ -503,30 +511,37 @@ export function routeFrame(ctx: RunContext, args: RouteArgs): RouteResult {
 
   let payload = working.payload;
   const natHops: Hop[] = [];
-  // Masquerade when the frame leaves via any default-route iface for this
-  // VLAN - the selector-aware pick or the plain default. The selector pick
-  // alone would miss connected egress on the other WAN. The pick is
-  // reachability-aware: with WAN1 down, the WAN2 default names the egress, so
-  // masquerade follows failover (ADR 0020).
-  const natOut = [
-    wanIface(fn, iface.vlan, reachable),
-    wanIface(fn, undefined, reachable),
-  ].find(
-    (candidate) =>
-      candidate !== undefined &&
-      egress.iface.id === candidate.id &&
-      egress.iface.vlan === candidate.vlan,
-  );
-  if (nat && !skipSnat && natOut) {
+  // Masquerade whenever the frame leaves via any iface a default route names
+  // (ADR 0021): the selector-aware pick for this VLAN, the plain default, or
+  // any other WAN reached by a longer-prefix static or selector route. The
+  // pick is reachability-aware: a default whose via sits behind a down link
+  // names nothing (ADR 0020), so masquerade follows failover. A DNATed
+  // hairpin frame instead masquerades out the ingress iface, so the server's
+  // reply re-enters the router and the session delivers it (ADR 0021).
+  const natTarget =
+    hairpin ??
+    fn.routes
+      .filter((route) => route.prefix === 0)
+      .map((route) =>
+        fn.ifaces.find((item) => inSubnet(route.via, item.ip, item.prefix)),
+      )
+      .find(
+        (item) =>
+          item !== undefined &&
+          reachable(item) &&
+          item.id === egress.iface.id &&
+          item.vlan === egress.iface.vlan,
+      );
+  if (nat && !skipSnat && natTarget) {
     const srcIp = payload.srcIp;
-    if (srcIp !== undefined && srcIp !== natOut.ip) {
+    if (srcIp !== undefined && srcIp !== natTarget.ip) {
       recordSession(ctx, {
         device: args.device,
         insideIp: srcIp,
-        outsideIp: natOut.ip,
+        outsideIp: natTarget.ip,
         remoteIp: dstIp,
       });
-      payload = { ...payload, srcIp: natOut.ip };
+      payload = { ...payload, srcIp: natTarget.ip };
       natHops.push(
         makeHop({
           device: args.device,

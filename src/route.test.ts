@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { CATALOGUE } from './catalogue';
 import { defaults } from './defaults';
+import { resolveKey } from './host';
 import type { Chassis, Frame, PortForward, Topology, VlanId } from './model';
-import { createRunContext } from './run';
+import { createRunContext, setResolvedMac } from './run';
 import { routeFrame } from './route';
 
 function router(): Chassis {
@@ -432,5 +433,106 @@ describe('policy routing (Route.fromVlan)', () => {
     });
     expect(result.hops[0]?.reasonCode).toBe('route-lookup:forwarded');
     expect(result.hops[0]?.outPort).toBe('wan1');
+  });
+});
+
+describe('masquerade beyond the default pick', () => {
+  it('masquerades egress via a longer-prefix static route to the non-default WAN', () => {
+    const box = dualWanRouter({ nat: true });
+    const rt = box.functions[0];
+    if (rt?.kind !== 'routing') throw new Error('expected routing');
+    rt.routes.unshift({ dest: '8.8.8.0', prefix: 24, via: '203.0.113.1' });
+    const ctx = createRunContext(topo([box]));
+    const result = routeFrame(ctx, {
+      device: 'R1',
+      inPort: '1',
+      frame: vlan30Frame('8.8.8.8'),
+    });
+    const nat = result.hops.find((hop) => hop.reasonCode === 'nat:translated');
+    expect(nat?.fn).toBe('nat');
+    expect(nat?.device).toBe('R1');
+    expect(nat?.action).toBe('forwarded');
+    expect(nat?.outPort).toBe('wan2');
+    expect(ctx.pendingSends[0]?.frame.payload.srcIp).toBe('203.0.113.2');
+    expect(ctx.natSessions[0]).toEqual({
+      device: 'R1',
+      insideIp: '192.168.30.10',
+      outsideIp: '203.0.113.2',
+      remoteIp: '8.8.8.8',
+    });
+  });
+});
+
+describe('hairpin NAT', () => {
+  const hairpinRouter = () =>
+    dualWanRouter({
+      nat: [
+        { proto: 'tcp', outsidePort: 443, toIp: '192.168.30.50', toPort: 443 },
+      ],
+    });
+
+  const hairpinRequest = (): Frame => ({
+    ...vlan30Frame('198.51.100.2'),
+    payload: {
+      kind: 'service',
+      proto: 'tcp',
+      srcIp: '192.168.30.10',
+      dstIp: '198.51.100.2',
+      dstPort: 443,
+    },
+  });
+
+  it('SNATs a DNAT frame whose target is in the ingress VLAN subnet to the ingress iface IP', () => {
+    const box = hairpinRouter();
+    const ctx = createRunContext(topo([box]));
+    const result = routeFrame(ctx, {
+      device: 'R1',
+      inPort: '1',
+      frame: hairpinRequest(),
+    });
+    expect(result.transmissions[0]?.frame.payload.dstIp).toBe('192.168.30.50');
+    expect(ctx.pendingSends[0]?.frame.payload).toEqual({
+      kind: 'service',
+      proto: 'tcp',
+      srcIp: '192.168.30.1',
+      dstIp: '192.168.30.50',
+      dstPort: 443,
+    });
+    expect(ctx.natSessions[0]).toEqual({
+      device: 'R1',
+      insideIp: '192.168.30.10',
+      outsideIp: '192.168.30.1',
+      remoteIp: '192.168.30.50',
+    });
+  });
+
+  it('the server reply returns through the router on one run context', () => {
+    const box = hairpinRouter();
+    const ctx = createRunContext(topo([box]));
+    routeFrame(ctx, {
+      device: 'R1',
+      inPort: '1',
+      frame: hairpinRequest(),
+    });
+    setResolvedMac(ctx, resolveKey('R1', '192.168.30.10'), 'aa:00:00:00:00:10');
+    const back = routeFrame(ctx, {
+      device: 'R1',
+      inPort: '1',
+      frame: {
+        srcMac: 'aa:00:00:00:00:50',
+        dstMac: 'aa:00:00:00:00:01',
+        vlan: 30,
+        size: 128,
+        encapsulation: ['ethernet', 'vlan-tag'],
+        payload: { kind: 'icmp', srcIp: '192.168.30.50', dstIp: '192.168.30.1' },
+        hops: [],
+      },
+    });
+    const reply = back.transmissions[0]?.frame;
+    expect(reply?.payload.dstIp).toBe('192.168.30.10');
+    expect(reply?.dstMac).toBe('aa:00:00:00:00:10');
+    expect(
+      back.hops.find((hop) => hop.reasonCode === 'nat:translated')?.action,
+    ).toBe('forwarded');
   });
 });
