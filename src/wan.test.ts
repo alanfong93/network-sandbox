@@ -901,6 +901,7 @@ describe('reference scenario (second WAN)', () => {
     );
     expect(pick?.outPort).toBe('wan2');
     expect(pick?.reasonCode).toBe('route-lookup:forwarded');
+    expect(pick?.facts).toBeUndefined();
     const nat = result.hops.find(
       (hop) =>
         hop.device === 'RTR' &&

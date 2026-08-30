@@ -399,8 +399,10 @@ and the working case that makes one of them a lesson.
    with every LAN-side light still green.
 4. **Two WANs sit side by side, and both work as drawn.** WAN1 is the tagged
    PPPoE line; WAN2 is a plain static handoff. The router carries a second
-   default via WAN2, and a `fromVlan: 30` selector pins guest traffic to WAN2
-   while WAN1 is up. The broken sides are the separate multi-WAN traces:
+   default via WAN2, and the working policy trace adds a `fromVlan: 30`
+   selector that pins guest traffic to WAN2 while WAN1 is up — a trace
+   variant, not part of the base topology. The broken sides are the separate
+   multi-WAN traces:
    the destination-only fall-through (row 24), WAN1 down with no failover
    default (row 25) and the equal-cost tie (row 26). The working policy and
    working failover traces in `src/wan.test.ts` sit beside those rows — the
