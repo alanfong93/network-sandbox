@@ -793,6 +793,34 @@ describe('Link.up and failover as two runs', () => {
     expect(delivered?.reasonCode).toBe('delivery:delivered');
   });
 
+  it('does not name a down default from another VLAN as this frame\'s skipped route', () => {
+    const topology = failoverScenario({
+      wan1Down: true,
+      wan2Default: false,
+      policyVlan30: true,
+    });
+    const rtr = topology.devices.find((device) => device.id === 'RTR');
+    const rt = rtr?.functions.find((fn) => fn.kind === 'routing');
+    if (rt?.kind !== 'routing') throw new Error('fixture: RTR routing missing');
+    rt.routes = rt.routes.filter((route) => route.fromVlan !== undefined);
+    const ctx = createRunContext(topology);
+    const result = send(ctx, {
+      from: 'H10',
+      dstIp: '203.0.113.1',
+      payload: { kind: 'icmp' },
+    });
+    const drop = result.hops.find(
+      (hop) =>
+        hop.device === 'RTR' &&
+        hop.fn === 'rt' &&
+        hop.inPort === 'lan' &&
+        hop.step === 'route-lookup' &&
+        hop.action === 'dropped',
+    );
+    expect(drop?.reasonCode).toBe('route-lookup:dropped');
+    expect(drop?.reason).not.toBe(row25?.expected);
+  });
+
   it('a selector default targeting the down WAN is not used', () => {
     const ctx = createRunContext(
       failoverScenario({ wan1Down: true, wan2Default: true, policyVlan30: true }),

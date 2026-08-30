@@ -24,8 +24,9 @@ path between two ports — and every consumer of links treats it the same way:
   port is in 802.1D terms.
 - **Route reachability:** a connected iface on a down link, and any route whose
   via resolves to a down-link iface, are not candidates — including a selector
-  route targeting the down WAN. The drop is still `route-lookup`; no new
-  pipeline step (ADR 0001).
+  route targeting the down WAN. A port carrying several links is down only
+  when all of them are: the walk crosses the first up link, and the two must
+  agree. The drop is still `route-lookup`; no new pipeline step (ADR 0001).
 - **NAT:** masquerade picks the default-route iface with the same
   reachability rule, so the translation follows the failover egress.
 

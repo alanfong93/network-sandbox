@@ -1,11 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { builtinProfile, defaults } from './defaults';
-import type { Chassis, Topology } from './model';
+import type { Chassis, Link, Topology } from './model';
 import {
   createRunContext,
   getResolvedMac,
   learn,
   lookup,
+  portLinkDown,
   portState,
   setResolvedMac,
 } from './run';
@@ -62,5 +63,30 @@ describe('run context', () => {
     const ctx = createRunContext(empty);
     expect(ctx.stp.has('H1')).toBe(false);
     expect(portState(ctx, 'H1', '1')).toBe('forwarding');
+  });
+});
+
+describe('portLinkDown', () => {
+  const link = (
+    id: string,
+    a: { device: string; port: string },
+    b: { device: string; port: string },
+    up?: boolean,
+  ): Link => ({ id, a, b, medium: 'wired', up });
+
+  const multi: Topology = {
+    devices: [],
+    links: [
+      link('down', { device: 'R', port: 'wan' }, { device: 'X', port: '1' }, false),
+      link('up', { device: 'R', port: 'wan' }, { device: 'Y', port: '1' }),
+    ],
+    profiles: [],
+  };
+
+  it('is down only when every link on the port is down, agreeing with peerOf', () => {
+    expect(portLinkDown(multi, 'R', 'wan')).toBe(false);
+    expect(portLinkDown(multi, 'X', '1')).toBe(true);
+    expect(portLinkDown(multi, 'Y', '1')).toBe(false);
+    expect(portLinkDown(multi, 'Z', '9')).toBe(false);
   });
 });

@@ -416,13 +416,23 @@ export function routeFrame(ctx: RunContext, args: RouteArgs): RouteResult {
 
   const egress = lookupEgress(fn, dstIp, iface.vlan, reachable);
   if (!egress) {
-    const downVia = fn.routes.find((route) => {
-      if (route.prefix !== 0) return false;
-      const via = fn.ifaces.find((item) =>
-        inSubnet(route.via, item.ip, item.prefix),
-      );
-      return via !== undefined && portLinkDown(ctx.topology, args.device, via.id);
-    });
+    // Name a default that was actually a candidate for this frame: the same
+    // tier order lookupEgress consults - the frame VLAN's selector defaults
+    // first, then destination-only. Reaching this branch means every
+    // applicable default is absent or down, so a down one here is the cause.
+    const downDefaultIn = (routes: Route[]) =>
+      routes.find((route) => {
+        const via = fn.ifaces.find((item) =>
+          inSubnet(route.via, item.ip, item.prefix),
+        );
+        return via !== undefined && portLinkDown(ctx.topology, args.device, via.id);
+      });
+    const defaultsIn = (fromVlan: VlanId | undefined) =>
+      fn.routes.filter((route) => route.prefix === 0 && route.fromVlan === fromVlan);
+    const downVia =
+      (iface.vlan !== undefined
+        ? downDefaultIn(defaultsIn(iface.vlan))
+        : undefined) ?? downDefaultIn(defaultsIn(undefined));
     return {
       hops: [
         makeHop({

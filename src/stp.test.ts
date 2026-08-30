@@ -424,4 +424,25 @@ describe('down links', () => {
     expect(portState(ctx, 'SW2', '1')).toBe('forwarding');
     expect(ctx.warnings).toEqual([]);
   });
+
+  it('still fire the parallel-link warning when one of several parallel links is down and the rest are up', () => {
+    const topo = topology(
+      [
+        managedSwitch('SW1', 'aa:00:00:00:00:01', ['1', '2', '3'], [10, 20]),
+        managedSwitch('SW2', 'aa:00:00:00:00:02', ['1', '2', '3'], [10, 20]),
+      ],
+      [
+        link('l1', { device: 'SW1', port: '1' }, { device: 'SW2', port: '1' }),
+        link('l2', { device: 'SW1', port: '2' }, { device: 'SW2', port: '2' }),
+        {
+          ...link('l3', { device: 'SW1', port: '3' }, { device: 'SW2', port: '3' }),
+          up: false,
+        },
+      ],
+    );
+    const ctx = createRunContext(topo);
+    expect(portState(ctx, 'SW1', '3')).toBe('disabled');
+    expect(ctx.warnings).toHaveLength(1);
+    expect(ctx.warnings[0]?.observation).toBe('single-instance-stp');
+  });
 });
