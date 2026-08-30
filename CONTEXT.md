@@ -183,6 +183,19 @@ Nothing in it survives to the next run ([ADR 0010](docs/adr/0010-arp-is-modelled
 - Within one run, later frames (the reply) read the tables the request built.
   That is the flow driver, not a cache.
 
+### Hairpin
+
+A DNAT whose frame **arrived from an internal iface** - one no default route names -
+so the client reached a forwarded service through the router's public IP from the
+inside. The request is DNAT'd and SNAT'd to the resolved egress iface's IP, and the
+return session restores the public source on the reply; see
+[ADR 0022](docs/adr/0022-masquerade-follows-the-wan-egress.md).
+
+- **"NAT loopback" is the industry alias; use hairpin.** "Reflection" appears in
+  vendor docs and means the same mechanism; neither name appears in engine code or
+  trace copy.
+- Sessions that carry a hairpin return are address-keyed like every NAT session;
+  two simultaneous hairpin clients of one forwarded server alias (issue #51).
 ### Flow
 
 A request and the reply it elicited, sharing one run context. Catalogue rows
