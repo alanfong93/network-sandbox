@@ -68,6 +68,20 @@ The numbered table in `docs/SPEC.md` §4. Each row is a reproducible mistake plu
 exact wording the trace should produce. Refer to entries as **catalogue row N**, and
 keep the numbering stable — rows are referenced from ADRs and tests.
 
+### Down link
+
+A `Link` with `up: false`. Omitted `up` is up. Down is a **link** property —
+the walk does not traverse it, STP computes as if it were not drawn, and a
+route whose via sits behind it is not a candidate
+([ADR 0020](docs/adr/0020-down-is-a-link-property.md)). Failover is two runs
+of one topology: flip the field, re-run
+([ADR 0003](docs/adr/0003-converged-state-no-timers.md)).
+
+- **Do not call it:** *WAN down* (a down inter-switch copper link is the same
+  property), *interface down* (the field is on the link, not the device or the
+  port), *offline*, *failover state* (failover is the comparison of two runs,
+  not a field).
+
 ### Stage
 
 A roadmap unit from `docs/SPEC.md` §6: 1 wired core, 2 access points, 3 multi-WAN,

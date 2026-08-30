@@ -66,6 +66,7 @@ export function peerOf(
   port: string,
 ): { device: DeviceId; port: string } | undefined {
   for (const link of topology.links) {
+    if (link.up === false) continue;
     if (link.a.device === device && link.a.port === port) return link.b;
     if (link.b.device === device && link.b.port === port) return link.a;
   }

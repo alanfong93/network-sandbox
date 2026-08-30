@@ -61,6 +61,11 @@ interface Link {
   a: { device: DeviceId; port: string };
   b: { device: DeviceId; port: string };
   medium: 'wired' | 'wireless';
+  up?: boolean;                  // omitted = up. Down is a LINK property: the walk
+                                 // does not traverse it, STP computes as if it were
+                                 // not drawn, and a route whose via sits behind it
+                                 // is not a candidate - ADR 0020. Failover is two
+                                 // runs of one topology (ADR 0003).
 }
 
 // ---------- the box ----------
@@ -281,6 +286,7 @@ The product is really this table. Each row is a reproducible mistake with a spec
 | 22 | Router | Port forward points at a subnet the router cannot reach | *"Port forward to 10.99.0.10:443 dropped at R1: no interface on 10.99.0.0/24"* |
 | 23 | Router | DHCP hands out a resolver the client's VLAN cannot reach | *"Query to 192.168.10.1:53 left VLAN 30; dropped by rule VLAN30 -> VLAN10 deny"* |
 | 24 | Multi-WAN router | Second WAN route added for VLAN 30 without its fromVlan selector | *"VLAN 30 frame forwarded via 198.51.100.1 by destination-only lookup - no route carries a VLAN 30 selector"* |
+| 25 | Multi-WAN router | WAN1 down and the only default route was WAN1's — no failover default | *"Default via 192.0.2.1 skipped: its link is down — no usable route to 203.0.113.1"* |
 
 ## 5. STP
 

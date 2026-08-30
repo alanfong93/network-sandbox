@@ -142,6 +142,19 @@ function linksOf(topology: Topology, device: DeviceId, port: string): Link[] {
 }
 
 /**
+ * A down link carries no BPDUs and no frames: STP computes as if it were not
+ * drawn (ADR 0020). Omitted `up` is up, so topologies without the field are
+ * returned untouched.
+ */
+function upLinksOnly(topology: Topology): Topology {
+  if (!topology.links.some((link) => link.up === false)) return topology;
+  return {
+    ...topology,
+    links: topology.links.filter((link) => link.up !== false),
+  };
+}
+
+/**
  * A segment is one LAN: a point-to-point link between two STP ports, a single
  * STP attachment facing only non-STP devices (an edge port), or every STP port
  * reachable from one another only through chassis that have no stp function.
@@ -407,11 +420,12 @@ function designatedOnSegment(
 }
 
 export function computeStp(topology: Topology): StpStateMap {
-  const bridges = collectBridges(topology);
+  const links = upLinksOnly(topology);
+  const bridges = collectBridges(links);
   const state: StpStateMap = new Map();
   if (bridges.size === 0) return state;
 
-  const segs = segments(topology, bridges);
+  const segs = segments(links, bridges);
   const cost = defaults.stp.pathCost;
   const edges = directedEdges(segs, cost);
   const comps = connectedComponents(bridges, edges);
@@ -437,7 +451,7 @@ export function computeStp(topology: Topology): StpStateMap {
   for (const [device, bridge] of bridges) {
     const ports = new Map<string, StpPortState>();
     for (const port of bridge.ports) {
-      const linked = linksOf(topology, device, port).length > 0;
+      const linked = linksOf(links, device, port).length > 0;
       if (!linked) {
         ports.set(port, 'disabled');
         continue;
@@ -509,11 +523,12 @@ export function detectSingleInstanceWarnings(
   topology: Topology,
   stp: StpStateMap,
 ): StpWarning[] {
-  const bridges = collectBridges(topology);
-  const devices = deviceMap(topology);
+  const upTopo = upLinksOnly(topology);
+  const bridges = collectBridges(upTopo);
+  const devices = deviceMap(upTopo);
   const grouped = new Map<string, Link[]>();
 
-  for (const link of topology.links) {
+  for (const link of upTopo.links) {
     if (!bridges.has(link.a.device) || !bridges.has(link.b.device)) continue;
     const pair =
       link.a.device < link.b.device
@@ -534,7 +549,7 @@ export function detectSingleInstanceWarnings(
       for (let j = i + 1; j < links.length; j++) {
         const second = links[j];
         if (!second) continue;
-        const common = commonVlansOnLinks(topology, devices, first, second);
+        const common = commonVlansOnLinks(upTopo, devices, first, second);
         if (common.length < 2) continue;
         chosen = { pairLinks: [first, second], vlans: common };
         break;

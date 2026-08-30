@@ -28,6 +28,7 @@ import {
 } from './nat';
 import {
   getResolvedMac,
+  portLinkDown,
   setResolvedMac,
   type RunContext,
 } from './run';
@@ -102,12 +103,17 @@ function lookupEgress(
   fn: RoutingFn,
   dstIp: string,
   fromVlan?: VlanId,
+  reachable?: (iface: RouterIface) => boolean,
 ): { iface: RouterIface; nextHop: string; route?: Route } | undefined {
-  const connected = fn.ifaces.map((iface) => ({
-    dest: iface.ip,
-    prefix: iface.prefix,
-    value: { iface, nextHop: dstIp },
-  }));
+  const usable = (iface: RouterIface) =>
+    reachable === undefined || reachable(iface);
+  const connected = fn.ifaces
+    .filter((iface) => usable(iface))
+    .map((iface) => ({
+      dest: iface.ip,
+      prefix: iface.prefix,
+      value: { iface, nextHop: dstIp },
+    }));
   const hit = longestPrefixMatch(dstIp, connected);
   if (hit) return hit;
   const toCandidate = (route: Route) => ({
@@ -115,13 +121,25 @@ function lookupEgress(
     prefix: route.prefix,
     value: route,
   });
+  // A via whose link is down is not a candidate (ADR 0020) — including a
+  // selector route targeting the down WAN. Without a reachability test the
+  // candidate set is unchanged.
+  const candidates =
+    reachable === undefined
+      ? fn.routes
+      : fn.routes.filter((route) => {
+          const via = fn.ifaces.find((item) =>
+            inSubnet(route.via, item.ip, item.prefix),
+          );
+          return via !== undefined && usable(via);
+        });
   // Selector tier first: a route carrying fromVlan matches only frames of
   // that VLAN and beats any destination-only route. Absent fromVlan on the
   // frame (or no matching selector) falls back to destination-only LPM.
-  const selected = fn.routes.filter(
+  const selected = candidates.filter(
     (route) => fromVlan !== undefined && route.fromVlan === fromVlan,
   );
-  const destOnly = fn.routes.filter((route) => route.fromVlan === undefined);
+  const destOnly = candidates.filter((route) => route.fromVlan === undefined);
   const route =
     longestPrefixMatch(dstIp, selected.map(toCandidate)) ??
     longestPrefixMatch(dstIp, destOnly.map(toCandidate));
@@ -391,8 +409,20 @@ export function routeFrame(ctx: RunContext, args: RouteArgs): RouteResult {
     };
   }
 
-  const egress = lookupEgress(fn, dstIp, iface.vlan);
+  // ADR 0020: an iface whose link is down is not a route candidate — the
+  // connected route and any default behind it are excluded before the pick.
+  const reachable = (candidate: RouterIface): boolean =>
+    !portLinkDown(ctx.topology, args.device, candidate.id);
+
+  const egress = lookupEgress(fn, dstIp, iface.vlan, reachable);
   if (!egress) {
+    const downVia = fn.routes.find((route) => {
+      if (route.prefix !== 0) return false;
+      const via = fn.ifaces.find((item) =>
+        inSubnet(route.via, item.ip, item.prefix),
+      );
+      return via !== undefined && portLinkDown(ctx.topology, args.device, via.id);
+    });
     return {
       hops: [
         makeHop({
@@ -403,6 +433,7 @@ export function routeFrame(ctx: RunContext, args: RouteArgs): RouteResult {
           action: 'dropped',
           step: 'route-lookup',
           outcome: 'dropped',
+          facts: downVia ? { via: downVia.via, ip: dstIp } : undefined,
         }),
       ],
       transmissions: [],
@@ -464,8 +495,13 @@ export function routeFrame(ctx: RunContext, args: RouteArgs): RouteResult {
   const natHops: Hop[] = [];
   // Masquerade when the frame leaves via any default-route iface for this
   // VLAN - the selector-aware pick or the plain default. The selector pick
-  // alone would miss connected egress on the other WAN.
-  const natOut = [wan, wanIface(fn)].find(
+  // alone would miss connected egress on the other WAN. The pick is
+  // reachability-aware: with WAN1 down, the WAN2 default names the egress, so
+  // masquerade follows failover (ADR 0020).
+  const natOut = [
+    wanIface(fn, iface.vlan, reachable),
+    wanIface(fn, undefined, reachable),
+  ].find(
     (candidate) =>
       candidate !== undefined &&
       egress.iface.id === candidate.id &&

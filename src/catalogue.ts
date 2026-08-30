@@ -367,4 +367,22 @@ export const CATALOGUE: readonly CatalogueRow[] = [
       facts: { fromVlan: 30, via: '198.51.100.1' },
     },
   },
+  {
+    id: 25,
+    device: 'Multi-WAN router',
+    mistake: "WAN1 down and the only default route was WAN1's — no failover default",
+    expected:
+      'Default via 192.0.2.1 skipped: its link is down — no usable route to 203.0.113.1',
+    stage: 3,
+    example: {
+      kind: 'hop',
+      device: 'RTR',
+      inPort: 'lan',
+      vlan: 10,
+      action: 'dropped',
+      step: 'route-lookup',
+      outcome: 'dropped',
+      facts: { via: '192.0.2.1', ip: '203.0.113.1' },
+    },
+  },
 ];

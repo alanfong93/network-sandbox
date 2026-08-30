@@ -78,6 +78,20 @@ export function portState(
   return ctx.stp.get(device)?.get(port) ?? 'forwarding';
 }
 
+/** True when the port sits on a link marked `up: false`. Omitted `up` is up. */
+export function portLinkDown(
+  topology: Topology,
+  device: DeviceId,
+  port: string,
+): boolean {
+  return topology.links.some(
+    (link) =>
+      link.up === false &&
+      ((link.a.device === device && link.a.port === port) ||
+        (link.b.device === device && link.b.port === port)),
+  );
+}
+
 export function learn(
   ctx: RunContext,
   vlan: VlanId,

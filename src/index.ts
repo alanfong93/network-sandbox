@@ -60,6 +60,7 @@ export {
   getResolvedMac,
   learn,
   lookup,
+  portLinkDown,
   portState,
   setResolvedMac,
   warningAsFormatInput,

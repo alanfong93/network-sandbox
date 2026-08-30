@@ -401,3 +401,27 @@ describe('catalogue row 19', () => {
     expect(ctx.warnings).toEqual([]);
   });
 });
+
+describe('down links', () => {
+  it('are not a segment: the down link ports are disabled and the up link still runs the election', () => {
+    const topo = topology(
+      [
+        managedSwitch('SW1', 'aa:00:00:00:00:01', ['1', '2'], [10]),
+        managedSwitch('SW2', 'aa:00:00:00:00:02', ['1', '2'], [10], 4096),
+      ],
+      [
+        link('l1', { device: 'SW1', port: '1' }, { device: 'SW2', port: '1' }),
+        {
+          ...link('l2', { device: 'SW1', port: '2' }, { device: 'SW2', port: '2' }),
+          up: false,
+        },
+      ],
+    );
+    const ctx = createRunContext(topo);
+    expect(portState(ctx, 'SW1', '2')).toBe('disabled');
+    expect(portState(ctx, 'SW2', '2')).toBe('disabled');
+    expect(portState(ctx, 'SW1', '1')).toBe('forwarding');
+    expect(portState(ctx, 'SW2', '1')).toBe('forwarding');
+    expect(ctx.warnings).toEqual([]);
+  });
+});

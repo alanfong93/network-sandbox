@@ -5,6 +5,7 @@ import type {
   Fn,
   Frame,
   PortForward,
+  Route,
   RouterIface,
   Topology,
   VlanId,
@@ -36,20 +37,49 @@ export function matchForward(
 export function wanIface(
   fn: RoutingFn,
   fromVlan?: VlanId,
+  reachable?: (iface: RouterIface) => boolean,
 ): RouterIface | undefined {
-  // The same two-tier pick as route lookup: a default carrying the frame
-  // VLAN's selector wins; otherwise the destination-only default as before.
-  const def =
-    (fromVlan !== undefined
-      ? fn.routes.find(
-          (route) => route.prefix === 0 && route.fromVlan === fromVlan,
-        )
-      : undefined) ??
-    fn.routes.find(
-      (route) => route.prefix === 0 && route.fromVlan === undefined,
+  // Without a reachability test this is the plain two-tier pick: a default
+  // carrying the frame VLAN's selector wins; otherwise the destination-only
+  // default as before.
+  if (reachable === undefined) {
+    const def =
+      (fromVlan !== undefined
+        ? fn.routes.find(
+            (route) => route.prefix === 0 && route.fromVlan === fromVlan,
+          )
+        : undefined) ??
+      fn.routes.find(
+        (route) => route.prefix === 0 && route.fromVlan === undefined,
+      );
+    if (!def) return undefined;
+    return fn.ifaces.find((iface) => inSubnet(def.via, iface.ip, iface.prefix));
+  }
+  // Reachability-aware: the same two-tier order, but a default whose via sits
+  // behind a down link is not a candidate (ADR 0020) — the next default wins,
+  // so masquerade follows the failover egress.
+  const tiers: Route[][] = [];
+  if (fromVlan !== undefined) {
+    tiers.push(
+      fn.routes.filter(
+        (route) => route.prefix === 0 && route.fromVlan === fromVlan,
+      ),
     );
-  if (!def) return undefined;
-  return fn.ifaces.find((iface) => inSubnet(def.via, iface.ip, iface.prefix));
+  }
+  tiers.push(
+    fn.routes.filter(
+      (route) => route.prefix === 0 && route.fromVlan === undefined,
+    ),
+  );
+  for (const tier of tiers) {
+    for (const route of tier) {
+      const iface = fn.ifaces.find((item) =>
+        inSubnet(route.via, item.ip, item.prefix),
+      );
+      if (iface && reachable(iface)) return iface;
+    }
+  }
+  return undefined;
 }
 
 export function matchSession(

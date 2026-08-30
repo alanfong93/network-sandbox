@@ -66,6 +66,14 @@ the client joined. The SPEC.md §9 reference fixture includes both boxes:
 a tagged-capable AP with three SSIDs, and two consumer mesh nodes on a
 `medium: 'wireless'` backhaul that cannot tag.
 
+A link marked `up: false` is not part of any run: `walkFrame` never
+enqueues a frame across one, STP computes as if it were not drawn, and a
+route whose via sits behind one is not a candidate — the drop is still
+`route-lookup` and names the skipped default (ADR 0020). Failover is two
+runs of one topology, not a transition (ADR 0003): WAN1 down with no
+second default is catalogue row 25; WAN1 down with a WAN2 default takes
+WAN2, masquerade included.
+
 A drop is an outcome, not an error. The hop names the pipeline step that
 produced it. There is no pass/fail field on a hop.
 
