@@ -4,7 +4,8 @@ Design document. The engine skeleton, run context, spanning tree, 802.1Q
 bridging pass, topology walk, hosts, ARP, routing, the inter-VLAN firewall,
 the request/reply flow driver, NAT, DHCP (server and relay as a
 message exchange), the ISP handoff (PPPoE and a tagged WAN), a fixture
-profile seam, the reference scenario (including AP and mesh), wireless
+profile seam, the reference scenario (including AP, mesh and a second
+WAN), wireless
 dispatch at `ssid-vlan`, a tagged AP uplink, and AP management as
 ordinary host addressing exist.
 
@@ -342,6 +343,7 @@ If the engine can build this and trace through it correctly, the foundation work
 flowchart TD
     NET[Internet] --> ONT[ISP ONT<br>bridge mode only]
     ONT -->|VLAN 500 tagged<br>PPPoE| RTR[Router<br>OpenWrt / pfSense / OPNsense]
+    ISP2[Second ISP<br>static handoff] -->|untagged| RTR
     RTR -->|trunk 10,20,30| MSW[Managed switch]
     MSW -->|trunk 10,20,30| AP[Access point<br>3 SSIDs]
     MSW -->|access VLAN 10| USW[Unmanaged switch]
@@ -349,19 +351,22 @@ flowchart TD
     MESH1 -.wireless backhaul.-> MESH2[Mesh node<br>AP mode, main only]
     USW --> WIRED[Wired hosts<br>all in VLAN 10]
     style ONT fill:#e8e8ff,color:#000
+    style ISP2 fill:#e8e8ff,color:#000
     style RTR fill:#d7f5d7,color:#000
     style USW fill:#ffe9cc,color:#000
     style MESH1 fill:#ffd7d7,color:#000
     style MESH2 fill:#ffd7d7,color:#000
 ```
 
-**VLANs:** 10 main · 20 IoT · 30 guest. Plus 500 on the WAN, tagged, carrying PPPoE.
+**VLANs:** 10 main · 20 IoT · 30 guest. Plus 500 on WAN1, tagged, carrying PPPoE.
+WAN2 is an untagged static handoff.
 
 **Devices, as chassis + functions (§2):**
 
 | Box | Functions |
 |---|---|
 | ISP ONT | `isp-handoff` (pppoe, vlanTag 500) — bridge only, no router mode |
+| Second ISP | `isp-handoff` (static, no vlanTag) — bridge only |
 | Router | `bridging` + `routing` + `nat` + `dhcp-server` × 3 VLANs |
 | Managed switch | `bridging` (vlanAware) + `stp` |
 | Unmanaged switch | `bridging` (vlanAware false) |
@@ -375,7 +380,8 @@ code.
 
 ### What this scenario is designed to catch
 
-It is not a happy path. Three real failures are built into it.
+It is not a happy path. Four real shapes are built into it — three failures
+and the working case that makes one of them a lesson.
 
 1. **The unmanaged switch hangs off an access port.** Everything behind it is VLAN 10,
    whatever the user believes. Catalogue row 5.
@@ -391,11 +397,21 @@ It is not a happy path. Three real failures are built into it.
    topology is the point — the difference between them is the lesson.
 3. **The WAN is tagged.** Lose VLAN 500 on the uplink and there is no internet at all,
    with every LAN-side light still green.
+4. **Two WANs sit side by side, and both work as drawn.** WAN1 is the tagged
+   PPPoE line; WAN2 is a plain static handoff. The router carries a second
+   default via WAN2, and the working policy trace adds a `fromVlan: 30`
+   selector that pins guest traffic to WAN2 while WAN1 is up — a trace
+   variant, not part of the base topology. The broken sides are the separate
+   multi-WAN traces:
+   the destination-only fall-through (row 24), WAN1 down with no failover
+   default (row 25) and the equal-cost tie (row 26). The working policy and
+   working failover traces in `src/wan.test.ts` sit beside those rows — the
+   difference between them is the lesson, as with the AP and the mesh.
 
 ### Known limits of this scenario
 
-It exercises the WAN edge and the switching core. It does **not** exercise multi-WAN,
-per-VLAN spanning tree, or anything with two parallel trunks.
+It exercises the WAN edge (including multi-WAN) and the switching core. It does
+**not** exercise per-VLAN spanning tree, or anything with two parallel trunks.
 
 And it proves the **engine** works. It does not prove the **profile** system
 generalises — the engine will naturally fit whatever it is built against, and this was

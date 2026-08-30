@@ -72,7 +72,11 @@ route whose via sits behind one is not a candidate — the drop is still
 `route-lookup` and names the skipped default (ADR 0020). Failover is two
 runs of one topology, not a transition (ADR 0003): WAN1 down with no
 second default is catalogue row 25; WAN1 down with a WAN2 default takes
-WAN2, masquerade included.
+WAN2, masquerade included. The §9 fixture carries both WANs — WAN1 is
+PPPoE over tagged VLAN 500, WAN2 an untagged static `isp-handoff` — and
+the working traces sit beside rows 24 and 25: a VLAN 30 selector route
+forwarding guest traffic out WAN2 with WAN1 up, and the WAN1-down
+failover delivered through the second handoff.
 
 A drop is an outcome, not an error. The hop names the pipeline step that
 produced it. There is no pass/fail field on a hop.
