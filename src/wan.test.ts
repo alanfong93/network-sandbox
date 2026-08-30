@@ -386,6 +386,7 @@ function failoverScenario(opts?: {
   wan1Down?: boolean;
   wan2Default?: boolean;
   policyVlan30?: boolean;
+  ecmpVlan10?: boolean;
 }): Topology {
   const topology = referenceScenario();
   const rtr = topology.devices.find((device) => device.id === 'RTR');
@@ -408,6 +409,13 @@ function failoverScenario(opts?: {
   topology.links.push(
     link('w2', { device: 'RTR', port: 'wan2' }, { device: 'ISP2', port: '1' }),
   );
+  if (opts?.ecmpVlan10) {
+    rt.routes = [
+      { dest: '0.0.0.0', prefix: 0, via: '192.0.2.1', fromVlan: 10 },
+      { dest: '0.0.0.0', prefix: 0, via: '198.51.100.1', fromVlan: 10 },
+    ];
+    return topology;
+  }
   if (opts?.wan2Default ?? true) {
     rt.routes.push({ dest: '0.0.0.0', prefix: 0, via: '198.51.100.1' });
   }
@@ -438,6 +446,7 @@ const stripProfile: EngineProfile = {
 const row5 = CATALOGUE.find((row) => row.id === 5);
 const row20 = CATALOGUE.find((row) => row.id === 20);
 const row25 = CATALOGUE.find((row) => row.id === 25);
+const row26 = CATALOGUE.find((row) => row.id === 26);
 
 describe('reference scenario (wired subset)', () => {
   it('a VLAN 10 host reaches the internet via PPPoE over tagged VLAN 500', () => {
@@ -850,5 +859,54 @@ describe('Link.up and failover as two runs', () => {
         hop.action === 'delivered',
     );
     expect(delivered?.reasonCode).toBe('delivery:delivered');
+  });
+});
+
+describe('equal-cost defaults (ECMP)', () => {
+  const forwardedLookup = (hops: { device: string; fn?: string; step: string; action: string }[]) =>
+    hops.find(
+      (hop) =>
+        hop.device === 'RTR' &&
+        hop.fn === 'rt' &&
+        hop.step === 'route-lookup' &&
+        hop.action === 'forwarded',
+    );
+
+  it('two equal-cost defaults forward via the first in routes[] order — repeatable', () => {
+    for (let run = 0; run < 2; run += 1) {
+      const ctx = createRunContext(failoverScenario({ ecmpVlan10: true }));
+      const result = send(ctx, {
+        from: 'H10',
+        dstIp: '203.0.113.1',
+        payload: { kind: 'icmp' },
+      });
+      const pick = forwardedLookup(result.hops);
+      expect(pick?.reasonCode).toBe('route-lookup:forwarded');
+      expect(pick?.outPort).toBe('wan');
+      expect(pick?.outPort).not.toBe('wan2');
+      const arp = result.hops.find(
+        (hop) =>
+          hop.device === 'RTR' && hop.step === 'arp' && hop.action === 'flooded',
+      );
+      expect(arp?.outPort).toBe('wan');
+      expect(
+        result.hops.some(
+          (hop) => hop.outPort === 'wan2' && hop.action === 'forwarded',
+        ),
+      ).toBe(false);
+    }
+  });
+
+  it('row 26 names the chosen via — verbatim', () => {
+    expect(row26).toBeDefined();
+    const ctx = createRunContext(failoverScenario({ ecmpVlan10: true }));
+    const result = send(ctx, {
+      from: 'H10',
+      dstIp: '203.0.113.1',
+      payload: { kind: 'icmp' },
+    });
+    const pick = forwardedLookup(result.hops);
+    if (!pick || !row26) return;
+    expect(pick.reason).toBe(row26.expected);
   });
 });

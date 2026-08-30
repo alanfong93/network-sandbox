@@ -104,7 +104,7 @@ function lookupEgress(
   dstIp: string,
   fromVlan?: VlanId,
   reachable?: (iface: RouterIface) => boolean,
-): { iface: RouterIface; nextHop: string; route?: Route } | undefined {
+): { iface: RouterIface; nextHop: string; route?: Route; ties?: number } | undefined {
   const usable = (iface: RouterIface) =>
     reachable === undefined || reachable(iface);
   const connected = fn.ifaces
@@ -136,19 +136,33 @@ function lookupEgress(
   // Selector tier first: a route carrying fromVlan matches only frames of
   // that VLAN and beats any destination-only route. Absent fromVlan on the
   // frame (or no matching selector) falls back to destination-only LPM.
-  const selected = candidates.filter(
-    (route) => fromVlan !== undefined && route.fromVlan === fromVlan,
-  );
-  const destOnly = candidates.filter((route) => route.fromVlan === undefined);
-  const route =
-    longestPrefixMatch(dstIp, selected.map(toCandidate)) ??
-    longestPrefixMatch(dstIp, destOnly.map(toCandidate));
-  if (!route) return undefined;
+  const tier = (pool: Route[]) => {
+    const entries = pool.map(toCandidate);
+    const route = longestPrefixMatch(dstIp, entries);
+    if (!route) return undefined;
+    // Equal prefixes tie; longestPrefixMatch keeps the first. Counting the
+    // tie is what lets the hop name the pick instead of implying a split
+    // (ADR 0021) — there is no clock to spread frames over (ADR 0003).
+    const ties = entries.filter(
+      (candidate) =>
+        inSubnet(dstIp, candidate.dest, candidate.prefix) &&
+        candidate.prefix === route.prefix,
+    ).length;
+    return { route, ties };
+  };
+  const picked =
+    tier(
+      candidates.filter(
+        (route) => fromVlan !== undefined && route.fromVlan === fromVlan,
+      ),
+    ) ?? tier(candidates.filter((route) => route.fromVlan === undefined));
+  if (!picked) return undefined;
+  const { route, ties } = picked;
   const iface = fn.ifaces.find((item) =>
     inSubnet(route.via, item.ip, item.prefix),
   );
   if (!iface) return undefined;
-  return { iface, nextHop: route.via, route };
+  return { iface, nextHop: route.via, route, ties };
 }
 
 function firewallDrop(
@@ -495,6 +509,13 @@ export function routeFrame(ctx: RunContext, args: RouteArgs): RouteResult {
     egress.route.prefix === 0 &&
     fn.routes.filter((route) => route.prefix === 0).length > 1 &&
     !fn.routes.some((route) => route.fromVlan === iface.vlan);
+  // Equal-cost tie in the matched tier: name the deterministic pick (first
+  // reachable in routes[] order) rather than implying a split (ADR 0021).
+  // The selector-miss lesson wins when both apply.
+  const ecmp =
+    !selectorMiss &&
+    egress.route !== undefined &&
+    (egress.ties ?? 1) > 1;
   const hop = makeHop({
     device: args.device,
     fn: fn.id,
@@ -506,7 +527,9 @@ export function routeFrame(ctx: RunContext, args: RouteArgs): RouteResult {
     outcome: 'forwarded',
     facts: selectorMiss
       ? { fromVlan: iface.vlan, via: egress.nextHop }
-      : undefined,
+      : ecmp
+        ? { via: egress.nextHop }
+        : undefined,
   });
 
   let payload = working.payload;

@@ -287,6 +287,7 @@ The product is really this table. Each row is a reproducible mistake with a spec
 | 23 | Router | DHCP hands out a resolver the client's VLAN cannot reach | *"Query to 192.168.10.1:53 left VLAN 30; dropped by rule VLAN30 -> VLAN10 deny"* |
 | 24 | Multi-WAN router | Second WAN route added for VLAN 30 without its fromVlan selector | *"VLAN 30 frame forwarded via 198.51.100.1 by destination-only lookup - no route carries a VLAN 30 selector"* |
 | 25 | Multi-WAN router | WAN1 down and the only default route was WAN1's — no failover default | *"Default via 192.0.2.1 skipped: its link is down — no usable route to 203.0.113.1"* |
+| 26 | Multi-WAN router | Two equal-cost defaults, expecting 50/50 load balancing | *"Equal-cost routes do not split here: via 192.0.2.1 — the first in the table — carries every frame. Real gear may hash flows across them"* |
 
 ## 5. STP
 
@@ -308,7 +309,7 @@ notice, a contextual warning fired by detecting that exact shape, and catalogue 
 
 1. **Wired core** — the pipeline above, all devices, DHCP both ways.
 2. **Access points as wired devices** — SSID to VLAN, management VLAN, wireless clients. Reuses stage 1; no new engine.
-3. **Multi-WAN** — policy routing per VLAN first (a routing-table decision, no clock), then failover modelled as **state comparison** ("all lines up" vs "WAN1 down") rather than a timed transition, then load balancing. This answers *will failover work* without simulating seconds; it does not answer how long the outage lasts or whether sessions survive.
+3. **Multi-WAN** — policy routing per VLAN first (a routing-table decision, no clock), then failover modelled as **state comparison** ("all lines up" vs "WAN1 down") rather than a timed transition, then equal-cost defaults: a tie resolves to **one named next-hop**, never a split ratio — there is no clock to spread frames over ([ADR 0003](adr/0003-converged-state-no-timers.md), [ADR 0021](adr/0021-ecmp-is-a-named-hop-not-a-split.md)). This answers *will failover work* without simulating seconds; it does not answer how long the outage lasts or whether sessions survive.
 4. **Radio** — last, and presented differently.
 
 Stages 1–3 execute published standards. **Radio coverage does not.** Whether an AP covers a given space depends on walls, materials, antenna patterns and interference; no standard answers it, and a real answer comes from a site survey. Any coverage model here is an estimate built on assumptions. It should therefore not share a visual language with the rest of the tool — otherwise trust leaks from the reliable half to the unreliable half. A confident-looking coverage heatmap is the most dangerous thing this app could render.

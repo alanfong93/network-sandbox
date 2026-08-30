@@ -1,4 +1,4 @@
-# 0021. Masquerade follows the WAN egress, not the default pick
+# 0022. Masquerade follows the WAN egress, not the default pick
 
 - **Status:** Accepted
 - **Date:** 2026-08-30
