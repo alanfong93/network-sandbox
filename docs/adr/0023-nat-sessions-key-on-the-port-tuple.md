@@ -39,12 +39,13 @@ state, and no session field recorded it.
    masquerade ping round-trips the flow driver relies on, and the model has
    no reply port state to disambiguate them.
 4. **A first-match pick among sessions the frame cannot disambiguate is
-   named, not implied** (ADR 0002): address twins for a portless frame, or a
-   shared port tuple for a ported one (two clients that picked the same
-   ephemeral port - the engine never translates source ports). The nat hop
-   renders the candidate count, and the ported case names the collided
-   client port. `matchSession` keeps its signature; `matchSessionDetail`
-   exposes what it chose from.
+   named, not implied** (ADR 0002), and the hop names why: a shared port
+   tuple for a ported frame (two clients that picked the same ephemeral port
+   - the engine never translates source ports) carries the collided client
+   port; a service frame without a source port names that; a portless frame
+   names the address-keyed bucket. `matchSession` keeps its signature;
+   `matchSessionDetail` exposes what it chose from and which kind of
+   ambiguity it was.
 5. **The reply's source port is restored to `outsidePort`** - the port
    analogue of the `origDstIp` restore: the client sees the reply from the
    address and port it contacted.

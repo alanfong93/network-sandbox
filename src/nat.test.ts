@@ -649,6 +649,24 @@ describe('matchSession port-keyed returns', () => {
     const detail = matchSessionDetail(ctx, 'R1', frame);
     expect(detail.ambiguous).toBe(true);
     expect(detail.candidates).toBe(2);
+    expect(detail.ambiguity).toBe('port-tuple');
     expect(detail.session?.insideIp).toBe('192.168.30.13');
+  });
+
+  it('a service return missing its source port reports an address-only tie', () => {
+    const fresh = createRunContext(unreachableForward());
+    fresh.natSessions.push(twin('192.168.30.15'), twin('192.168.30.16'));
+    const frame = frameOf({
+      kind: 'service',
+      proto: 'tcp',
+      srcIp: '192.168.30.50',
+      dstIp: '192.168.30.1',
+      dstPort: 40000,
+    });
+    const detail = matchSessionDetail(fresh, 'R1', frame);
+    expect(detail.ambiguous).toBe(true);
+    expect(detail.candidates).toBe(2);
+    expect(detail.ambiguity).toBe('address-only');
+    expect(detail.session?.insideIp).toBe('192.168.30.15');
   });
 });

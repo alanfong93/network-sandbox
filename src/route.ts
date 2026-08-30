@@ -376,15 +376,16 @@ export function routeFrame(ctx: RunContext, args: RouteArgs): RouteResult {
         outcome: 'translated',
         // Trace-not-verdict (ADR 0002): a return picked first-wins among
         // sessions the frame cannot disambiguate names the pick instead of
-        // implying precision. The ported case carries the collided client
-        // port; the portless case names the address-keyed bucket.
+        // implying precision. The ambiguity kind decides the sentence: a
+        // collided port tuple carries the client port, a service frame
+        // without a source port names that, and a portless frame names the
+        // address-keyed bucket.
         facts: match.ambiguous
-          ? {
-              count: match.candidates,
-              ...(payload.kind === 'service' && payload.dstPort !== undefined
-                ? { dstPort: payload.dstPort }
-                : {}),
-            }
+          ? match.ambiguity === 'port-tuple' && payload.kind === 'service'
+            ? { count: match.candidates, dstPort: payload.dstPort }
+            : payload.kind === 'service'
+              ? { count: match.candidates, proto: payload.proto }
+              : { count: match.candidates }
           : undefined,
       });
       extraHops.push(hop);

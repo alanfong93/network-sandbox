@@ -146,6 +146,13 @@ function formatHop(input: HopInput): string {
   ) {
     return `Return leg matched the first of ${f.count} sessions sharing its port tuple - client port ${f.dstPort} collided`;
   }
+  if (
+    code === 'nat:translated' &&
+    f.count !== undefined &&
+    f.proto !== undefined
+  ) {
+    return `Return leg matched the first of ${f.count} address-keyed sessions - the service frame carries no source port to disambiguate them`;
+  }
   if (code === 'nat:translated' && f.count !== undefined) {
     return `Return leg matched the first of ${f.count} address-keyed sessions - no ports on the frame to disambiguate them`;
   }

@@ -85,13 +85,15 @@ export function wanIface(
 /**
  * What a return-leg lookup found, and what it had to choose from (ADR 0023).
  * `ambiguous` is true when first-match-wins chose among several sessions the
- * frame cannot disambiguate - address twins for a portless frame, or a shared
- * port tuple for a ported one - and the route hop names that pick.
+ * frame cannot disambiguate, and `ambiguity` names why: a shared port tuple
+ * for a ported frame, or no usable port identity for a portless one. The
+ * route hop renders the pick either way.
  */
 export interface SessionMatch {
   session?: NatSession;
   candidates: number;
   ambiguous: boolean;
+  ambiguity?: 'port-tuple' | 'address-only';
 }
 
 export function matchSession(
@@ -121,8 +123,7 @@ export function matchSessionDetail(
   );
   if (candidates.length === 0) {
     return { candidates: 0, ambiguous: false };
-  }
-  // A frame carrying port identity names its session exactly: the server
+  }  // A frame carrying port identity names its session exactly: the server
   // replies from its service port (session toPort) to the client's ephemeral
   // (session clientPort). No address-only fallback here - that fallback is
   // the diversion this key removes (issue #51). Two sessions can still share
@@ -143,6 +144,7 @@ export function matchSessionDetail(
       session: tuple[0],
       candidates: tuple.length,
       ambiguous: tuple.length > 1,
+      ...(tuple.length > 1 ? { ambiguity: 'port-tuple' as const } : {}),
     };
   }
   // A frame without port identity (ICMP-style, or a service frame whose
@@ -154,6 +156,7 @@ export function matchSessionDetail(
     session: portless[0],
     candidates: portless.length,
     ambiguous: portless.length > 1,
+    ...(portless.length > 1 ? { ambiguity: 'address-only' as const } : {}),
   };
 }
 

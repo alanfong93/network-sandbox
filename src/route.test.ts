@@ -900,6 +900,51 @@ describe('hairpin NAT', () => {
     expect(back.hops.some((hop) => hop.step === 'nat')).toBe(false);
   });
 
+  it('an address-only tie behind a service frame without a source port names the missing port', () => {
+    const box = hairpinRouter();
+    const ctx = createRunContext(topo([box]));
+    ctx.natSessions.push(
+      {
+        device: 'R1',
+        insideIp: '192.168.30.10',
+        outsideIp: '192.168.30.1',
+        remoteIp: '192.168.30.50',
+      },
+      {
+        device: 'R1',
+        insideIp: '192.168.30.11',
+        outsideIp: '192.168.30.1',
+        remoteIp: '192.168.30.50',
+      },
+    );
+    const back = routeFrame(ctx, {
+      device: 'R1',
+      inPort: '1',
+      frame: {
+        srcMac: 'aa:00:00:00:00:50',
+        dstMac: 'aa:00:00:00:00:01',
+        vlan: 30,
+        size: 128,
+        encapsulation: ['ethernet', 'vlan-tag'],
+        payload: {
+          kind: 'service',
+          proto: 'tcp',
+          srcIp: '192.168.30.50',
+          dstIp: '192.168.30.1',
+          dstPort: 40000,
+        },
+        hops: [],
+      },
+    });
+    expect(back.transmissions[0]?.frame.payload.dstIp).toBe('192.168.30.10');
+    const natHop = back.hops.find(
+      (hop) => hop.step === 'nat' && hop.reasonCode === 'nat:translated',
+    );
+    expect(natHop?.reason).toBe(
+      'Return leg matched the first of 2 address-keyed sessions - the service frame carries no source port to disambiguate them',
+    );
+  });
+
   it('an external DNAT keeps its public source and records no session', () => {
     const box = hairpinRouter();
     const ctx = createRunContext(topo([box]));
