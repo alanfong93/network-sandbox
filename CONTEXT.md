@@ -194,8 +194,9 @@ return session restores the public source on the reply; see
 - **"NAT loopback" is the industry alias; use hairpin.** "Reflection" appears in
   vendor docs and means the same mechanism; neither name appears in engine code or
   trace copy.
-- Sessions that carry a hairpin return are address-keyed like every NAT session;
-  two simultaneous hairpin clients of one forwarded server alias (issue #51).
+- Sessions from a service payload carry a port tuple (ADR 0023): two simultaneous
+  hairpin clients of one forwarded service each receive their own returns, and
+  frames from the server to the router's own IP reach the router.
 ### Flow
 
 A request and the reply it elicited, sharing one run context. Catalogue rows

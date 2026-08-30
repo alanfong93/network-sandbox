@@ -21,7 +21,7 @@ import { decideDhcp } from './dhcp';
 import {
   findNat,
   matchForward,
-  matchSession,
+  matchSessionDetail,
   otherForwardDevice,
   recordSession,
 } from './nat';
@@ -301,6 +301,9 @@ export function routeFrame(ctx: RunContext, args: RouteArgs): RouteResult {
   // Hairpin only: the public IP the client sent to, restored as the reply's
   // source on the return leg.
   let origDst: string | undefined;
+  // Hairpin only: the public port the client contacted, restored as the
+  // reply's source port on the return leg (the port analogue of origDst).
+  let origDstPort: number | undefined;
   const extraHops: Hop[] = [];
 
   if (args.frame.payload.kind === 'dhcp') {
@@ -339,8 +342,9 @@ export function routeFrame(ctx: RunContext, args: RouteArgs): RouteResult {
     dstIp !== undefined &&
     fn.ifaces.some((item) => item.ip === dstIp)
   ) {
-    const session = nat ? matchSession(ctx, args.device, working) : undefined;
-    if (session && nat) {
+    const match = nat ? matchSessionDetail(ctx, args.device, working) : undefined;
+    const session = match?.session;
+    if (session && nat && match) {
       const payload: FramePayload = {
         ...working.payload,
         dstIp: session.insideIp,
@@ -352,6 +356,16 @@ export function routeFrame(ctx: RunContext, args: RouteArgs): RouteResult {
       if (session.origDstIp !== undefined && payload.srcIp !== undefined) {
         payload.srcIp = session.origDstIp;
       }
+      // The port analogue of the restore above: the client sees the reply
+      // from the port it contacted, not the server's internal one (ADR 0023).
+      if (
+        payload.kind === 'service' &&
+        session.outsidePort !== undefined &&
+        payload.srcPort !== undefined &&
+        payload.srcPort !== session.outsidePort
+      ) {
+        payload.srcPort = session.outsidePort;
+      }
       const hop = makeHop({
         device: args.device,
         fn: nat.id,
@@ -360,6 +374,11 @@ export function routeFrame(ctx: RunContext, args: RouteArgs): RouteResult {
         action: 'forwarded',
         step: 'nat',
         outcome: 'translated',
+        // Trace-not-verdict (ADR 0002): a portless return picked first-wins
+        // among address twins names the pick instead of implying precision.
+        facts: match.ambiguous
+          ? { count: match.addressCandidates }
+          : undefined,
       });
       extraHops.push(hop);
       working = { ...working, payload, hops: [...working.hops, hop] };
@@ -418,6 +437,18 @@ export function routeFrame(ctx: RunContext, args: RouteArgs): RouteResult {
         dstPort: fwd.toPort,
       };
       origDst = dstIp;
+      origDstPort = working.payload.dstPort;
+      const dnatHop = makeHop({
+        device: args.device,
+        fn: nat.id,
+        inPort: args.inPort,
+        vlan: args.frame.vlan,
+        action: 'forwarded',
+        step: 'nat',
+        outcome: 'translated',
+        facts: { ip: fwd.toIp, dstPort: fwd.toPort },
+      });
+      extraHops.push(dnatHop);
       working = { ...working, payload };
       dstIp = fwd.toIp;
       hairpin = !defaultNamedIfaces(fn).some(
@@ -590,12 +621,23 @@ export function routeFrame(ctx: RunContext, args: RouteArgs): RouteResult {
   if (nat && !skipSnat && natTarget) {
     const srcIp = payload.srcIp;
     if (srcIp !== undefined && srcIp !== natTarget.ip) {
+      const service = payload.kind === 'service' ? payload : undefined;
       recordSession(ctx, {
         device: args.device,
         insideIp: srcIp,
         outsideIp: natTarget.ip,
         remoteIp: dstIp,
         ...(hairpin ? { origDstIp: origDst } : {}),
+        // Port identity (ADR 0023): recorded wherever the payload carries
+        // it, so return legs match the session on the full tuple.
+        ...(service
+          ? {
+              proto: service.proto,
+              toPort: service.dstPort,
+              clientPort: service.srcPort,
+              ...(hairpin ? { outsidePort: origDstPort } : {}),
+            }
+          : {}),
       });
       payload = { ...payload, srcIp: natTarget.ip };
       natHops.push(

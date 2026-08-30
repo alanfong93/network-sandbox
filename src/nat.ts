@@ -82,20 +82,71 @@ export function wanIface(
   return undefined;
 }
 
+/**
+ * What a return-leg lookup found, and what it had to choose from (ADR 0023).
+ * `ambiguous` is true only when a portless frame was matched first-wins
+ * among several address-keyed sessions - the route hop names that pick.
+ */
+export interface SessionMatch {
+  session?: NatSession;
+  addressCandidates: number;
+  ambiguous: boolean;
+}
+
 export function matchSession(
   ctx: RunContext,
   device: DeviceId,
   frame: Frame,
 ): NatSession | undefined {
-  const dst = frame.payload.dstIp;
-  const src = frame.payload.srcIp;
-  if (dst === undefined || src === undefined) return undefined;
-  return ctx.natSessions.find(
+  return matchSessionDetail(ctx, device, frame).session;
+}
+
+export function matchSessionDetail(
+  ctx: RunContext,
+  device: DeviceId,
+  frame: Frame,
+): SessionMatch {
+  const payload = frame.payload;
+  const dst = payload.dstIp;
+  const src = payload.srcIp;
+  if (dst === undefined || src === undefined) {
+    return { addressCandidates: 0, ambiguous: false };
+  }
+  const candidates = ctx.natSessions.filter(
     (item) =>
       item.device === device &&
       item.outsideIp === dst &&
       item.remoteIp === src,
   );
+  if (candidates.length === 0) {
+    return { addressCandidates: 0, ambiguous: false };
+  }
+  // A frame carrying port identity names its session exactly: the server
+  // replies from its service port (session toPort) to the client's ephemeral
+  // (session clientPort). No address-only fallback here - that fallback is
+  // the diversion this key removes (issue #51).
+  if (
+    payload.kind === 'service' &&
+    payload.srcPort !== undefined &&
+    payload.dstPort !== undefined
+  ) {
+    const session = candidates.find(
+      (item) =>
+        item.proto === payload.proto &&
+        item.toPort === payload.srcPort &&
+        item.clientPort === payload.dstPort,
+    );
+    return { session, addressCandidates: candidates.length, ambiguous: false };
+  }
+  // A portless frame (ICMP-style) cannot name a session; only sessions
+  // without port identity match it. First-match-wins stands - dropping the
+  // return would break masquerade ping - and the route hop names the pick.
+  const portless = candidates.filter((item) => item.proto === undefined);
+  return {
+    session: portless[0],
+    addressCandidates: portless.length,
+    ambiguous: portless.length > 1,
+  };
 }
 
 export function recordSession(
@@ -108,7 +159,11 @@ export function recordSession(
       item.insideIp === session.insideIp &&
       item.outsideIp === session.outsideIp &&
       item.remoteIp === session.remoteIp &&
-      item.origDstIp === session.origDstIp,
+      item.origDstIp === session.origDstIp &&
+      item.proto === session.proto &&
+      item.outsidePort === session.outsidePort &&
+      item.toPort === session.toPort &&
+      item.clientPort === session.clientPort,
   );
   if (!exists) ctx.natSessions.push(session);
 }

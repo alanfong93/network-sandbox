@@ -77,11 +77,12 @@ export { formatPrefix, inSubnet, longestPrefixMatch, networkAddress, parseIpv4 }
 export type { RouteArgs, RouteResult } from './route';
 export { matchIface, routeFrame, routingWouldHandle } from './route';
 
-export type { NatFn, RoutingFn } from './nat';
+export type { NatFn, RoutingFn, SessionMatch } from './nat';
 export {
   findNat,
   matchForward,
   matchSession,
+  matchSessionDetail,
   otherForwardDevice,
   recordSession,
   wanIface,

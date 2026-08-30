@@ -6,6 +6,8 @@ import { flowObservationAsFormatInput, runFlow } from './flow';
 import type {
   Chassis,
   Fn,
+  Frame,
+  FramePayload,
   Link,
   MacAddr,
   PortForward,
@@ -14,7 +16,8 @@ import type {
   Topology,
   VlanId,
 } from './model';
-import { createRunContext } from './run';
+import { createRunContext, type NatSession } from './run';
+import { matchSession, matchSessionDetail } from './nat';
 import { send } from './send';
 import { observationAsFormatInput } from './walk';
 
@@ -545,5 +548,78 @@ describe('port-forward match', () => {
     );
     expect(portDrop?.reasonCode).toBe('port-forward:dropped');
     expect(portDrop?.reason).not.toBe(row22?.expected);
+  });
+});
+
+describe('matchSession port-keyed returns', () => {
+  const ctx = createRunContext(unreachableForward());
+  const twin = (
+    insideIp: string,
+    ports: Partial<
+      Pick<NatSession, 'proto' | 'outsidePort' | 'toPort' | 'clientPort'>
+    > = {},
+  ): NatSession => ({
+    device: 'R1',
+    insideIp,
+    outsideIp: '192.168.30.1',
+    remoteIp: '192.168.30.50',
+    ...ports,
+  });
+  const frameOf = (payload: FramePayload): Frame => ({
+    srcMac: 'aa:00:00:00:00:50',
+    dstMac: 'aa:00:00:00:00:01',
+    vlan: 30,
+    size: 128,
+    encapsulation: ['ethernet', 'vlan-tag'],
+    payload,
+    hops: [],
+  });
+
+  it('a ported return matches the session its tuple names, not the first address twin', () => {
+    ctx.natSessions.push(
+      twin('192.168.30.10', {
+        proto: 'tcp',
+        outsidePort: 443,
+        toPort: 443,
+        clientPort: 40000,
+      }),
+      twin('192.168.30.11', {
+        proto: 'tcp',
+        outsidePort: 443,
+        toPort: 443,
+        clientPort: 40001,
+      }),
+    );
+    const frame = frameOf({
+      kind: 'service',
+      proto: 'tcp',
+      srcIp: '192.168.30.50',
+      dstIp: '192.168.30.1',
+      dstPort: 40001,
+      srcPort: 443,
+    });
+    expect(matchSession(ctx, 'R1', frame)?.insideIp).toBe('192.168.30.11');
+    const detail = matchSessionDetail(ctx, 'R1', frame);
+    expect(detail.ambiguous).toBe(false);
+  });
+
+  it('a portless return never matches a port-carrying session', () => {
+    const frame = frameOf({
+      kind: 'icmp',
+      srcIp: '192.168.30.50',
+      dstIp: '192.168.30.1',
+    });
+    expect(matchSession(ctx, 'R1', frame)).toBeUndefined();
+    expect(matchSessionDetail(ctx, 'R1', frame).ambiguous).toBe(false);
+  });
+
+  it('a portless return still matches a portless session', () => {
+    ctx.natSessions.push(twin('192.168.30.12'));
+    const frame = frameOf({
+      kind: 'icmp',
+      srcIp: '192.168.30.50',
+      dstIp: '192.168.30.1',
+    });
+    expect(matchSession(ctx, 'R1', frame)?.insideIp).toBe('192.168.30.12');
   });
 });
