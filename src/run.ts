@@ -78,6 +78,24 @@ export function portState(
   return ctx.stp.get(device)?.get(port) ?? 'forwarding';
 }
 
+/**
+ * True when the port has links and every one of them is down (`up: false`).
+ * Omitted `up` is up. A port carrying several links is down only when all are:
+ * `peerOf` crosses the first up link, and the two must agree (ADR 0020).
+ */
+export function portLinkDown(
+  topology: Topology,
+  device: DeviceId,
+  port: string,
+): boolean {
+  const onPort = topology.links.filter(
+    (link) =>
+      (link.a.device === device && link.a.port === port) ||
+      (link.b.device === device && link.b.port === port),
+  );
+  return onPort.length > 0 && onPort.every((link) => link.up === false);
+}
+
 export function learn(
   ctx: RunContext,
   vlan: VlanId,

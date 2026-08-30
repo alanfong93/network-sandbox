@@ -22,6 +22,8 @@ export interface Link {
   a: { device: DeviceId; port: string };
   b: { device: DeviceId; port: string };
   medium: 'wired' | 'wireless';
+  /** Omitted is up. Down is a link property, not a device role (ADR 0020). */
+  up?: boolean;
 }
 
 export interface Chassis {

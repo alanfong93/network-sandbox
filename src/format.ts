@@ -121,6 +121,9 @@ function formatHop(input: HopInput): string {
   if (code === 'route-lookup:dropped' && f.prefix !== undefined) {
     return `Reached ${f.otherIp} via ${f.via}. Reply to ${f.ip} dropped at ${input.device}: no route — add ${f.prefix} via ${f.via}`;
   }
+  if (code === 'route-lookup:dropped' && f.via !== undefined && f.ip !== undefined) {
+    return `Default via ${f.via} skipped: its link is down — no usable route to ${f.ip}`;
+  }
   if (code === 'port-forward:dropped' && f.otherDevice !== undefined) {
     return `Port forward on ${f.otherDevice} was never reached — dropped at ${input.device} NAT: no matching forward`;
   }

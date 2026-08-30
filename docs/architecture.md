@@ -13,7 +13,10 @@ scenario (SPEC.md §9, including AP and mesh), wireless dispatch: classify at `s
 then follow `InternalEdge` onto the chassis bridge, a tagged AP
 uplink, AP management as existing host delivery on the chassis
 VLAN, and untagged-only as `canTag: false` on bridging (catalogue
-row 20).
+row 20). `Link.up` (omitted is up) makes down a link property: the walk
+does not traverse a down link, STP computes as if it were not drawn, and
+a route whose via sits behind one is not a candidate — failover as two
+runs of one topology (ADR 0003, ADR 0020; catalogue row 25).
 
 ## Modules
 
@@ -21,7 +24,7 @@ row 20).
 flowchart LR
     M[model.ts<br>SPEC section 2 types] --> F[format.ts]
     R[reasons.ts<br>step x outcome] --> F
-    F --> C[catalogue.ts<br>23 rows]
+    F --> C[catalogue.ts<br>25 rows]
     D[defaults.ts<br>built-in profile] --> S[stp.ts]
     M --> S
     S --> U[run.ts<br>one context per run]
@@ -68,18 +71,18 @@ flowchart LR
 
 | Module | Holds |
 |---|---|
-| `src/model.ts` | Topology, chassis, functions, frames, hops, flows. `nativeVlanOf` derives native VLAN from `untaggedVlans` — the field is not stored. Chassis `vlan` is the VLAN host addressing answers on. |
+| `src/model.ts` | Topology, chassis, functions, frames, hops, flows. `nativeVlanOf` derives native VLAN from `untaggedVlans` — the field is not stored. Chassis `vlan` is the VLAN host addressing answers on. `Link.up` is omitted-is-up: down is a link property, not a device role (ADR 0020). |
 | `src/reasons.ts` | `PIPELINE_STEPS`, `OUTCOMES`, `ReasonCode` as their product. |
 | `src/defaults.ts` | Every tunable the engine will read, including encapsulation overheads. Named `ieee-defaults` v1 (ADR 0012). `unmanagedTag: 'pass'` is the built-in capability; a fixture profile may select `'strip'`. Usable MTU is computed, never stored. |
 | `src/format.ts` | Turns a structured hop, trace, flow or warning into a sentence. |
-| `src/catalogue.ts` | The 23-row table. Row 20 is Stage 2. |
+| `src/catalogue.ts` | The 25-row table. Row 20 is Stage 2; rows 24 and 25 are Stage 3. |
 | `src/stp.ts` | Converged 802.1D: root, root port, designated port, else blocking. Single instance. ADR 0011 warning. |
 | `src/run.ts` | One context per run: FDB, resolved MACs, pending L3 sends, NAT sessions, hop budget, STP map, warnings, the active profile. Discarded when the run ends. |
 | `src/bridge.ts` | One pass through one bridging function: STP ingress, acceptable frames, PVID, ingress filtering, learn, lookup, STP egress, membership, tagging. `canTag: false` keeps the classified VLAN and emits untagged. |
-| `src/walk.ts` | Dispatcher: read `Port.ownedBy`, hand the frame to that function's executor. A `wireless` function classifies at `ssid-vlan` and the walk follows `InternalEdge` onto the chassis bridge — still dispatch on the function, never `device.kind`. Floods are a tree. `hopsLeft` is one budget across every branch. Hosts with addressing answer ARP and take delivery. After a bridging `destination-lookup` drop, a chassis whose host addressing is on that VLAN still takes `arp`/`delivery` — not a management step. An arrival whose `ownedBy` cannot handle the frame is named as a hop on that chassis, not swallowed. Observations are keyed by name and facts, so two VLAN leaks on one walk both surface. When the previous device classified at `ssid-vlan`, its bridging function has `canTag: false`, and the far end's PVID differs, the observation is `ssid-untagged` (mapped vs landed VLAN), not `vlan-leak`. `stp-root` is the blocked STP link plus the elected root the walk transited, not BFS hop order. Egress toward an `isp-handoff` in `pppoe` mode adds that layer; a frame larger than `usableMtu` drops at `mtu`. |
+| `src/walk.ts` | Dispatcher: read `Port.ownedBy`, hand the frame to that function's executor. A `wireless` function classifies at `ssid-vlan` and the walk follows `InternalEdge` onto the chassis bridge — still dispatch on the function, never `device.kind`. Floods are a tree. `hopsLeft` is one budget across every branch. Hosts with addressing answer ARP and take delivery. After a bridging `destination-lookup` drop, a chassis whose host addressing is on that VLAN still takes `arp`/`delivery` — not a management step. An arrival whose `ownedBy` cannot handle the frame is named as a hop on that chassis, not swallowed. Observations are keyed by name and facts, so two VLAN leaks on one walk both surface. When the previous device classified at `ssid-vlan`, its bridging function has `canTag: false`, and the far end's PVID differs, the observation is `ssid-untagged` (mapped vs landed VLAN), not `vlan-leak`. `stp-root` is the blocked STP link plus the elected root the walk transited, not BFS hop order. Egress toward an `isp-handoff` in `pppoe` mode adds that layer; a frame larger than `usableMtu` drops at `mtu`. `peerOf` returns no peer across a link marked `up: false`, so no frame traverses a down link (ADR 0020). |
 | `src/ip.ts` | IPv4 parse, subnet membership, longest-prefix match. No library. |
-| `src/route.ts` | One pass through one routing function: tagged sub-interface match, ARP, DHCP, connected then static LPM - a route carrying the frame VLAN's `fromVlan` selector beats any destination-only route - inter-VLAN allow/deny, then NAT. |
-| `src/nat.ts` | NAT function on a routing function. Masquerade out the default-route iface (the selector-aware default for the frame's VLAN, or the plain default); port-forwards match `proto` and `outsidePort` against either default's public IP, so a hairpin frame to the other WAN still translates. Sessions live on the run context. |
+| `src/route.ts` | One pass through one routing function: tagged sub-interface match, ARP, DHCP, connected then static LPM - a route carrying the frame VLAN's `fromVlan` selector beats any destination-only route - inter-VLAN allow/deny, then NAT. A connected iface on a down link, and a route whose via resolves to a down-link iface, are not candidates; the drop stays `route-lookup` and names the skipped default (ADR 0020, row 25). |
+| `src/nat.ts` | NAT function on a routing function. Masquerade out the default-route iface (the selector-aware default for the frame's VLAN, or the plain default; the pick skips defaults whose via sits behind a down link, so masquerade follows failover); port-forwards match `proto` and `outsidePort` against either default's public IP, so a hairpin frame to the other WAN still translates. Sessions live on the run context. |
 | `src/dhcp.ts` | DHCP server and relay as sibling functions of routing. DISCOVER/OFFER/REQUEST/ACK are frames. An OFFER is `poolStart` from the matching scope. No lease record. |
 | `src/isp.ts` | ISP handoff. The named `port` faces the customer; other ports owned by the function face the provider. A missing `vlanTag` or a PPPoE IP frame without that layer drops at `isp-handoff`. |
 | `src/send.ts` | Originate from a sender. ARP only when the next-hop MAC is unknown. DHCP DISCOVER is broadcast. |
@@ -147,7 +150,10 @@ assembled from a walk. Row 20 is a trace assembled from a walk
 are flows assembled from `runFlow`. Rows 10 and 12 are traces from `send`.
 Rows 3, 8, 11 and 14 are traces from a DHCP DISCOVER `send`. Row 23 is a
 firewall hop after a query to the advertised resolver. Rows 21 and 22 are hops.
-Row 19 is a warning, not a hop.
+Row 19 is a warning, not a hop. Row 25 is a `route-lookup` drop on a
+multi-WAN router with WAN1's link marked `up: false` and no second default;
+the failover runs (`src/wan.test.ts`) show WAN1 down with a WAN2 default
+taking WAN2, and a selector route targeting the down WAN going unused.
 
 PVID is ingress only. Egress tagged/untagged is `untaggedVlans`. A VLAN ID of
 0 is priority-tagged and is classified to the PVID, matching 802.1Q; that case

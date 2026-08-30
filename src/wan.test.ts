@@ -378,6 +378,57 @@ function referenceScenario(opts?: {
   );
 }
 
+/**
+ * The reference scenario with a second WAN attached. Failover is two runs of
+ * one topology (ADR 0003): flip `up: false` on the WAN1 link, re-run.
+ */
+function failoverScenario(opts?: {
+  wan1Down?: boolean;
+  wan2Default?: boolean;
+  policyVlan30?: boolean;
+}): Topology {
+  const topology = referenceScenario();
+  const rtr = topology.devices.find((device) => device.id === 'RTR');
+  const rt = rtr?.functions.find((fn) => fn.kind === 'routing');
+  if (!rtr || rt?.kind !== 'routing') throw new Error('fixture: RTR routing missing');
+  rtr.ports.push({ id: 'wan2', mtu: defaults.portMtu, ownedBy: 'rt' });
+  rt.ifaces.push({
+    id: 'wan2',
+    ip: '198.51.100.2',
+    prefix: 24,
+    mac: 'aa:00:00:00:01:03',
+  });
+  topology.devices.push(
+    hostBox('ISP2', {
+      mac: 'aa:00:00:00:00:f2',
+      ip: '198.51.100.1',
+      prefix: 24,
+    }),
+  );
+  topology.links.push(
+    link('w2', { device: 'RTR', port: 'wan2' }, { device: 'ISP2', port: '1' }),
+  );
+  if (opts?.wan2Default ?? true) {
+    rt.routes.push({ dest: '0.0.0.0', prefix: 0, via: '198.51.100.1' });
+  }
+  if (opts?.policyVlan30) {
+    rt.ifaces.push({
+      id: 'lan',
+      vlan: 30,
+      ip: '192.168.30.1',
+      prefix: 24,
+      mac: 'aa:00:00:00:01:04',
+    });
+    rt.routes.push({ dest: '0.0.0.0', prefix: 0, via: '192.0.2.1', fromVlan: 30 });
+  }
+  if (opts?.wan1Down) {
+    const w = topology.links.find((item) => item.id === 'w');
+    if (!w) throw new Error('fixture: WAN1 link missing');
+    w.up = false;
+  }
+  return topology;
+}
+
 const stripProfile: EngineProfile = {
   id: 'cheap-silicon',
   version: '1',
@@ -386,6 +437,7 @@ const stripProfile: EngineProfile = {
 
 const row5 = CATALOGUE.find((row) => row.id === 5);
 const row20 = CATALOGUE.find((row) => row.id === 20);
+const row25 = CATALOGUE.find((row) => row.id === 25);
 
 describe('reference scenario (wired subset)', () => {
   it('a VLAN 10 host reaches the internet via PPPoE over tagged VLAN 500', () => {
@@ -632,5 +684,171 @@ describe('usable MTU', () => {
         (hop) => hop.device === 'NET' && hop.step === 'delivery',
       ),
     ).toBe(false);
+  });
+});
+
+describe('Link.up and failover as two runs', () => {
+  it('an omitted Link.up is up', () => {
+    const topology = referenceScenario();
+    expect(topology.links.every((item) => item.up === undefined)).toBe(true);
+    const ctx = createRunContext(topology);
+    const result = send(ctx, {
+      from: 'H10',
+      dstIp: '192.0.2.1',
+      payload: { kind: 'icmp' },
+    });
+    const delivery = result.hops.find(
+      (hop) =>
+        hop.device === 'NET' &&
+        hop.step === 'delivery' &&
+        hop.action === 'delivered',
+    );
+    expect(delivery?.reasonCode).toBe('delivery:delivered');
+  });
+
+  it('a down inter-switch copper link is not traversed', () => {
+    const topology = referenceScenario();
+    const u = topology.links.find((item) => item.id === 'u');
+    if (!u) throw new Error('fixture: inter-switch link missing');
+    u.up = false;
+    const ctx = createRunContext(topology);
+    const result = send(ctx, {
+      from: 'H10',
+      dstIp: '192.0.2.1',
+      payload: { kind: 'icmp' },
+    });
+    const flooded = result.hops.find(
+      (hop) => hop.device === 'USW' && hop.action === 'flooded',
+    );
+    expect(flooded?.fn).toBe('br');
+    expect(result.hops.some((hop) => hop.device === 'MSW')).toBe(false);
+    expect(
+      result.hops.some(
+        (hop) =>
+          hop.device === 'NET' &&
+          hop.step === 'delivery' &&
+          hop.action === 'delivered',
+      ),
+    ).toBe(false);
+  });
+
+  it('WAN1 down with no second default drops at route-lookup — row 25 structurally and verbatim', () => {
+    expect(row25).toBeDefined();
+    const ctx = createRunContext(
+      failoverScenario({ wan1Down: true, wan2Default: false }),
+    );
+    const result = send(ctx, {
+      from: 'H10',
+      dstIp: '203.0.113.1',
+      payload: { kind: 'icmp' },
+    });
+    const drop = result.hops.find(
+      (hop) =>
+        hop.device === 'RTR' &&
+        hop.fn === 'rt' &&
+        hop.step === 'route-lookup' &&
+        hop.action === 'dropped',
+    );
+    expect(drop?.reasonCode).toBe('route-lookup:dropped');
+    expect(
+      result.hops.some(
+        (hop) => hop.outPort === 'wan' && hop.action === 'forwarded',
+      ),
+    ).toBe(false);
+    if (!drop || !row25) return;
+    expect(drop.reason).toBe(row25.expected);
+  });
+
+  it('WAN1 down with a WAN2 default takes WAN2', () => {
+    const ctx = createRunContext(
+      failoverScenario({ wan1Down: true, wan2Default: true }),
+    );
+    const result = send(ctx, {
+      from: 'H10',
+      dstIp: '203.0.113.1',
+      payload: { kind: 'icmp' },
+    });
+    const pick = result.hops.find(
+      (hop) =>
+        hop.device === 'RTR' &&
+        hop.fn === 'rt' &&
+        hop.step === 'route-lookup' &&
+        hop.action === 'forwarded',
+    );
+    expect(pick?.outPort).toBe('wan2');
+    const nat = result.hops.find(
+      (hop) =>
+        hop.device === 'RTR' &&
+        hop.step === 'nat' &&
+        hop.action === 'forwarded' &&
+        hop.outPort === 'wan2',
+    );
+    expect(nat?.reasonCode).toBe('nat:translated');
+    const delivered = result.hops.find(
+      (hop) =>
+        hop.device === 'ISP2' &&
+        hop.step === 'delivery' &&
+        hop.action === 'delivered',
+    );
+    expect(delivered?.reasonCode).toBe('delivery:delivered');
+  });
+
+  it('does not name a down default from another VLAN as this frame\'s skipped route', () => {
+    const topology = failoverScenario({
+      wan1Down: true,
+      wan2Default: false,
+      policyVlan30: true,
+    });
+    const rtr = topology.devices.find((device) => device.id === 'RTR');
+    const rt = rtr?.functions.find((fn) => fn.kind === 'routing');
+    if (rt?.kind !== 'routing') throw new Error('fixture: RTR routing missing');
+    rt.routes = rt.routes.filter((route) => route.fromVlan !== undefined);
+    const ctx = createRunContext(topology);
+    const result = send(ctx, {
+      from: 'H10',
+      dstIp: '203.0.113.1',
+      payload: { kind: 'icmp' },
+    });
+    const drop = result.hops.find(
+      (hop) =>
+        hop.device === 'RTR' &&
+        hop.fn === 'rt' &&
+        hop.inPort === 'lan' &&
+        hop.step === 'route-lookup' &&
+        hop.action === 'dropped',
+    );
+    expect(drop?.reasonCode).toBe('route-lookup:dropped');
+    expect(drop?.reason).toBe('dropped at RTR port lan (route-lookup)');
+  });
+
+  it('a selector default targeting the down WAN is not used', () => {
+    const ctx = createRunContext(
+      failoverScenario({ wan1Down: true, wan2Default: true, policyVlan30: true }),
+    );
+    const result = send(ctx, {
+      from: 'H30',
+      dstIp: '203.0.113.1',
+      payload: { kind: 'icmp' },
+    });
+    const pick = result.hops.find(
+      (hop) =>
+        hop.device === 'RTR' &&
+        hop.fn === 'rt' &&
+        hop.step === 'route-lookup' &&
+        hop.action === 'forwarded',
+    );
+    expect(pick?.outPort).toBe('wan2');
+    expect(
+      result.hops.some(
+        (hop) => hop.outPort === 'wan' && hop.action === 'forwarded',
+      ),
+    ).toBe(false);
+    const delivered = result.hops.find(
+      (hop) =>
+        hop.device === 'ISP2' &&
+        hop.step === 'delivery' &&
+        hop.action === 'delivered',
+    );
+    expect(delivered?.reasonCode).toBe('delivery:delivered');
   });
 });

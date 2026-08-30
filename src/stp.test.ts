@@ -401,3 +401,48 @@ describe('catalogue row 19', () => {
     expect(ctx.warnings).toEqual([]);
   });
 });
+
+describe('down links', () => {
+  it('are not a segment: the down link ports are disabled and the up link still runs the election', () => {
+    const topo = topology(
+      [
+        managedSwitch('SW1', 'aa:00:00:00:00:01', ['1', '2'], [10]),
+        managedSwitch('SW2', 'aa:00:00:00:00:02', ['1', '2'], [10], 4096),
+      ],
+      [
+        link('l1', { device: 'SW1', port: '1' }, { device: 'SW2', port: '1' }),
+        {
+          ...link('l2', { device: 'SW1', port: '2' }, { device: 'SW2', port: '2' }),
+          up: false,
+        },
+      ],
+    );
+    const ctx = createRunContext(topo);
+    expect(portState(ctx, 'SW1', '2')).toBe('disabled');
+    expect(portState(ctx, 'SW2', '2')).toBe('disabled');
+    expect(portState(ctx, 'SW1', '1')).toBe('forwarding');
+    expect(portState(ctx, 'SW2', '1')).toBe('forwarding');
+    expect(ctx.warnings).toEqual([]);
+  });
+
+  it('still fire the parallel-link warning when one of several parallel links is down and the rest are up', () => {
+    const topo = topology(
+      [
+        managedSwitch('SW1', 'aa:00:00:00:00:01', ['1', '2', '3'], [10, 20]),
+        managedSwitch('SW2', 'aa:00:00:00:00:02', ['1', '2', '3'], [10, 20]),
+      ],
+      [
+        link('l1', { device: 'SW1', port: '1' }, { device: 'SW2', port: '1' }),
+        link('l2', { device: 'SW1', port: '2' }, { device: 'SW2', port: '2' }),
+        {
+          ...link('l3', { device: 'SW1', port: '3' }, { device: 'SW2', port: '3' }),
+          up: false,
+        },
+      ],
+    );
+    const ctx = createRunContext(topo);
+    expect(portState(ctx, 'SW1', '3')).toBe('disabled');
+    expect(ctx.warnings).toHaveLength(1);
+    expect(ctx.warnings[0]?.observation).toBe('single-instance-stp');
+  });
+});
