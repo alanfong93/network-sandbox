@@ -107,7 +107,8 @@ export function recordSession(
       item.device === session.device &&
       item.insideIp === session.insideIp &&
       item.outsideIp === session.outsideIp &&
-      item.remoteIp === session.remoteIp,
+      item.remoteIp === session.remoteIp &&
+      item.origDstIp === session.origDstIp,
   );
   if (!exists) ctx.natSessions.push(session);
 }

@@ -24,7 +24,6 @@ import {
   matchSession,
   otherForwardDevice,
   recordSession,
-  wanIface,
 } from './nat';
 import {
   getResolvedMac,
@@ -45,6 +44,28 @@ export interface RouteResult {
 }
 
 type RoutingFn = Extract<Fn, { kind: 'routing' }>;
+
+/**
+ * Every iface a default route names, in no particular order (ADR 0022): the
+ * WAN set. Topological only - reachability is the caller's concern, and the
+ * port-forward candidate check has never applied it.
+ */
+function defaultNamedIfaces(fn: RoutingFn): RouterIface[] {
+  const found: RouterIface[] = [];
+  for (const route of fn.routes) {
+    if (route.prefix !== 0) continue;
+    const via = fn.ifaces.find((item) =>
+      inSubnet(route.via, item.ip, item.prefix),
+    );
+    if (
+      via &&
+      !found.some((item) => item.id === via.id && item.vlan === via.vlan)
+    ) {
+      found.push(via);
+    }
+  }
+  return found;
+}
 
 function routingFn(chassis: Chassis, fnId: string): RoutingFn | undefined {
   const fn = chassis.functions.find((item) => item.id === fnId);
@@ -269,10 +290,17 @@ export function routeFrame(ctx: RunContext, args: RouteArgs): RouteResult {
   }
 
   const nat = findNat(chassis, fn.id);
-  const wan = wanIface(fn, iface.vlan);
   let working: Frame = args.frame;
   let skipSnat = false;
   let skipLocal = false;
+  // A DNAT arrived at from an internal iface (one no default route names) is
+  // hairpin: the client reached the public IP from inside, so the frame leaves
+  // via an internal iface and masquerade applies there too (ADR 0022).
+  // Undefined - false - for every other frame.
+  let hairpin = false;
+  // Hairpin only: the public IP the client sent to, restored as the reply's
+  // source on the return leg.
+  let origDst: string | undefined;
   const extraHops: Hop[] = [];
 
   if (args.frame.payload.kind === 'dhcp') {
@@ -317,6 +345,13 @@ export function routeFrame(ctx: RunContext, args: RouteArgs): RouteResult {
         ...working.payload,
         dstIp: session.insideIp,
       };
+      // A hairpin return restores the public address the client originally
+      // contacted, so the client's socket tuple matches (ADR 0022). Plain
+      // masquerade sessions carry no origDstIp: their clients talked to the
+      // remote's real address, and the source must stay as it is.
+      if (session.origDstIp !== undefined && payload.srcIp !== undefined) {
+        payload.srcIp = session.origDstIp;
+      }
       const hop = makeHop({
         device: args.device,
         fn: nat.id,
@@ -332,11 +367,8 @@ export function routeFrame(ctx: RunContext, args: RouteArgs): RouteResult {
       skipSnat = true;
     } else if (
       nat &&
-      (wan !== undefined || wanIface(fn) !== undefined) &&
-      [wan, wanIface(fn)].some(
-        (candidate) => candidate !== undefined && candidate.ip === dstIp,
-      ) &&
-      working.payload.kind === 'service'
+      working.payload.kind === 'service' &&
+      defaultNamedIfaces(fn).some((candidate) => candidate.ip === dstIp)
     ) {
       const fwd = matchForward(nat, working);
       if (!fwd) {
@@ -385,9 +417,16 @@ export function routeFrame(ctx: RunContext, args: RouteArgs): RouteResult {
         dstIp: fwd.toIp,
         dstPort: fwd.toPort,
       };
+      origDst = dstIp;
       working = { ...working, payload };
       dstIp = fwd.toIp;
-      skipSnat = true;
+      hairpin = !defaultNamedIfaces(fn).some(
+        (w) => w.id === iface.id && w.vlan === iface.vlan,
+      );
+      // An external client DNATed to a LAN server keeps its public source
+      // address; a hairpin client is rewritten so the server's reply returns
+      // through the router (ADR 0022).
+      if (!hairpin) skipSnat = true;
     } else {
       return {
         hops: [
@@ -526,30 +565,39 @@ export function routeFrame(ctx: RunContext, args: RouteArgs): RouteResult {
 
   let payload = working.payload;
   const natHops: Hop[] = [];
-  // Masquerade when the frame leaves via any default-route iface for this
-  // VLAN - the selector-aware pick or the plain default. The selector pick
-  // alone would miss connected egress on the other WAN. The pick is
-  // reachability-aware: with WAN1 down, the WAN2 default names the egress, so
-  // masquerade follows failover (ADR 0020).
-  const natOut = [
-    wanIface(fn, iface.vlan, reachable),
-    wanIface(fn, undefined, reachable),
-  ].find(
-    (candidate) =>
-      candidate !== undefined &&
-      egress.iface.id === candidate.id &&
-      egress.iface.vlan === candidate.vlan,
-  );
-  if (nat && !skipSnat && natOut) {
+  // Masquerade whenever the frame leaves via any iface a default route names
+  // (ADR 0022): the selector-aware pick for this VLAN, the plain default, or
+  // any other WAN reached by a longer-prefix static or selector route. The
+  // pick is reachability-aware: a default whose via sits behind a down link
+  // names nothing (ADR 0020), so masquerade follows failover. A DNATed
+  // hairpin frame instead masquerades out the resolved egress iface, so the
+  // server's reply re-enters the router and the session delivers it with the
+  // original public source restored (ADR 0022).
+  const natTarget = hairpin
+    ? egress.iface
+    : fn.routes
+        .filter((route) => route.prefix === 0)
+        .map((route) =>
+          fn.ifaces.find((item) => inSubnet(route.via, item.ip, item.prefix)),
+        )
+        .find(
+          (item) =>
+            item !== undefined &&
+            reachable(item) &&
+            item.id === egress.iface.id &&
+            item.vlan === egress.iface.vlan,
+        );
+  if (nat && !skipSnat && natTarget) {
     const srcIp = payload.srcIp;
-    if (srcIp !== undefined && srcIp !== natOut.ip) {
+    if (srcIp !== undefined && srcIp !== natTarget.ip) {
       recordSession(ctx, {
         device: args.device,
         insideIp: srcIp,
-        outsideIp: natOut.ip,
+        outsideIp: natTarget.ip,
         remoteIp: dstIp,
+        ...(hairpin ? { origDstIp: origDst } : {}),
       });
-      payload = { ...payload, srcIp: natOut.ip };
+      payload = { ...payload, srcIp: natTarget.ip };
       natHops.push(
         makeHop({
           device: args.device,
