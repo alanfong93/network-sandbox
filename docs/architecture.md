@@ -9,7 +9,8 @@ and the inter-VLAN firewall, the flow driver that traces a request
 and its reply against one run context, NAT (masquerade plus port
 forwards), DHCP as a message exchange (no leases), the ISP handoff
 (PPPoE and a tagged WAN), a fixture profile seam, the reference
-scenario (SPEC.md §9, including AP and mesh), wireless dispatch: classify at `ssid-vlan`,
+scenario (SPEC.md §9, including AP, mesh and a second WAN), wireless
+dispatch: classify at `ssid-vlan`,
 then follow `InternalEdge` onto the chassis bridge, a tagged AP
 uplink, AP management as existing host delivery on the chassis
 VLAN, and untagged-only as `canTag: false` on bridging (catalogue
@@ -156,7 +157,11 @@ the failover runs (`src/wan.test.ts`) show WAN1 down with a WAN2 default
 taking WAN2, and a selector route targeting the down WAN going unused.
 Row 26 is the equal-cost tie: two VLAN 10 selector defaults, both up,
 forward via the first in `routes[]` order — repeatable, verbatim in
-`src/wan.test.ts`.
+`src/wan.test.ts`. The §9 fixture itself now carries WAN2 — a second
+`isp-handoff` in static mode plus a second default — and the working
+traces sit beside rows 24 and 25: a VLAN 30 selector forwarding out
+WAN2 with WAN1 up, and WAN1 down taking WAN2 through the second
+handoff.
 
 PVID is ingress only. Egress tagged/untagged is `untaggedVlans`. A VLAN ID of
 0 is priority-tagged and is classified to the PVID, matching 802.1Q; that case
@@ -166,7 +171,7 @@ and leaves the on-wire tag untouched unless the active profile selects
 `canTag: false` is a separate capability: membership still uses VLANs,
 egress is always untagged. A preset writes that field; the engine does
 not branch on a vendor name. The
-reference scenario (SPEC.md §9, including AP and mesh) is `src/wan.test.ts`.
+reference scenario (SPEC.md §9, including AP, mesh and a second WAN) is `src/wan.test.ts`.
 Row 5 reproduces there as well as in `walk.test.ts`; row 20 reproduces
 there as well as in `src/mesh.test.ts`. Tagged AP uplink and
 management VLAN (issue #30, no catalogue row) are `src/ap.test.ts`.

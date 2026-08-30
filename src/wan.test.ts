@@ -143,7 +143,11 @@ function routerBox(
   };
 }
 
-function ontBox(id: string, vlanTag: VlanId | undefined): Chassis {
+function ontBox(
+  id: string,
+  vlanTag: VlanId | undefined,
+  mode: 'pppoe' | 'static' = 'pppoe',
+): Chassis {
   return {
     id,
     label: id,
@@ -157,7 +161,7 @@ function ontBox(id: string, vlanTag: VlanId | undefined): Chassis {
         kind: 'isp-handoff',
         id: 'isp',
         port: '1',
-        mode: 'pppoe',
+        mode,
         vlanTag,
       },
     ],
@@ -258,7 +262,7 @@ function topo(devices: Chassis[], links: Link[]): Topology {
   return { devices, links, profiles: [] };
 }
 
-/** SPEC.md §9 reference scenario, including AP and mesh. */
+/** SPEC.md §9 reference scenario, including AP, mesh, and both WANs. */
 function referenceScenario(opts?: {
   wanVlan?: VlanId | null;
   meshSsidVlan?: VlanId;
@@ -271,6 +275,12 @@ function referenceScenario(opts?: {
     ip: '192.0.2.2',
     prefix: 24,
     mac: 'aa:00:00:00:01:02',
+  };
+  const wan2Iface: RouterIface = {
+    id: 'wan2',
+    ip: '198.51.100.2',
+    prefix: 24,
+    mac: 'aa:00:00:00:01:03',
   };
   return topo(
     [
@@ -334,16 +344,26 @@ function referenceScenario(opts?: {
             mac: 'aa:00:00:00:01:01',
           },
           wanIface,
+          wan2Iface,
         ],
         {
-          routes: [{ dest: '0.0.0.0', prefix: 0, via: '192.0.2.1' }],
+          routes: [
+            { dest: '0.0.0.0', prefix: 0, via: '192.0.2.1' },
+            { dest: '0.0.0.0', prefix: 0, via: '198.51.100.1' },
+          ],
           nat: true,
         },
       ),
       ontBox('ONT', 500),
+      ontBox('ISP2', undefined, 'static'),
       hostBox('NET', {
         mac: 'aa:00:00:00:00:ee',
         ip: '192.0.2.1',
+        prefix: 24,
+      }),
+      hostBox('NET2', {
+        mac: 'aa:00:00:00:00:f2',
+        ip: '198.51.100.1',
         prefix: 24,
       }),
     ],
@@ -353,6 +373,8 @@ function referenceScenario(opts?: {
       link('t', { device: 'MSW', port: '1' }, { device: 'RTR', port: 'lan' }),
       link('w', { device: 'RTR', port: 'wan' }, { device: 'ONT', port: '1' }),
       link('i', { device: 'ONT', port: '2' }, { device: 'NET', port: '1' }),
+      link('w2', { device: 'RTR', port: 'wan2' }, { device: 'ISP2', port: '1' }),
+      link('i2', { device: 'ISP2', port: '2' }, { device: 'NET2', port: '1' }),
       link('ap', { device: 'MSW', port: '3' }, { device: 'AP', port: '1' }),
       link('m1', { device: 'MSW', port: '4' }, { device: 'MESH1', port: '1' }),
       link(
@@ -379,36 +401,21 @@ function referenceScenario(opts?: {
 }
 
 /**
- * The reference scenario with a second WAN attached. Failover is two runs of
- * one topology (ADR 0003): flip `up: false` on the WAN1 link, re-run.
+ * The reference scenario with one multi-WAN mistake applied. Failover is two
+ * runs of one topology (ADR 0003): flip `up: false` on the WAN1 link, re-run.
+ * `wan2Default: false` removes WAN2's default (row 25's mistake); the ECMP
+ * opt replaces the defaults with two VLAN 10 selectors (row 26).
  */
 function failoverScenario(opts?: {
   wan1Down?: boolean;
   wan2Default?: boolean;
-  policyVlan30?: boolean;
+  policyVlan30Via?: 'wan1' | 'wan2';
   ecmpVlan10?: boolean;
 }): Topology {
   const topology = referenceScenario();
   const rtr = topology.devices.find((device) => device.id === 'RTR');
   const rt = rtr?.functions.find((fn) => fn.kind === 'routing');
   if (!rtr || rt?.kind !== 'routing') throw new Error('fixture: RTR routing missing');
-  rtr.ports.push({ id: 'wan2', mtu: defaults.portMtu, ownedBy: 'rt' });
-  rt.ifaces.push({
-    id: 'wan2',
-    ip: '198.51.100.2',
-    prefix: 24,
-    mac: 'aa:00:00:00:01:03',
-  });
-  topology.devices.push(
-    hostBox('ISP2', {
-      mac: 'aa:00:00:00:00:f2',
-      ip: '198.51.100.1',
-      prefix: 24,
-    }),
-  );
-  topology.links.push(
-    link('w2', { device: 'RTR', port: 'wan2' }, { device: 'ISP2', port: '1' }),
-  );
   if (opts?.ecmpVlan10) {
     rt.routes = [
       { dest: '0.0.0.0', prefix: 0, via: '192.0.2.1', fromVlan: 10 },
@@ -416,10 +423,10 @@ function failoverScenario(opts?: {
     ];
     return topology;
   }
-  if (opts?.wan2Default ?? true) {
-    rt.routes.push({ dest: '0.0.0.0', prefix: 0, via: '198.51.100.1' });
+  if (opts?.wan2Default === false) {
+    rt.routes = rt.routes.filter((route) => route.via !== '198.51.100.1');
   }
-  if (opts?.policyVlan30) {
+  if (opts?.policyVlan30Via) {
     rt.ifaces.push({
       id: 'lan',
       vlan: 30,
@@ -427,7 +434,12 @@ function failoverScenario(opts?: {
       prefix: 24,
       mac: 'aa:00:00:00:01:04',
     });
-    rt.routes.push({ dest: '0.0.0.0', prefix: 0, via: '192.0.2.1', fromVlan: 30 });
+    rt.routes.push({
+      dest: '0.0.0.0',
+      prefix: 0,
+      via: opts.policyVlan30Via === 'wan2' ? '198.51.100.1' : '192.0.2.1',
+      fromVlan: 30,
+    });
   }
   if (opts?.wan1Down) {
     const w = topology.links.find((item) => item.id === 'w');
@@ -793,9 +805,17 @@ describe('Link.up and failover as two runs', () => {
         hop.outPort === 'wan2',
     );
     expect(nat?.reasonCode).toBe('nat:translated');
-    const delivered = result.hops.find(
+    const handoff = result.hops.find(
       (hop) =>
         hop.device === 'ISP2' &&
+        hop.fn === 'isp' &&
+        hop.step === 'isp-handoff' &&
+        hop.action === 'forwarded',
+    );
+    expect(handoff?.inPort).toBe('1');
+    const delivered = result.hops.find(
+      (hop) =>
+        hop.device === 'NET2' &&
         hop.step === 'delivery' &&
         hop.action === 'delivered',
     );
@@ -806,7 +826,7 @@ describe('Link.up and failover as two runs', () => {
     const topology = failoverScenario({
       wan1Down: true,
       wan2Default: false,
-      policyVlan30: true,
+      policyVlan30Via: 'wan1',
     });
     const rtr = topology.devices.find((device) => device.id === 'RTR');
     const rt = rtr?.functions.find((fn) => fn.kind === 'routing');
@@ -832,7 +852,7 @@ describe('Link.up and failover as two runs', () => {
 
   it('a selector default targeting the down WAN is not used', () => {
     const ctx = createRunContext(
-      failoverScenario({ wan1Down: true, wan2Default: true, policyVlan30: true }),
+      failoverScenario({ wan1Down: true, wan2Default: true, policyVlan30Via: 'wan1' }),
     );
     const result = send(ctx, {
       from: 'H30',
@@ -854,11 +874,61 @@ describe('Link.up and failover as two runs', () => {
     ).toBe(false);
     const delivered = result.hops.find(
       (hop) =>
-        hop.device === 'ISP2' &&
+        hop.device === 'NET2' &&
         hop.step === 'delivery' &&
         hop.action === 'delivered',
     );
     expect(delivered?.reasonCode).toBe('delivery:delivered');
+  });
+});
+
+describe('reference scenario (second WAN)', () => {
+  it('a VLAN 30 selector route forwards guest traffic out WAN2 with WAN1 up', () => {
+    const ctx = createRunContext(
+      failoverScenario({ policyVlan30Via: 'wan2' }),
+    );
+    const result = send(ctx, {
+      from: 'H30',
+      dstIp: '203.0.113.1',
+      payload: { kind: 'icmp' },
+    });
+    const pick = result.hops.find(
+      (hop) =>
+        hop.device === 'RTR' &&
+        hop.fn === 'rt' &&
+        hop.step === 'route-lookup' &&
+        hop.action === 'forwarded',
+    );
+    expect(pick?.outPort).toBe('wan2');
+    expect(pick?.reasonCode).toBe('route-lookup:forwarded');
+    const nat = result.hops.find(
+      (hop) =>
+        hop.device === 'RTR' &&
+        hop.step === 'nat' &&
+        hop.action === 'forwarded' &&
+        hop.outPort === 'wan2',
+    );
+    expect(nat?.reasonCode).toBe('nat:translated');
+    const handoff = result.hops.find(
+      (hop) =>
+        hop.device === 'ISP2' &&
+        hop.fn === 'isp' &&
+        hop.step === 'isp-handoff' &&
+        hop.action === 'forwarded',
+    );
+    expect(handoff?.inPort).toBe('1');
+    const delivered = result.hops.find(
+      (hop) =>
+        hop.device === 'NET2' &&
+        hop.step === 'delivery' &&
+        hop.action === 'delivered',
+    );
+    expect(delivered?.reasonCode).toBe('delivery:delivered');
+    expect(
+      result.hops.some(
+        (hop) => hop.outPort === 'wan' && hop.action === 'forwarded',
+      ),
+    ).toBe(false);
   });
 });
 
