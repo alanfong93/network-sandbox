@@ -49,9 +49,10 @@ export interface NatSession {
    */
   proto?: TransportProto;
   /**
-   * Port-forward DNAT only: the public port the client contacted. The
-   * return leg's source port is restored to it - the port analogue of the
-   * `origDstIp` restore.
+   * Hairpin DNAT only: the public port the client contacted. The return
+   * leg's source port is restored to it - the port analogue of the
+   * `origDstIp` restore. An external DNAT records no session at all, so
+   * hairpin is the only DNAT path that carries it.
    */
   outsidePort?: number;
   /**

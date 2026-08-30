@@ -622,4 +622,33 @@ describe('matchSession port-keyed returns', () => {
     });
     expect(matchSession(ctx, 'R1', frame)?.insideIp).toBe('192.168.30.12');
   });
+
+  it('a ported return matching two sessions reports the tie', () => {
+    ctx.natSessions.push(
+      twin('192.168.30.13', {
+        proto: 'tcp',
+        outsidePort: 443,
+        toPort: 443,
+        clientPort: 41000,
+      }),
+      twin('192.168.30.14', {
+        proto: 'tcp',
+        outsidePort: 443,
+        toPort: 443,
+        clientPort: 41000,
+      }),
+    );
+    const frame = frameOf({
+      kind: 'service',
+      proto: 'tcp',
+      srcIp: '192.168.30.50',
+      dstIp: '192.168.30.1',
+      dstPort: 41000,
+      srcPort: 443,
+    });
+    const detail = matchSessionDetail(ctx, 'R1', frame);
+    expect(detail.ambiguous).toBe(true);
+    expect(detail.candidates).toBe(2);
+    expect(detail.session?.insideIp).toBe('192.168.30.13');
+  });
 });

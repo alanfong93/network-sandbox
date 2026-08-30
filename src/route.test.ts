@@ -846,6 +846,60 @@ describe('hairpin NAT', () => {
     );
   });
 
+  it('a return whose port tuple matches two sessions names the collision', () => {
+    const box = hairpinRouter();
+    const ctx = createRunContext(topo([box]));
+    routeFrame(ctx, { device: 'R1', inPort: '1', frame: hairpinRequest(clientA) });
+    const requestB = hairpinRequest(clientB);
+    routeFrame(ctx, {
+      device: 'R1',
+      inPort: '1',
+      frame: { ...requestB, payload: { ...requestB.payload, srcPort: 40000 } },
+    });
+    expect(ctx.natSessions).toHaveLength(2);
+    setResolvedMac(ctx, resolveKey('R1', '192.168.30.10'), 'aa:00:00:00:00:10');
+    const back = routeFrame(ctx, {
+      device: 'R1',
+      inPort: '1',
+      frame: hairpinReply(clientA),
+    });
+    expect(back.transmissions[0]?.frame.payload.dstIp).toBe('192.168.30.10');
+    const natHop = back.hops.find(
+      (hop) => hop.step === 'nat' && hop.reasonCode === 'nat:translated',
+    );
+    expect(natHop?.reason).toBe(
+      'Return leg matched the first of 2 sessions sharing its port tuple - client port 40000 collided',
+    );
+  });
+
+  it('a service return without port identity is delivered to the router', () => {
+    const box = hairpinRouter();
+    const ctx = createRunContext(topo([box]));
+    routeFrame(ctx, { device: 'R1', inPort: '1', frame: hairpinRequest() });
+    const back = routeFrame(ctx, {
+      device: 'R1',
+      inPort: '1',
+      frame: {
+        srcMac: 'aa:00:00:00:00:50',
+        dstMac: 'aa:00:00:00:00:01',
+        vlan: 30,
+        size: 128,
+        encapsulation: ['ethernet', 'vlan-tag'],
+        payload: {
+          kind: 'service',
+          proto: 'tcp',
+          srcIp: '192.168.30.50',
+          dstIp: '192.168.30.1',
+          dstPort: 40000,
+        },
+        hops: [],
+      },
+    });
+    expect(back.hops[0]?.step).toBe('delivery');
+    expect(back.hops[0]?.action).toBe('delivered');
+    expect(back.hops.some((hop) => hop.step === 'nat')).toBe(false);
+  });
+
   it('an external DNAT keeps its public source and records no session', () => {
     const box = hairpinRouter();
     const ctx = createRunContext(topo([box]));

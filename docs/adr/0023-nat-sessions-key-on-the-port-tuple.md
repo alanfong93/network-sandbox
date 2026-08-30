@@ -33,14 +33,18 @@ state, and no session field recorded it.
    equals `clientPort`. There is no address-only fallback for ported frames -
    a service frame whose ports name no session is a new conversation with the
    router, not a hijack.
-3. **A portless frame (ICMP-style) matches only sessions without port
-   identity**, first-match-wins as before. Dropping such returns would break
-   the masquerade ping round-trips the flow driver relies on, and the model
-   has no reply port state to disambiguate them.
-4. **An ambiguous portless pick is named, not implied** (ADR 0002): when
-   first-match-wins chose among several address twins, the nat hop renders
-   the candidate count. `matchSession` keeps its signature;
-   `matchSessionDetail` exposes what it chose from.
+3. **A frame without port identity - ICMP-style, or a service frame whose
+   ports are absent - matches only sessions without port identity**,
+   first-match-wins as before. Dropping such returns would break the
+   masquerade ping round-trips the flow driver relies on, and the model has
+   no reply port state to disambiguate them.
+4. **A first-match pick among sessions the frame cannot disambiguate is
+   named, not implied** (ADR 0002): address twins for a portless frame, or a
+   shared port tuple for a ported one (two clients that picked the same
+   ephemeral port - the engine never translates source ports). The nat hop
+   renders the candidate count, and the ported case names the collided
+   client port. `matchSession` keeps its signature; `matchSessionDetail`
+   exposes what it chose from.
 5. **The reply's source port is restored to `outsidePort`** - the port
    analogue of the `origDstIp` restore: the client sees the reply from the
    address and port it contacted.
@@ -83,4 +87,13 @@ Still `route-lookup`/`nat`/`port-forward`; no new pipeline step or outcome
   one source translation.
 - `recordSession`'s duplicate check extends to the tuple, so two connections
   from one client IP are separate sessions.
+- The engine still does not translate source ports. Two clients that pick the
+  same ephemeral port toward one service share a tuple; their returns are
+  delivered first-match-wins and the hop names the tie. Full resolution needs
+  source-port translation on SNAT - out of this issue's boundary.
+- A double-NAT reply walk no longer fires the `double-nat` observation: both
+  return-leg translations carry no egress port, so the request walk's
+  observation is the one the trace keeps. Pre-existing behaviour for DNAT
+  hops is unchanged - a DNAT emitted no hop before this ADR, so DNAT+SNAT
+  chains were never counted.
 - ADR 0022's accepted cost is spent by this ADR, not edited away.

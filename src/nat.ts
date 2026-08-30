@@ -84,12 +84,13 @@ export function wanIface(
 
 /**
  * What a return-leg lookup found, and what it had to choose from (ADR 0023).
- * `ambiguous` is true only when a portless frame was matched first-wins
- * among several address-keyed sessions - the route hop names that pick.
+ * `ambiguous` is true when first-match-wins chose among several sessions the
+ * frame cannot disambiguate - address twins for a portless frame, or a shared
+ * port tuple for a ported one - and the route hop names that pick.
  */
 export interface SessionMatch {
   session?: NatSession;
-  addressCandidates: number;
+  candidates: number;
   ambiguous: boolean;
 }
 
@@ -110,7 +111,7 @@ export function matchSessionDetail(
   const dst = payload.dstIp;
   const src = payload.srcIp;
   if (dst === undefined || src === undefined) {
-    return { addressCandidates: 0, ambiguous: false };
+    return { candidates: 0, ambiguous: false };
   }
   const candidates = ctx.natSessions.filter(
     (item) =>
@@ -119,32 +120,39 @@ export function matchSessionDetail(
       item.remoteIp === src,
   );
   if (candidates.length === 0) {
-    return { addressCandidates: 0, ambiguous: false };
+    return { candidates: 0, ambiguous: false };
   }
   // A frame carrying port identity names its session exactly: the server
   // replies from its service port (session toPort) to the client's ephemeral
   // (session clientPort). No address-only fallback here - that fallback is
-  // the diversion this key removes (issue #51).
+  // the diversion this key removes (issue #51). Two sessions can still share
+  // the tuple (same-port clients - the engine never translates source
+  // ports); first-match-wins stands and the tie is named.
   if (
     payload.kind === 'service' &&
     payload.srcPort !== undefined &&
     payload.dstPort !== undefined
   ) {
-    const session = candidates.find(
+    const tuple = candidates.filter(
       (item) =>
         item.proto === payload.proto &&
         item.toPort === payload.srcPort &&
         item.clientPort === payload.dstPort,
     );
-    return { session, addressCandidates: candidates.length, ambiguous: false };
+    return {
+      session: tuple[0],
+      candidates: tuple.length,
+      ambiguous: tuple.length > 1,
+    };
   }
-  // A portless frame (ICMP-style) cannot name a session; only sessions
-  // without port identity match it. First-match-wins stands - dropping the
-  // return would break masquerade ping - and the route hop names the pick.
+  // A frame without port identity (ICMP-style, or a service frame whose
+  // ports are absent) cannot name a session; only sessions without port
+  // identity match it. First-match-wins stands - dropping the return would
+  // break masquerade ping - and the route hop names the pick.
   const portless = candidates.filter((item) => item.proto === undefined);
   return {
     session: portless[0],
-    addressCandidates: portless.length,
+    candidates: portless.length,
     ambiguous: portless.length > 1,
   };
 }

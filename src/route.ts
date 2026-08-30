@@ -374,10 +374,17 @@ export function routeFrame(ctx: RunContext, args: RouteArgs): RouteResult {
         action: 'forwarded',
         step: 'nat',
         outcome: 'translated',
-        // Trace-not-verdict (ADR 0002): a portless return picked first-wins
-        // among address twins names the pick instead of implying precision.
+        // Trace-not-verdict (ADR 0002): a return picked first-wins among
+        // sessions the frame cannot disambiguate names the pick instead of
+        // implying precision. The ported case carries the collided client
+        // port; the portless case names the address-keyed bucket.
         facts: match.ambiguous
-          ? { count: match.addressCandidates }
+          ? {
+              count: match.candidates,
+              ...(payload.kind === 'service' && payload.dstPort !== undefined
+                ? { dstPort: payload.dstPort }
+                : {}),
+            }
           : undefined,
       });
       extraHops.push(hop);

@@ -139,6 +139,13 @@ function formatHop(input: HopInput): string {
   if (code === 'mtu:dropped') {
     return `Dropped at ${input.device} port ${portOf(input)} (egress): frame exceeds usable MTU`;
   }
+  if (
+    code === 'nat:translated' &&
+    f.count !== undefined &&
+    f.dstPort !== undefined
+  ) {
+    return `Return leg matched the first of ${f.count} sessions sharing its port tuple - client port ${f.dstPort} collided`;
+  }
   if (code === 'nat:translated' && f.count !== undefined) {
     return `Return leg matched the first of ${f.count} address-keyed sessions - no ports on the frame to disambiguate them`;
   }
