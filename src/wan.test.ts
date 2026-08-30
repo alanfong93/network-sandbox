@@ -818,7 +818,7 @@ describe('Link.up and failover as two runs', () => {
         hop.action === 'dropped',
     );
     expect(drop?.reasonCode).toBe('route-lookup:dropped');
-    expect(drop?.reason).not.toBe(row25?.expected);
+    expect(drop?.reason).toBe('dropped at RTR port lan (route-lookup)');
   });
 
   it('a selector default targeting the down WAN is not used', () => {
