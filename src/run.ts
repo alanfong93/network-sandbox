@@ -32,6 +32,13 @@ export interface NatSession {
   insideIp: string;
   outsideIp: string;
   remoteIp: string;
+  /**
+   * Hairpin only: the public destination the inside client originally sent
+   * to. The return leg restores it as the reply's source, so the client sees
+   * the reply from the address it contacted (ADR 0022). Undefined for plain
+   * masquerade sessions, whose returns need no source rewrite.
+   */
+  origDstIp?: string;
 }
 
 export interface RunContext {
