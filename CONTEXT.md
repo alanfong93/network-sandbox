@@ -281,6 +281,20 @@ default.
 - **Do not call it:** *source routing*, *PBR* (a vendor feature name), *tag*.
   "Policy routing" is the accepted prose; the field name is `fromVlan`.
 
+### ECMP
+
+Equal-cost multi-path: two or more routes whose prefixes tie in the tier that
+decided the frame. The engine resolves the tie deterministically — the first
+reachable match in `routes[]` order — and names that via on the `route-lookup`
+hop (catalogue row 26,
+[ADR 0021](docs/adr/0021-ecmp-is-a-named-hop-not-a-split.md)). There is no
+clock ([ADR 0003](docs/adr/0003-converged-state-no-timers.md)), so no split
+ratio can be a result.
+
+- **Do not call it:** *load balancing*, a *50/50 split*, or *hashing* as a
+  behaviour of this engine. Real gear may hash flows; this model names one
+  next-hop, stable across runs.
+
 ### ISP handoff
 
 A function (`kind: 'isp-handoff'`) on the provider-facing chassis. Mode is

@@ -133,6 +133,9 @@ function formatHop(input: HopInput): string {
   if (code === 'route-lookup:forwarded' && f.fromVlan !== undefined && f.via !== undefined) {
     return `VLAN ${f.fromVlan} frame forwarded via ${f.via} by destination-only lookup - no route carries a VLAN ${f.fromVlan} selector`;
   }
+  if (code === 'route-lookup:forwarded' && f.via !== undefined && f.fromVlan === undefined) {
+    return `Equal-cost routes do not split here: via ${f.via} — the first in the table — carries every frame. Real gear may hash flows across them`;
+  }
   if (code === 'mtu:dropped') {
     return `Dropped at ${input.device} port ${portOf(input)} (egress): frame exceeds usable MTU`;
   }

@@ -385,4 +385,22 @@ export const CATALOGUE: readonly CatalogueRow[] = [
       facts: { via: '192.0.2.1', ip: '203.0.113.1' },
     },
   },
+  {
+    id: 26,
+    device: 'Multi-WAN router',
+    mistake: 'Two equal-cost defaults, expecting 50/50 load balancing',
+    expected:
+      'Equal-cost routes do not split here: via 192.0.2.1 — the first in the table — carries every frame. Real gear may hash flows across them',
+    stage: 3,
+    example: {
+      kind: 'hop',
+      device: 'RTR',
+      outPort: 'wan',
+      vlan: 10,
+      action: 'forwarded',
+      step: 'route-lookup',
+      outcome: 'forwarded',
+      facts: { via: '192.0.2.1' },
+    },
+  },
 ];
