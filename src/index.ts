@@ -39,6 +39,7 @@ export type { EngineProfile, UnmanagedTag } from './defaults';
 export { builtinProfile, defaults, usableMtu } from './defaults';
 
 export type {
+  Estimate,
   FlowInput,
   FormatInput,
   HopFacts,
@@ -46,7 +47,7 @@ export type {
   TraceInput,
   WarningInput,
 } from './format';
-export { format, shortMac } from './format';
+export { format, formatEstimate, shortMac } from './format';
 
 export type { CatalogueRow, CatalogueStage } from './catalogue';
 export { CATALOGUE } from './catalogue';

@@ -75,6 +75,17 @@ export interface WarningInput {
 
 export type FormatInput = HopInput | TraceInput | FlowInput | WarningInput;
 
+/**
+ * Output that is assumed, not derived from a standard (ADR 0006). Deliberately
+ * not a `FormatInput` kind — handing one to `format` is a type error, so the
+ * estimate can never wear the trace's language (ADR 0024). `assumptions` is a
+ * non-empty tuple: an estimate with no stated assumptions cannot construct.
+ */
+export interface Estimate {
+  kind: 'estimate';
+  assumptions: [string, ...string[]];
+}
+
 export function shortMac(mac: MacAddr): string {
   const parts = mac.split(':');
   if (parts.length !== 6) return mac;
@@ -100,6 +111,14 @@ export function format(input: FormatInput): string {
     case 'warning':
       return formatWarning(input);
   }
+}
+
+/**
+ * Render an estimate as an estimate: named as one, assumptions listed, and no
+ * hop verbs — nothing in the sentence reads as derived (ADR 0024).
+ */
+export function formatEstimate(estimate: Estimate): string {
+  return `Estimate, not a trace — assuming: ${estimate.assumptions.join('; ')}`;
 }
 
 function formatHop(input: HopInput): string {
