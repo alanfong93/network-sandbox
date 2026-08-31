@@ -17,7 +17,9 @@ VLAN, and untagged-only as `canTag: false` on bridging (catalogue
 row 20). `Link.up` (omitted is up) makes down a link property: the walk
 does not traverse a down link, STP computes as if it were not drawn, and
 a route whose via sits behind one is not a candidate — failover as two
-runs of one topology (ADR 0003, ADR 0020; catalogue row 25).
+runs of one topology (ADR 0003, ADR 0020; catalogue row 25). The estimate
+seam keeps assumed output out of the trace's language: an `Estimate` is
+not a `FormatInput` and formats only through `formatEstimate` (ADR 0024).
 
 ## Modules
 
@@ -75,7 +77,7 @@ flowchart LR
 | `src/model.ts` | Topology, chassis, functions, frames, hops, flows. `nativeVlanOf` derives native VLAN from `untaggedVlans` — the field is not stored. Chassis `vlan` is the VLAN host addressing answers on. `Link.up` is omitted-is-up: down is a link property, not a device role (ADR 0020). |
 | `src/reasons.ts` | `PIPELINE_STEPS`, `OUTCOMES`, `ReasonCode` as their product. |
 | `src/defaults.ts` | Every tunable the engine will read, including encapsulation overheads. Named `ieee-defaults` v1 (ADR 0012). `unmanagedTag: 'pass'` is the built-in capability; a fixture profile may select `'strip'`. Usable MTU is computed, never stored. |
-| `src/format.ts` | Turns a structured hop, trace, flow or warning into a sentence. |
+| `src/format.ts` | Turns a structured hop, trace, flow or warning into a sentence. An `Estimate` (`kind: 'estimate'`, non-empty `assumptions`) is not a `FormatInput` and never passes through `format` — `formatEstimate` renders it, naming itself and listing its assumptions (ADR 0024). |
 | `src/catalogue.ts` | The 26-row table. Row 20 is Stage 2; rows 24-26 are Stage 3. |
 | `src/stp.ts` | Converged 802.1D: root, root port, designated port, else blocking. Single instance. ADR 0011 warning. |
 | `src/run.ts` | One context per run: FDB, resolved MACs, pending L3 sends, NAT sessions, hop budget, STP map, warnings, the active profile. Discarded when the run ends. |

@@ -36,6 +36,9 @@ faithful to IEEE 802.1Q/802.1D, not to any one box.
 
 Telling them whether an AP covers the far end of the office. That is a site survey,
 not a standard ([ADR 0006](adr/0006-radio-is-an-estimate-not-a-result.md)).
+Output derived from a standard reads as a trace; anything estimated is marked as
+an estimate with its assumptions listed, never as a trace
+([ADR 0024](adr/0024-estimates-never-pass-through-format.md)).
 
 Being a certification trainer or a fixed-scenario lesson plan. The topology is the
 user's own, or the tool has no advantage over what already exists.

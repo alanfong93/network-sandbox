@@ -62,6 +62,18 @@ The line between output that is **derived** from a published standard (802.1Q,
 not share a visual language (ADR 0006). Used as a noun in design discussion: "that
 crosses the honesty boundary."
 
+### Estimate
+
+Output that is **assumed, not derived** — radio coverage is the stage 4 case.
+An `Estimate` carries its `assumptions` as a non-empty list and is rendered by
+`formatEstimate`, never by `format`: `kind: 'estimate'` is not a `FormatInput`,
+so handing one to `format` is a type error
+([ADR 0006](docs/adr/0006-radio-is-an-estimate-not-a-result.md),
+[ADR 0024](docs/adr/0024-estimates-never-pass-through-format.md)).
+
+- **Do not call it:** *trace*, *result*, *prediction*, *verdict*. A trace is
+  derived; an estimate is assumed. The two never share a formatter.
+
 ### Failure catalogue
 
 The numbered table in `docs/SPEC.md` §4. Each row is a reproducible mistake plus the
