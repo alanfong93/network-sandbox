@@ -59,14 +59,25 @@ describe('model', () => {
   });
 
   it('does not put RF fields on Radio or Link', () => {
-    expectTypeOf<Radio>().toEqualTypeOf<{ id: string; band: '2.4' | '5' | '6' }>();
+    expectTypeOf<Radio>().toEqualTypeOf<{
+      id: string;
+      band: '2.4' | '5' | '6';
+      channel?: number;
+    }>();
+    expectTypeOf<Radio>().toHaveProperty('channel');
     expectTypeOf<Radio>().not.toHaveProperty('power');
-    expectTypeOf<Radio>().not.toHaveProperty('channel');
     expectTypeOf<Radio>().not.toHaveProperty('coverage');
     expectTypeOf<Link>().not.toHaveProperty('power');
     expectTypeOf<Link>().not.toHaveProperty('channel');
     expectTypeOf<Link>().not.toHaveProperty('coverage');
     expectTypeOf<Link>().not.toHaveProperty('rssi');
     expectTypeOf<Link>().not.toHaveProperty('rate');
+  });
+
+  it('stores channel as optional config, not an RF claim', () => {
+    const set: Radio = { id: 'radio0', band: '5', channel: 36 };
+    expect(set.channel).toBe(36);
+    const unset: Radio = { id: 'radio0', band: '5' };
+    expect(unset.channel).toBeUndefined();
   });
 });

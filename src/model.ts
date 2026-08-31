@@ -50,6 +50,8 @@ export interface Port {
 export interface Radio {
   id: string;
   band: '2.4' | '5' | '6';
+  /** Configured channel. Omitted is unset. Not an RF claim (ADR 0025). */
+  channel?: number;
 }
 
 export interface InternalEdge {

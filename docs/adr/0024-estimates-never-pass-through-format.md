@@ -34,7 +34,8 @@ prerequisite, not polish (ADR 0006, consequences).
    fails the suite.
 
 No RF fields are added to `Radio` or `Link`; no catalogue row, no pipeline
-step (ADR 0001).
+step (ADR 0001). A configured `channel` integer is not an RF field
+([ADR 0025](0025-radio-channel-is-config.md)).
 
 ## Alternatives rejected
 
