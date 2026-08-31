@@ -92,11 +92,12 @@ interface Port {
 }
 
 // A radio exists so several wireless functions can share ONE radio - that is what
-// makes an extender an extender. It deliberately has NO power/channel-quality
-// fields: those are stage 4 estimates.
+// makes an extender an extender. channel is config (the number the user set), not
+// an RF claim (ADR 0025). NO power/channel-quality/coverage: those are stage 4.
 interface Radio {
   id: string;
   band: '2.4' | '5' | '6';
+  channel?: number;              // positive integer; omitted is unset. Config, not RF.
 }
 
 interface InternalEdge { from: FnId | string; to: FnId | string; }

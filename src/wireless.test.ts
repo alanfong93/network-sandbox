@@ -1,8 +1,13 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, expectTypeOf, it } from 'vitest';
+import type { Estimate } from './format';
 import { defaults } from './defaults';
 import type { BridgePort, Chassis, Frame, Topology, VlanId } from './model';
 import { createRunContext } from './run';
-import { classifyWireless, wirelessWouldHandle } from './wireless';
+import {
+  classifyWireless,
+  wirelessWouldHandle,
+  type WirelessResult,
+} from './wireless';
 
 function access(port: string, vlan: VlanId): BridgePort {
   return {
@@ -86,5 +91,10 @@ describe('wireless classify', () => {
     expect(result.internal?.fn).toBe('br');
     expect(result.internal?.frame.vlan).toBe(30);
     expect(result.transmissions).toEqual([]);
+  });
+
+  it('does not return an Estimate from a radio', () => {
+    expectTypeOf<WirelessResult>().not.toExtend<Estimate>();
+    expectTypeOf<ReturnType<typeof classifyWireless>>().toEqualTypeOf<WirelessResult>();
   });
 });

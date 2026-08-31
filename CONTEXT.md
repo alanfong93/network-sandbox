@@ -165,8 +165,12 @@ A shared transmitter on a chassis. It exists **so that several `wireless` functi
 name the same one** — an extender is an AP and a client on one radio, and guest wifi is
 two SSIDs on one radio landing in different VLANs.
 
+- **`channel` is config**, an optional positive integer, like a VLAN ID. Same-channel
+  is a number the user set. They-interfere is physics the model cannot know
+  ([ADR 0025](docs/adr/0025-radio-channel-is-config.md)).
 - It deliberately carries **no power, channel quality or coverage fields**. Those are
   stage 4 estimates ([ADR 0006](docs/adr/0006-radio-is-an-estimate-not-a-result.md)).
+- **Do not call `channel`:** *interference*, *coverage*, an RF result.
 - **A shared radio does not let the tool state a throughput cost.** That needs airtime
   and PHY rate. Saying "an extender halves your speed" is an estimate wearing the
   clothes of a derived result — the exact mistake ADR 0013 records.

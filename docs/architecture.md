@@ -91,7 +91,7 @@ flowchart LR
 | `src/send.ts` | Originate from a sender. ARP only when the next-hop MAC is unknown. DHCP DISCOVER is broadcast. |
 | `src/flow.ts` | Request then ICMP reply against one run context. Outcomes name which direction died; they are not pass/fail. |
 | `src/host.ts` | Host chassis (no functions) answering ARP and taking delivery. |
-| `src/wireless.ts` | One pass through a wireless function: SSID to VLAN at `ssid-vlan`, then `InternalEdge` onto the chassis bridge. Not a second forwarder. Radio and link carry no RF fields. |
+| `src/wireless.ts` | One pass through a wireless function: SSID to VLAN at `ssid-vlan`, then `InternalEdge` onto the chassis bridge. Not a second forwarder. Radio may store a configured channel (not an RF claim, ADR 0025). Radio and link carry no power or coverage. |
 
 There is no `switch (device.kind)`. There are no device kinds. A chassis
 carries functions; the walk dispatches on `Port.ownedBy`. A chassis with
