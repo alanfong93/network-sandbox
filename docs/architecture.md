@@ -1,7 +1,9 @@
 # Architecture
 
-Headless TypeScript engine. Nothing here talks to a server. Persistence, when
-it lands, is a JSON file the user keeps — there is no database.
+Headless TypeScript engine. Nothing here talks to a server. Persistence is a
+JSON file the user keeps — there is no database. The in-memory Topology is
+that file: `toJson` / `fromJson` round-trip it through the version-1 sandbox
+envelope `{format, version, topology}`.
 
 This slice is the floor, the run context, one pass through a bridging
 function, the topology walk that follows links, L3: hosts, ARP, routing
@@ -26,6 +28,7 @@ not a `FormatInput` and formats only through `formatEstimate` (ADR 0024).
 ```mermaid
 flowchart LR
     M[model.ts<br>SPEC section 2 types] --> F[format.ts]
+    M --> J[json.ts<br>v1 sandbox envelope]
     R[reasons.ts<br>step x outcome] --> F
     F --> C[catalogue.ts<br>25 rows]
     D[defaults.ts<br>built-in profile] --> S[stp.ts]
@@ -55,6 +58,7 @@ flowchart LR
     L --> F
     ISP --> F
     style M color:#000
+    style J color:#000
     style R color:#000
     style F color:#000
     style C color:#000
@@ -75,6 +79,7 @@ flowchart LR
 | Module | Holds |
 |---|---|
 | `src/model.ts` | Topology, chassis, functions, frames, hops, flows. `nativeVlanOf` derives native VLAN from `untaggedVlans` — the field is not stored. Chassis `vlan` is the VLAN host addressing answers on. `Link.up` is omitted-is-up: down is a link property, not a device role (ADR 0020). |
+| `src/json.ts` | Version-1 sandbox envelope `{format, version, topology}`. `taggedVlans` / `untaggedVlans` encode as number arrays. `fdb` and `stp.state` are omitted on write and empty Maps on parse. Unknown `fn.kind` and unsupported versions fail by name (`UnknownFunctionKindError`, `UnsupportedSandboxVersionError`). No AJV, no `$set` markers (ADR 0026). |
 | `src/reasons.ts` | `PIPELINE_STEPS`, `OUTCOMES`, `ReasonCode` as their product. |
 | `src/defaults.ts` | Every tunable the engine will read, including encapsulation overheads. Named `ieee-defaults` v1 (ADR 0012). `unmanagedTag: 'pass'` is the built-in capability; a fixture profile may select `'strip'`. Usable MTU is computed, never stored. |
 | `src/format.ts` | Turns a structured hop, trace, flow or warning into a sentence. An `Estimate` (`kind: 'estimate'`, non-empty `assumptions`) is not a `FormatInput` and never passes through `format` — `formatEstimate` renders it, naming itself and listing its assumptions (ADR 0024). |
@@ -126,7 +131,10 @@ computed map lives on the run context; the topology is not mutated.
 
 ## Data model
 
-In-memory today; the same graph is what a JSON export will round-trip.
+The in-memory graph is the file. `toJson` writes the version-1 envelope;
+`fromJson` parses it back. Canvas coordinates are not Topology. Runtime
+Maps (`fdb`, `stp.state`) are not persisted — `createRunContext` rebuilds
+them.
 
 ```mermaid
 erDiagram
@@ -173,7 +181,10 @@ and leaves the on-wire tag untouched unless the active profile selects
 `canTag: false` is a separate capability: membership still uses VLANs,
 egress is always untagged. A preset writes that field; the engine does
 not branch on a vendor name. The
-reference scenario (SPEC.md §9, including AP, mesh and a second WAN) is `src/wan.test.ts`.
+reference scenario (SPEC.md §9, including AP, mesh and a second WAN) is `src/wan.fixture.ts`.
 Row 5 reproduces there as well as in `walk.test.ts`; row 20 reproduces
 there as well as in `src/mesh.test.ts`. Tagged AP uplink and
 management VLAN (issue #30, no catalogue row) are `src/ap.test.ts`.
+Sandbox JSON round-trip is `src/json.test.ts`: Sets survive as arrays,
+Maps stay out of the file, unknown kinds and unsupported versions fail
+by name, and the §9 fixture's `send` hops match after parse.

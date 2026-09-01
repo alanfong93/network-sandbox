@@ -345,6 +345,19 @@ trunk carries it like any other VLAN. Missing it from the trunk dies at
 - **Do not call it:** *management plane*, *CPU port*, *mgmt hop*. Those
   names imply a special execution path.
 
+### Sandbox JSON
+
+The versioned envelope `{format, version, topology}` that is the format of
+record ([SPEC.md](docs/SPEC.md) §8 Q2,
+[ADR 0015](docs/adr/0015-import-real-config-before-exporting-it.md),
+[ADR 0026](docs/adr/0026-sandbox-json-encodes-sets-omits-maps.md)).
+`toJson` / `fromJson` in the engine. VLAN Sets encode as number arrays.
+FDB and STP Maps are omitted on write and empty after parse. Unknown
+function kinds and unsupported versions fail by a named error.
+
+- **Do not call it:** *vendor config*, *export* as if it were CLI to paste,
+  a `$set`-tagged blob. Canvas `x,y` is not Topology.
+
 ### Service
 
 A `Frame.payload.kind`. It carries `proto` and `dstPort` so a port-forward and a
