@@ -2,7 +2,7 @@
 
 A browser-based network sandbox for trying out switch, router and VLAN configuration safely — so you can test a change before you make it on real gear.
 
-Everything runs in the browser. No server, no account, no install.
+No server, no account, no install. The engine is a TypeScript library; the browser UI imports it and runs entirely client-side.
 
 > ### What this promises, and what it doesn't
 >
@@ -10,12 +10,15 @@ Everything runs in the browser. No server, no account, no install.
 >
 > It does *not* promise that anything working here will work identically on your specific switch. Vendors differ in syntax, defaults and edge-case behaviour, and those differences are where a lot of real outages live. This sandbox is faithful to **IEEE 802.1Q / 802.1D** — the standard every vendor implements — not to any one vendor's box.
 
-**Status: Stage 1 in progress.** The engine is a dependency-free TypeScript library — types, the failure catalogue, `format`, defaults, converged STP, one 802.1Q bridging pass, a topology walk that floods as a tree under a global hop budget, hosts, ARP, routing, the inter-VLAN firewall, a flow driver that traces a request and its reply against one run context, NAT (masquerade plus port forwards), DHCP (DISCOVER/OFFER/REQUEST/ACK, no leases), the ISP handoff (PPPoE over a tagged WAN), a fixture profile seam, and the wired reference scenario. Who it is for is in [`docs/PRODUCT.md`](docs/PRODUCT.md); the spec is [`docs/SPEC.md`](docs/SPEC.md); decisions in [`docs/adr/`](docs/adr/); vocabulary in [`CONTEXT.md`](CONTEXT.md).
+**Status:** Stages 1–3 of the engine are in the library (wired core, access points as wired devices, multi-WAN). Stage 4 has the estimate/trace seam and optional `Radio.channel`; coverage is not modelled. A first browser UI (Stage 5, no canvas) places presets, edits ports, sends a frame and shows the engine's hops. Who it is for is in [`docs/PRODUCT.md`](docs/PRODUCT.md); the spec is [`docs/SPEC.md`](docs/SPEC.md); decisions in [`docs/adr/`](docs/adr/); vocabulary in [`CONTEXT.md`](CONTEXT.md).
 
 ```bash
 npm install
 npm test
 npm run build
+
+npm run ui:dev    # browser UI at http://localhost:5173
+npm run ui:build  # static build of the same UI into ui/dist
 ```
 
 ---
@@ -83,10 +86,11 @@ Routers are **one device type placed at any depth** — HQ, floor, department. "
 
 ## Roadmap
 
-1. **Wired core** — switches, routers, hosts, DHCP both router-based and standalone
-2. **Access points** — SSID to VLAN mapping and wireless clients, reusing the wired engine
-3. **Multi-WAN** — policy routing per VLAN, then failover, then load balancing
-4. **Radio** — signal, channels, coverage, roaming
+1. **Wired core** - done. Switches, routers, hosts, DHCP both router-based and standalone
+2. **Access points** - done. SSID to VLAN mapping and wireless clients, reusing the wired engine
+3. **Multi-WAN** - done. Policy routing per VLAN, failover as two runs, equal-cost as a named next-hop
+4. **Radio** - last. Estimate/trace seam and channel-as-config are in; coverage, roaming and a distinct UI are not
+5. **Browser UI** - started. Palette of presets, port inspector with separate PVID and untagged-VLAN controls, send a frame and read the hops, import/export sandbox JSON. No graph canvas; the topology is the file
 
 Stage 4 is deliberately last. See below.
 
