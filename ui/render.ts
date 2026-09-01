@@ -118,7 +118,8 @@ export function renderTrace(trace: TraceRender): string {
     `<section class="notices">` +
       trace.notices.map((line) => `<p class="notice">${esc(line)}</p>`).join('\n') +
       `</section>`,
-    `<p class="outcome">Outcome: ${esc(trace.outcome)}</p>`,
   );
+  // ADR 0002: the trace is the answer — no summary verdict line. The
+  // delivered/dropped sentences and the flow notes already name the result.
   return parts.join('\n');
 }

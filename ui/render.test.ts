@@ -36,7 +36,7 @@ describe('inspector', () => {
 });
 
 describe('trace panel', () => {
-  it('renders warnings, request lines, notices and the outcome, without a verdict', () => {
+  it('renders warnings, request lines and notices, without a verdict', () => {
     let state = initialState;
     state = addPreset(state, 'host');
     state = addPreset(state, 'switch');
@@ -51,7 +51,8 @@ describe('trace panel', () => {
     const html = renderTrace(trace);
     expect(html).toMatch(new RegExp(COLD_TRACE_NOTICE.slice(0, 20)));
     expect(html).toMatch(/delivered at .+ \(delivery\)/);
-    expect(html).toMatch(/Outcome: round-trip/);
+    // ADR 0002: the trace is the answer; no summary verdict line.
+    expect(html).not.toMatch(/Outcome:/);
     // No verdict: the panel reports the outcome, it does not judge the network.
     expect(html).not.toMatch(/\b(OK|PASS|SUCCESS|GOOD)\b/);
   });
