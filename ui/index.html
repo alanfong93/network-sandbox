@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>network-sandbox</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        font-family: system-ui, sans-serif;
+      }
+      body {
+        margin: 0 auto;
+        max-width: 72rem;
+        padding: 1rem;
+        display: grid;
+        grid-template-columns: 10rem 22rem 1fr;
+        gap: 1rem;
+      }
+      h1 { grid-column: 1 / -1; margin: 0; font-size: 1.2rem; }
+      h2 { font-size: 1rem; margin: 0 0 0.5rem; }
+      h3 { font-size: 0.9rem; margin: 0.75rem 0 0.25rem; }
+      section, aside {
+        border: 1px solid #ccc4;
+        border-radius: 6px;
+        padding: 0.75rem;
+        align-self: start;
+      }
+      button { cursor: pointer; }
+      .device-list, .link-list { list-style: none; padding: 0; margin: 0; }
+      .device-list li { margin: 0.25rem 0; }
+      .device.selected { outline: 2px solid #06c; }
+      .linking { background: #fff3cd; color: #000; padding: 0.4rem; border-radius: 4px; }
+      .notice { color: #b58900; }
+      .hint { color: inherit; opacity: 0.7; font-size: 0.85rem; }
+      .warnings p { background: #fff3cd; color: #000; padding: 0.4rem; border-radius: 4px; }
+      .notices p { opacity: 0.85; font-size: 0.85rem; }
+      fieldset.port { margin: 0.5rem 0; }
+      label { display: block; margin: 0.3rem 0; font-size: 0.85rem; }
+      #json-view { width: 100%; min-height: 6rem; margin-top: 0.5rem; font-family: monospace; font-size: 0.8rem; }
+      .hops li { font-family: monospace; font-size: 0.85rem; margin: 0.15rem 0; }
+      @media (max-width: 60rem) {
+        body { grid-template-columns: 1fr; }
+      }
+    </style>
+    <script type="module" src="./main.ts"></script>
+  </head>
+  <body>
+    <h1>network-sandbox &mdash; 802.1Q sandbox (no canvas: the topology is the file)</h1>
+    <aside id="palette"></aside>
+    <section id="devices"></section>
+    <section>
+      <div id="inspector"></div>
+      <div id="trace"></div>
+    </section>
+  </body>
+</html>

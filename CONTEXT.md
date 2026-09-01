@@ -146,6 +146,28 @@ two.
 - **Do not call it:** *device type*, *device class*. There are no device types — there
   is a chassis, and there are functions.
 
+### Palette
+
+The list of preset boxes the user places from. It shows **boxes, not functions**
+([ADR 0013](docs/adr/0013-devices-are-a-chassis-plus-functions.md)): the user drags
+"Managed switch", and the preset writes the functions underneath. Placing from the
+palette is how a topology starts.
+
+- **Do not call it:** *toolbox*, *toolbar*. It is the list of boxes, not a set of
+  editing tools.
+
+### Inspector
+
+The editor for one placed device: its address fields, and one group of controls per
+port. A bridging port shows **PVID (ingress)** and **Untagged VLANs (egress)** as
+separate controls, because they are separate mechanisms
+([ADR 0008](docs/adr/0008-pvid-is-ingress-native-vlan-is-egress.md)). One control
+edits one mechanism.
+
+- **Do not call it:** *properties panel*, *device editor*.
+- **Do not label a control** "Native VLAN (PVID)" — the fused label is forbidden by
+  ADR 0008.
+
 ### Untagged-only
 
 A **capability** on a bridging function (`canTag: false`). The engine still

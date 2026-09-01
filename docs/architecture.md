@@ -129,6 +129,33 @@ STP attachment on its LAN (an edge port facing a host or a chassis with no
 redundant bridge-to-bridge paths, not to black-hole access ports. The
 computed map lives on the run context; the topology is not mutated.
 
+## Browser UI
+
+The UI is a separate entry under `ui/` that imports the engine and never the
+other way round (ADR 0016, ADR 0027). Behaviour lives in pure, unit-tested
+modules; `main.ts` is the only DOM-glue module. Presets write functions, not a
+device kind (ADR 0013); the inspector keeps PVID and `untaggedVlans` as separate
+controls (ADR 0008); the trace panel renders the engine's own sentences — hops
+from the walk, observations and the ADR 0011 warning through `format()` — plus
+the cold-trace notice (ADR 0010) and the no-timers notice. There is no canvas
+and no layout state: the Topology JSON is the file, and `ui/jsonio.ts` hands it
+to the same `toJson` / `fromJson` envelope as everything else.
+
+```mermaid
+flowchart LR
+    P[presets.ts<br>palette boxes] --> S[state.ts<br>EditorState edits]
+    S --> R[render.ts<br>HTML strings]
+    S --> T[trace.ts<br>createRunContext + runFlow]
+    T --> R
+    S --> J[jsonio.ts<br>toJson / fromJson]
+    R --> M[main.ts<br>DOM wiring]
+    T --> E[engine src/<br>format  runFlow  warnings]
+    J --> E
+    P --> E
+    style E fill:#d7f5d7,color:#000
+    style M fill:#d7f5d7,color:#000
+```
+
 ## Data model
 
 The in-memory graph is the file. `toJson` writes the version-1 envelope;

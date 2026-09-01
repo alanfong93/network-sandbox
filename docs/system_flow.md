@@ -87,3 +87,29 @@ MACs and NAT sessions the request populated; a reply traced cold floods.
 The dest replies to the source address it actually received, so a masqueraded
 request comes home without a return route. `Flow.outcome` names which
 direction died. It is not a pass/fail field.
+
+## UI loop
+
+The browser UI runs the same engine, driven by clicks. The loop is: place a
+preset box, link two free ports, edit in the inspector, send, read sentences,
+export. The topology never leaves the tab except as the sandbox JSON file.
+
+```mermaid
+flowchart TD
+    PA[Click a palette box] --> AP[addPreset writes a chassis<br>plus functions]
+    AP --> SE{Link pending?}
+    SE -->|yes| CL[completeLink joins<br>two free ports]
+    SE -->|no| SL[select the device]
+    SL --> ST[Start link on a free port]
+    ST --> SE
+    CL --> IN[Inspector: PVID ingress<br>untagged VLANs egress]
+    IN --> SE
+    SE --> SD[Send: createRunContext<br>runFlow on the topology]
+    SD --> HO[Hops, STP warning,<br>cold-trace notice]
+    HO --> SE
+    SD --> EX[Export sandbox JSON<br>or import one]
+    EX --> SE
+    style SD fill:#d7f5d7,color:#000
+    style HO fill:#d7f5d7,color:#000
+    style EX fill:#d7f5d7,color:#000
+```
