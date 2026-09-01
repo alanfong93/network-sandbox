@@ -27,6 +27,24 @@ export type {
 } from './model';
 export { carriedVlans, isGroupMac, nativeVlanOf } from './model';
 
+export type {
+  BridgePortJson,
+  BridgingFnJson,
+  ChassisJson,
+  FnJson,
+  SandboxEnvelope,
+  StpFnJson,
+  TopologyJson,
+} from './json';
+export {
+  SANDBOX_FORMAT,
+  SANDBOX_VERSION,
+  UnknownFunctionKindError,
+  UnsupportedSandboxVersionError,
+  fromJson,
+  toJson,
+} from './json';
+
 export type { Outcome, PipelineStep, ReasonCode } from './reasons';
 export {
   OUTCOMES,
