@@ -38,3 +38,6 @@ coverage/
 
 # local agent state
 .dev-loop-state.json
+
+# Playwright MCP scratch
+.playwright-mcp/

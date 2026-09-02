@@ -19,6 +19,8 @@ npm run build
 
 npm run ui:dev    # browser UI at http://localhost:5173
 npm run ui:build  # static build of the same UI into ui/dist
+
+.\build_container.ps1        # same UI at http://localhost:5173
 ```
 
 ---
