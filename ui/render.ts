@@ -1,5 +1,5 @@
 import type { EditorState } from './state';
-import { bridgeMemberOf } from './state';
+import { bridgeMemberOf, freePorts } from './state';
 import type { TraceRender } from './trace';
 
 function esc(text: string): string {
@@ -75,11 +75,39 @@ export function renderInspector(state: EditorState): string {
     );
   }
   parts.push(
-    `<button type="button" data-action="start-link" data-device="${esc(chassis.id)}">` +
-      `Start link</button>`,
     `<button type="button" data-action="remove" data-device="${esc(chassis.id)}">` +
       `Remove</button>`,
   );
+  const free = freePorts(state.topology, chassis);
+  if (free.length > 0) {
+    parts.push('<fieldset class="link-ports"><legend>Link from port</legend>');
+    for (const portId of free) {
+      parts.push(
+        `<button type="button" data-action="start-link" data-device="${esc(chassis.id)}" ` +
+          `data-port="${esc(portId)}">Start link (${esc(portId)})</button>`,
+      );
+    }
+    parts.push('</fieldset>');
+  }
+  const routing = chassis.functions.find((fn) => fn.kind === 'routing');
+  if (routing && routing.kind === 'routing') {
+    for (const iface of routing.ifaces) {
+      const label = iface.id === 'wan' ? 'WAN VLAN' : `VLAN (${iface.id})`;
+      parts.push(
+        `<label>${esc(label)} ` +
+          `<input type="number" data-action="iface-vlan" data-iface="${esc(iface.id)}" ` +
+          `value="${iface.vlan ?? ''}"></label>`,
+      );
+    }
+  }
+  const isp = chassis.functions.find((fn) => fn.kind === 'isp-handoff');
+  if (isp && isp.kind === 'isp-handoff') {
+    const mode = isp.mode === 'pppoe' ? 'PPPoE' : isp.mode.toUpperCase();
+    const vlan = isp.vlanTag !== undefined ? `VLAN ${isp.vlanTag}` : 'no VLAN';
+    parts.push(
+      `<p class="isp-check">ISP check: ${esc(mode)}, required ${esc(vlan)}</p>`,
+    );
+  }
   for (const port of chassis.ports) {
     parts.push(renderPortControls(state, chassis.id, port.id));
   }

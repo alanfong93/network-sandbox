@@ -77,7 +77,7 @@ describe('presets', () => {
     expect(routing && routing.kind === 'routing' ? routing.ifaces : []).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ id: 'lan' }),
-        expect.objectContaining({ id: 'wan' }),
+        expect.objectContaining({ id: 'wan', vlan: 500 }),
       ]),
     );
     expect(chassis?.functions.some((fn) => fn.kind === 'nat')).toBe(true);
@@ -98,5 +98,6 @@ describe('presets', () => {
     const chassis = PRESETS.find((p) => p.id === 'modem')?.build('ont1', 1);
     const isp = chassis?.functions.find((fn) => fn.kind === 'isp-handoff');
     expect(isp && isp.kind === 'isp-handoff' ? isp.mode : null).toBe('pppoe');
+    expect(isp && isp.kind === 'isp-handoff' ? isp.vlanTag : null).toBe(500);
   });
 });

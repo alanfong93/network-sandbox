@@ -4,6 +4,7 @@ import type {
   Chassis,
   DeviceId,
   Link,
+  RouterIface,
   Topology,
   VlanId,
 } from '../src/index';
@@ -52,19 +53,32 @@ function isWirelessPort(chassis: Chassis, portId: string): boolean {
   );
 }
 
+export function portOccupied(
+  topology: Topology,
+  deviceId: DeviceId,
+  portId: string,
+): boolean {
+  return topology.links.some(
+    (link) =>
+      (link.a.device === deviceId && link.a.port === portId) ||
+      (link.b.device === deviceId && link.b.port === portId),
+  );
+}
+
 /** First port with no link attached; undefined when every port is used. */
 export function freePort(
   topology: Topology,
   chassis: Chassis,
 ): string | undefined {
   return chassis.ports.find(
-    (candidate) =>
-      !topology.links.some(
-        (link) =>
-          (link.a.device === chassis.id && link.a.port === candidate.id) ||
-          (link.b.device === chassis.id && link.b.port === candidate.id),
-      ),
+    (candidate) => !portOccupied(topology, chassis.id, candidate.id),
   )?.id;
+}
+
+export function freePorts(topology: Topology, chassis: Chassis): string[] {
+  return chassis.ports
+    .filter((candidate) => !portOccupied(topology, chassis.id, candidate.id))
+    .map((candidate) => candidate.id);
 }
 
 function withChassis(
@@ -129,14 +143,22 @@ export function addPreset(state: EditorState, presetId: string): EditorState {
 export function startLink(
   state: EditorState,
   deviceId: DeviceId,
+  portId?: string,
 ): EditorState {
   const chassis = deviceOf(state.topology, deviceId);
   if (!chassis) return state;
-  const port = freePort(state.topology, chassis);
-  if (!port) {
+  const port = portId ?? freePort(state.topology, chassis);
+  if (!port || !chassis.ports.some((item) => item.id === port)) {
     return {
       ...state,
       notice: `No free port on ${chassis.label} (${chassis.id})`,
+      pendingLink: null,
+    };
+  }
+  if (portOccupied(state.topology, deviceId, port)) {
+    return {
+      ...state,
+      notice: `Port ${port} on ${chassis.label} (${chassis.id}) is occupied`,
       pendingLink: null,
     };
   }
@@ -146,6 +168,7 @@ export function startLink(
 export function completeLink(
   state: EditorState,
   deviceId: DeviceId,
+  portId?: string,
 ): EditorState {
   const pending = state.pendingLink;
   if (!pending) {
@@ -153,11 +176,18 @@ export function completeLink(
   }
   const chassis = deviceOf(state.topology, deviceId);
   if (!chassis) return { ...state, pendingLink: null };
-  const port = freePort(state.topology, chassis);
-  if (!port) {
+  const port = portId ?? freePort(state.topology, chassis);
+  if (!port || !chassis.ports.some((item) => item.id === port)) {
     return {
       ...state,
       notice: `No free port on ${chassis.label} (${chassis.id})`,
+      pendingLink: null,
+    };
+  }
+  if (portOccupied(state.topology, deviceId, port)) {
+    return {
+      ...state,
+      notice: `Port ${port} on ${chassis.label} (${chassis.id}) is occupied`,
       pendingLink: null,
     };
   }
@@ -267,4 +297,30 @@ export function setHostAddress(
   addr: { ip?: string; prefix?: number; gateway?: string },
 ): EditorState {
   return withChassis(state, deviceId, (chassis) => ({ ...chassis, ...addr }));
+}
+
+export function setRouterIfaceVlan(
+  state: EditorState,
+  deviceId: DeviceId,
+  ifaceId: string,
+  vlan: VlanId | undefined,
+): EditorState {
+  return withChassis(state, deviceId, (chassis) => ({
+    ...chassis,
+    functions: chassis.functions.map((fn) => {
+      if (fn.kind !== 'routing') return fn;
+      const ifaces: RouterIface[] = fn.ifaces.map((iface) => {
+        if (iface.id !== ifaceId) return iface;
+        const next: RouterIface = {
+          id: iface.id,
+          ip: iface.ip,
+          prefix: iface.prefix,
+          mac: iface.mac,
+        };
+        if (vlan !== undefined) next.vlan = vlan;
+        return next;
+      });
+      return { ...fn, ifaces };
+    }),
+  }));
 }

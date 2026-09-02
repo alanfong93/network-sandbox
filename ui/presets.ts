@@ -154,6 +154,7 @@ export const PRESETS: PresetDef[] = [
               },
               {
                 id: 'wan',
+                vlan: 500,
                 ip: '203.0.113.2',
                 prefix: 24,
                 mac: mac(seq, 2),
