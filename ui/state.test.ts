@@ -7,6 +7,7 @@ import {
   initialState,
   removeDevice,
   setPvid,
+  setRouterIfaceVlan,
   setUntaggedVlans,
   startLink,
   type EditorState,
@@ -42,9 +43,9 @@ describe('editor state', () => {
     const placed2 = placed(state, 'host', 2);
     state = placed2.state;
     const [a, b] = placed2.ids;
-    state = startLink(state, a!);
+    state = startLink(state, a!, '1');
     expect(state.pendingLink?.device).toBe(a);
-    state = completeLink(state, b!);
+    state = completeLink(state, b!, '1');
     expect(state.topology.links).toHaveLength(1);
     expect(state.topology.links[0]?.a.device).toBe(a);
     expect(state.topology.links[0]?.b.device).toBe(b);
@@ -56,16 +57,16 @@ describe('editor state', () => {
     const placed2 = placed(state, 'host', 2);
     state = placed2.state;
     const [a, b] = placed2.ids;
-    state = startLink(state, a!);
-    state = completeLink(state, b!);
+    state = startLink(state, a!, '1');
+    state = completeLink(state, b!, '1');
     const placed3 = placed(state, 'host');
     state = placed3.state;
     const [c] = placed3.ids;
-    state = startLink(state, c!);
+    state = startLink(state, c!, '1');
     // a and b each have their only port consumed
-    state = completeLink(state, a!);
+    state = completeLink(state, a!, '1');
     expect(state.topology.links).toHaveLength(1);
-    expect(state.notice).toMatch(/no free port/i);
+    expect(state.notice).toMatch(/occupied|no free port/i);
   });
 
   it('cancelLink clears a pending link', () => {
@@ -73,7 +74,7 @@ describe('editor state', () => {
     const placed1 = placed(state, 'host');
     state = placed1.state;
     const [a] = placed1.ids;
-    state = startLink(state, a!);
+    state = startLink(state, a!, '1');
     state = cancelLink(state);
     expect(state.pendingLink).toBeNull();
   });
@@ -111,10 +112,65 @@ describe('editor state', () => {
     const placed2 = placed(state, 'host', 2);
     state = placed2.state;
     const [a, b] = placed2.ids;
-    state = startLink(state, a!);
-    state = completeLink(state, b!);
+    state = startLink(state, a!, '1');
+    state = completeLink(state, b!, '1');
     state = removeDevice(state, a!);
     expect(state.topology.devices).toHaveLength(1);
     expect(state.topology.links).toHaveLength(0);
+  });
+
+  it('first cable can be router wan to modem 1', () => {
+    let state = initialState;
+    state = addPreset(state, 'router');
+    state = addPreset(state, 'modem');
+    const [rtr, ont] = state.topology.devices.map((d) => d.id);
+    state = startLink(state, rtr!, 'wan');
+    expect(state.pendingLink).toEqual({ device: rtr, port: 'wan' });
+    state = completeLink(state, ont!, '1');
+    expect(state.topology.links).toHaveLength(1);
+    expect(state.topology.links[0]?.a.port).toBe('wan');
+    expect(state.topology.links[0]?.b.port).toBe('1');
+    const routing = state.topology.devices
+      .find((d) => d.id === rtr)
+      ?.functions.find((fn) => fn.kind === 'routing');
+    expect(routing && routing.kind === 'routing' ? routing.ifaces[0]?.id : null).toBe(
+      'lan',
+    );
+  });
+
+  it('occupied ports cannot be chosen', () => {
+    let state = initialState;
+    state = addPreset(state, 'router');
+    state = addPreset(state, 'modem');
+    const [rtr, ont] = state.topology.devices.map((d) => d.id);
+    state = startLink(state, rtr!, 'wan');
+    state = completeLink(state, ont!, '1');
+    state = startLink(state, rtr!, 'wan');
+    expect(state.pendingLink).toBeNull();
+    expect(state.notice).toMatch(/occupied|in use|no free/i);
+  });
+
+  it('setRouterIfaceVlan writes WAN vlan without touching PVID', () => {
+    let state = initialState;
+    state = addPreset(state, 'router');
+    const [rtr] = state.topology.devices.map((d) => d.id);
+    state = setRouterIfaceVlan(state, rtr!, 'wan', undefined);
+    const routing = state.topology.devices
+      .find((d) => d.id === rtr)
+      ?.functions.find((fn) => fn.kind === 'routing');
+    const wan =
+      routing && routing.kind === 'routing'
+        ? routing.ifaces.find((iface) => iface.id === 'wan')
+        : undefined;
+    expect(wan?.vlan).toBeUndefined();
+    state = setRouterIfaceVlan(state, rtr!, 'wan', 500);
+    const again = state.topology.devices
+      .find((d) => d.id === rtr)
+      ?.functions.find((fn) => fn.kind === 'routing');
+    const wan500 =
+      again && again.kind === 'routing'
+        ? again.ifaces.find((iface) => iface.id === 'wan')
+        : undefined;
+    expect(wan500?.vlan).toBe(500);
   });
 });

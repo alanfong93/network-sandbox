@@ -135,7 +135,9 @@ The UI is a separate entry under `ui/` that imports the engine and never the
 other way round (ADR 0016, ADR 0027). Behaviour lives in pure, unit-tested
 modules; `main.ts` is the only DOM-glue module. Presets write functions, not a
 device kind (ADR 0013); the inspector keeps PVID and `untaggedVlans` as separate
-controls (ADR 0008); the trace panel renders the engine's own sentences — hops
+controls (ADR 0008); Start link is per free port (router `wan` can be first);
+router WAN VLAN is `RouterIface.vlan`, not PVID; the modem inspector names the
+ISP check (`mode` + required VLAN); the trace panel renders the engine's own sentences — hops
 from the walk, observations and the ADR 0011 warning through `format()` — plus
 the cold-trace notice (ADR 0010) and the no-timers notice. There is no canvas
 and no layout state: the Topology JSON is the file, and `ui/jsonio.ts` hands it

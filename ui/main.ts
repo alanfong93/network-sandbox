@@ -11,6 +11,7 @@ import {
   setHostAddress,
   setPortMode,
   setPvid,
+  setRouterIfaceVlan,
   setTaggedVlans,
   setUntaggedVlans,
   startLink,
@@ -171,7 +172,16 @@ function onClick(event: MouseEvent): void {
   if (target.matches('.device[data-device]')) {
     const id = target.dataset.device!;
     if (state.pendingLink && state.pendingLink.device !== id) {
-      state = completeLink(state, id);
+      const chassis = state.topology.devices.find((d) => d.id === id);
+      const port = chassis?.ports.find(
+        (p) =>
+          !state.topology.links.some(
+            (link) =>
+              (link.a.device === id && link.a.port === p.id) ||
+              (link.b.device === id && link.b.port === p.id),
+          ),
+      )?.id;
+      state = completeLink(state, id, port);
     } else {
       state = select(state, id);
     }
@@ -186,7 +196,7 @@ function onClick(event: MouseEvent): void {
       state = addPreset(state, target.dataset.preset!);
       break;
     case 'start-link':
-      if (device) state = startLink(state, device);
+      if (device) state = startLink(state, device, target.dataset.port);
       break;
     case 'cancel-link':
       state = cancelLink(state);
@@ -242,6 +252,19 @@ function onChange(event: Event): void {
     case 'gateway':
       state = setHostAddress(state, device, { gateway: input.value });
       break;
+    case 'iface-vlan': {
+      const iface = input.dataset.iface;
+      if (iface) {
+        const raw = input.value.trim();
+        state = setRouterIfaceVlan(
+          state,
+          device,
+          iface,
+          raw === '' ? undefined : Number(raw),
+        );
+      }
+      break;
+    }
     default:
       return;
   }

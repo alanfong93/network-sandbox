@@ -98,11 +98,11 @@ export. The topology never leaves the tab except as the sandbox JSON file.
 flowchart TD
     PA[Click a palette box] --> AP[addPreset writes a chassis<br>plus functions]
     AP --> SE{Link pending?}
-    SE -->|yes| CL[completeLink joins<br>two free ports]
+    SE -->|yes| CL[completeLink joins<br>an explicit free port]
     SE -->|no| SL[select the device]
-    SL --> ST[Start link on a free port]
+    SL --> ST[Start link on a chosen<br>free port]
     ST --> SE
-    CL --> IN[Inspector: PVID ingress<br>untagged VLANs egress]
+    CL --> IN[Inspector: PVID, WAN VLAN,<br>ISP check]
     IN --> SE
     SE --> SD[Send: createRunContext<br>runFlow on the topology]
     SD --> HO[Hops, STP warning,<br>cold-trace notice]
