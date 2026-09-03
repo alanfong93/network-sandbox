@@ -185,7 +185,11 @@ Per [ADR 0017](adr/0017-structure-in-engine-tests-wording-against-the-table.md):
 structural assertions name device, function, pipeline step, reason code, VLAN,
 port and action, and contain no prose. Wording assertions compare `format(...)`
 to `row.expected` on the catalogue table. Rows 2, 5, 6, 16 and 17 are traces
-assembled from a walk. Row 20 is a trace assembled from a walk
+assembled from a walk. Rows 1, 4 and 18 are end-to-end walk fixtures too —
+`src/walk.test.ts` builds each topology, learns what the walk would have
+learned, and asserts the hop structurally plus the verbatim catalogue
+sentence (row 1 egress-membership, row 4 ingress-filtering admitted with a
+delivery on the trunk, row 18 tagged-only ingress drop). Row 20 is a trace assembled from a walk
 (`src/mesh.test.ts`, and again in the reference fixture). Row 7 is a trace assembled from `send`. Rows 9, 13 and 15
 are flows assembled from `runFlow`. Rows 10 and 12 are traces from `send`.
 Rows 3, 8, 11 and 14 are traces from a DHCP DISCOVER `send`. Row 23 is a

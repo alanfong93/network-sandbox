@@ -17,7 +17,12 @@ import { observationAsFormatInput, walkFrame } from './walk';
 function trunk(
   port: string,
   tagged: VlanId[],
-  opts?: { pvid?: VlanId; untagged?: VlanId[] },
+  opts?: {
+    pvid?: VlanId;
+    untagged?: VlanId[];
+    filtering?: boolean;
+    frames?: BridgePort['acceptableFrameTypes'];
+  },
 ): BridgePort {
   return {
     port,
@@ -25,20 +30,24 @@ function trunk(
     pvid: opts?.pvid ?? 1,
     taggedVlans: new Set(tagged),
     untaggedVlans: new Set(opts?.untagged ?? []),
-    acceptableFrameTypes: 'all',
-    ingressFiltering: true,
+    acceptableFrameTypes: opts?.frames ?? 'all',
+    ingressFiltering: opts?.filtering ?? true,
   };
 }
 
-function access(port: string, vlan: VlanId): BridgePort {
+function access(
+  port: string,
+  vlan: VlanId,
+  opts?: { filtering?: boolean; frames?: BridgePort['acceptableFrameTypes'] },
+): BridgePort {
   return {
     port,
     mode: 'access',
     pvid: vlan,
     taggedVlans: new Set(),
     untaggedVlans: new Set([vlan]),
-    acceptableFrameTypes: 'all',
-    ingressFiltering: true,
+    acceptableFrameTypes: opts?.frames ?? 'all',
+    ingressFiltering: opts?.filtering ?? true,
   };
 }
 
@@ -81,8 +90,11 @@ function switchBox(
   };
 }
 
-function host(id: string): Chassis {
-  return {
+function host(
+  id: string,
+  opts?: { mac?: MacAddr; ip?: string; vlan?: VlanId },
+): Chassis {
+  const chassis: Chassis = {
     id,
     label: id,
     ports: [{ id: '1', mtu: defaults.portMtu, ownedBy: 'none' }],
@@ -90,6 +102,10 @@ function host(id: string): Chassis {
     functions: [],
     internal: [],
   };
+  if (opts?.mac !== undefined) chassis.mac = opts.mac;
+  if (opts?.ip !== undefined) chassis.ip = opts.ip;
+  if (opts?.vlan !== undefined) chassis.vlan = opts.vlan;
+  return chassis;
 }
 
 function link(
@@ -156,11 +172,14 @@ function frame(partial: {
   };
 }
 
+const row1 = CATALOGUE.find((row) => row.id === 1);
 const row2 = CATALOGUE.find((row) => row.id === 2);
+const row4 = CATALOGUE.find((row) => row.id === 4);
 const row5 = CATALOGUE.find((row) => row.id === 5);
 const row6 = CATALOGUE.find((row) => row.id === 6);
 const row16 = CATALOGUE.find((row) => row.id === 16);
 const row17 = CATALOGUE.find((row) => row.id === 17);
+const row18 = CATALOGUE.find((row) => row.id === 18);
 
 describe('topology walk', () => {
   it('dispatches on Port.ownedBy, not a device kind', () => {
@@ -697,5 +716,198 @@ describe('catalogue row 17', () => {
     expect(root?.facts.devices).toEqual(['SW3']);
     expect(root?.facts.priority).toBe(4096);
     expect(root?.facts.path).toEqual(['SW1', 'SW2']);
+  });
+});
+
+describe('catalogue row 1', () => {
+  // Two managed switches; VLAN 20 is missing from SW2's egress membership on
+  // port 3, so a known-unicast VLAN 20 frame drops at egress-membership.
+  const dest: MacAddr = 'aa:00:00:00:00:20';
+  const sw1 = switchBox('SW1', [
+    access('1', 20),
+    trunk('2', [10, 20]),
+  ]);
+  const sw2 = switchBox('SW2', [
+    trunk('1', [10, 20]),
+    trunk('3', [10]),
+  ]);
+  const topology = topo(
+    [sw1, sw2],
+    [link('t', { device: 'SW1', port: '2' }, { device: 'SW2', port: '1' })],
+  );
+
+  it('is green structurally', () => {
+    const ctx = createRunContext(topology);
+    learn(ctx, 20, dest, 'SW2', '3');
+    const result = walkFrame(ctx, {
+      device: 'SW1',
+      inPort: '1',
+      frame: frame({ vlan: null, dst: dest }),
+    });
+    const hop = result.hops.find((hop) => hop.device === 'SW2');
+    expect(hop?.device).toBe('SW2');
+    expect(hop?.fn).toBe('br');
+    expect(hop?.inPort).toBe('1');
+    expect(hop?.outPort).toBe('3');
+    expect(hop?.vlan).toBe(20);
+    expect(hop?.action).toBe('dropped');
+    expect(hop?.step).toBe('egress-membership');
+    expect(hop?.reasonCode).toBe('egress-membership:dropped');
+    // The drop survives a wording-only change: nothing else in the trace
+    // pretends the frame was forwarded or delivered.
+    expect(
+      result.hops.some((hop) => hop.device === 'SW2' && hop.action !== 'dropped'),
+    ).toBe(false);
+    expect(result.observations).toEqual([]);
+  });
+
+  it('is green verbatim against the catalogue table', () => {
+    expect(row1).toBeDefined();
+    const ctx = createRunContext(topology);
+    learn(ctx, 20, dest, 'SW2', '3');
+    const result = walkFrame(ctx, {
+      device: 'SW1',
+      inPort: '1',
+      frame: frame({ vlan: null, dst: dest }),
+    });
+    const hop = result.hops.find(
+      (hop) =>
+        hop.device === 'SW2' &&
+        hop.step === 'egress-membership' &&
+        hop.action === 'dropped',
+    );
+    expect(hop).toBeDefined();
+    if (!hop || !row1) return;
+    expect(hop.reason).toBe(row1.expected);
+  });
+});
+
+describe('catalogue row 4', () => {
+  // Access port with ingress filtering disabled, tagged VLAN 20 frame
+  // arriving; the hop records ingress-filtering:admitted, not a silent
+  // classify, and the frame is delivered on the VLAN 20 trunk.
+  const dest: MacAddr = 'aa:00:00:00:00:20';
+  const sw1 = switchBox('SW1', [
+    access('1', 10, { filtering: false }),
+    trunk('2', [10, 20]),
+  ]);
+  const topology = topo(
+    [sw1, host('H20', { mac: dest, ip: '192.168.20.20', vlan: 20 })],
+    [
+      link(
+        'h',
+        { device: 'SW1', port: '2' },
+        { device: 'H20', port: '1' },
+      ),
+    ],
+  );
+
+  it('is green structurally', () => {
+    const ctx = createRunContext(topology);
+    learn(ctx, 20, dest, 'SW1', '2');
+    const result = walkFrame(ctx, {
+      device: 'SW1',
+      inPort: '1',
+      frame: frame({ vlan: 20, dst: dest }),
+    });
+    const admitted = result.hops.find(
+      (hop) =>
+        hop.device === 'SW1' &&
+        hop.step === 'ingress-filtering' &&
+        hop.action === 'forwarded',
+    );
+    expect(admitted?.fn).toBe('br');
+    expect(admitted?.inPort).toBe('1');
+    expect(admitted?.outPort).toBe('2');
+    expect(admitted?.vlan).toBe(20);
+    expect(admitted?.reasonCode).toBe('ingress-filtering:admitted');
+    const delivered = result.hops.find(
+      (hop) =>
+        hop.device === 'H20' &&
+        hop.step === 'delivery' &&
+        hop.action === 'delivered',
+    );
+    expect(delivered?.reasonCode).toBe('delivery:delivered');
+    expect(result.deliveredFrame?.vlan).toBe(20);
+  });
+
+  it('is green verbatim against the catalogue table', () => {
+    expect(row4).toBeDefined();
+    const ctx = createRunContext(topology);
+    learn(ctx, 20, dest, 'SW1', '2');
+    const result = walkFrame(ctx, {
+      device: 'SW1',
+      inPort: '1',
+      frame: frame({ vlan: 20, dst: dest }),
+    });
+    const admitted = result.hops.find(
+      (hop) =>
+        hop.device === 'SW1' &&
+        hop.step === 'ingress-filtering' &&
+        hop.action === 'forwarded',
+    );
+    expect(admitted).toBeDefined();
+    if (!admitted || !row4) return;
+    expect(admitted.reason).toBe(row4.expected);
+  });
+});
+
+describe('catalogue row 18', () => {
+  // Trunk tagged-only on SW1 port 2, SW2 sends an untagged frame from its
+  // access port; the untagged frame is dropped at SW1's ingress on
+  // acceptable-frame-types.
+  const sw1 = switchBox('SW1', [
+    trunk('1', [10, 20]),
+    trunk('2', [10, 20], { frames: 'tagged-only', untagged: [] }),
+  ]);
+  const sw2 = switchBox('SW2', [
+    access('1', 10),
+    trunk('2', [10, 20], { untagged: [10] }),
+  ]);
+  const topology = topo(
+    [sw1, sw2],
+    [link('t', { device: 'SW1', port: '2' }, { device: 'SW2', port: '2' })],
+  );
+
+  function sendFromSw2(ctx: ReturnType<typeof createRunContext>) {
+    return walkFrame(ctx, {
+      device: 'SW2',
+      inPort: '1',
+      frame: frame({ vlan: null, dst: 'aa:00:00:00:00:20' }),
+    });
+  }
+
+  it('is green structurally', () => {
+    const ctx = createRunContext(topology);
+    const result = sendFromSw2(ctx);
+    const drop = result.hops.find(
+      (hop) => hop.device === 'SW1' && hop.step === 'acceptable-frame-types',
+    );
+    expect(drop?.device).toBe('SW1');
+    expect(drop?.fn).toBe('br');
+    expect(drop?.inPort).toBe('2');
+    expect(drop?.action).toBe('dropped');
+    expect(drop?.reasonCode).toBe('acceptable-frame-types:dropped');
+    // The untagged frame never traverses: SW1's other port never emits it
+    // and no observation fires.
+    expect(
+      result.hops.some((hop) => hop.outPort === '1' && hop.action !== 'dropped'),
+    ).toBe(false);
+    expect(result.observations).toEqual([]);
+  });
+
+  it('is green verbatim against the catalogue table', () => {
+    expect(row18).toBeDefined();
+    const ctx = createRunContext(topology);
+    const result = sendFromSw2(ctx);
+    const drop = result.hops.find(
+      (hop) =>
+        hop.device === 'SW1' &&
+        hop.step === 'acceptable-frame-types' &&
+        hop.action === 'dropped',
+    );
+    expect(drop).toBeDefined();
+    if (!drop || !row18) return;
+    expect(drop.reason).toBe(row18.expected);
   });
 });
