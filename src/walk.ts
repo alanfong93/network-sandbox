@@ -5,15 +5,16 @@ import { format, type HopFacts, type TraceInput } from './format';
 import { makeHop } from './hop';
 import { handleHost, hostWouldHandle } from './host';
 import { handoffFrame, handoffWouldHandle } from './isp';
-import type {
-  Chassis,
-  DeviceId,
-  Fn,
-  FnId,
-  Frame,
-  Hop,
-  Topology,
-  VlanId,
+import {
+  isGroupMac,
+  type Chassis,
+  type DeviceId,
+  type Fn,
+  type FnId,
+  type Frame,
+  type Hop,
+  type Topology,
+  type VlanId,
 } from './model';
 import { reasonCode } from './reasons';
 import { routingWouldHandle, routeFrame } from './route';
@@ -108,6 +109,118 @@ function chassisTakesLocal(
 }
 
 /**
+ * The classified VLAN applied to an internal dispatch frame — the same
+ * shape wireless uses to hand a classified frame to the chassis bridge.
+ */
+function withVlan(frame: Frame, vlan: VlanId): Frame {
+  const without: Frame['encapsulation'] = [];
+  for (const layer of frame.encapsulation) {
+    if (layer !== 'vlan-tag') without.push(layer);
+  }
+  const at = without.indexOf('ethernet');
+  const next = [...without];
+  next.splice(at === -1 ? next.length : at + 1, 0, 'vlan-tag');
+  return { ...frame, vlan, encapsulation: next };
+}
+
+/**
+ * SVI composition (issue #71): a routing function reachable from bridging
+ * ports. Two narrow frame shapes are intercepted after bridge ingress
+ * classification: an ARP for a routing iface's IP on that iface's VLAN, and
+ * a frame addressed to a routing iface's MAC. The first reuses routeFrame's
+ * ARP-reply shape (the SVI's MAC answers, not the chassis MAC); the second
+ * hands the frame to routeFrame as if it arrived on the SVI — matchIface
+ * resolves because RouterIface.id is the SVI's own id. Both reuse existing
+ * pipeline steps; there is no new step and no new ReasonCode (ADR 0001).
+ * Returns undefined when the frame is not one of the two shapes — the
+ * caller bridges it exactly as before.
+ */
+function sviDecision(
+  ctx: RunContext,
+  chassis: Chassis,
+  bridgeId: FnId,
+  args: {
+    device: DeviceId;
+    inPort: string;
+    vlan: VlanId | null;
+    frame: Frame;
+  },
+):
+  | {
+      hops: Hop[];
+      transmissions: { outPort: string; frame: Frame }[];
+      internal?: { fn: FnId; frame: Frame; inPort?: string };
+    }
+  | undefined {
+  const rt = chassis.functions.find(
+    (item) => item.kind === 'routing' && item.id !== bridgeId,
+  );
+  if (rt?.kind !== 'routing') return undefined;
+  if (args.vlan === null) return undefined;
+  const iface = rt.ifaces.find((item) => item.vlan === args.vlan);
+  if (!iface) return undefined;
+  // The SVI must belong to THIS bridge: a chassis may carry more than one
+  // bridging function, and a frame arriving on a different bridge's port is
+  // that bridge's traffic — a VLAN number alone is not a bridge identity.
+  // The check is the frame-stealing mitigation's second half.
+  if (sviBridgeMember(chassis, rt.id, iface.id)?.bridgeId !== bridgeId) {
+    return undefined;
+  }
+
+  if (
+    args.frame.payload.kind === 'arp' &&
+    isGroupMac(args.frame.dstMac) &&
+    args.frame.payload.dstIp === iface.ip
+  ) {
+    const hop = makeHop({
+      device: args.device,
+      fn: rt.id,
+      inPort: args.inPort,
+      vlan: args.vlan,
+      action: 'delivered',
+      step: 'arp',
+      outcome: 'delivered',
+    });
+    const reply: Frame = {
+      srcMac: iface.mac,
+      dstMac: args.frame.srcMac,
+      vlan: args.vlan,
+      size: args.frame.size,
+      encapsulation: [...args.frame.encapsulation],
+      payload: {
+        kind: 'arp',
+        srcIp: iface.ip,
+        dstIp: args.frame.payload.srcIp,
+      },
+      hops: [...args.frame.hops, hop],
+    };
+    return {
+      hops: [hop],
+      transmissions: [{ outPort: args.inPort, frame: reply }],
+    };
+  }
+
+  if (args.frame.dstMac === iface.mac) {
+    // Internal dispatch onto the routing function at the SVI port — the
+    // same mechanism wireless uses to reach the chassis bridge. The SVI
+    // port's ownedBy is the routing fn and RouterIface.id is the SVI port
+    // id, so matchIface resolves and the whole existing routing pipeline
+    // (firewall, LPM, NAT) runs unchanged.
+    return {
+      hops: [],
+      transmissions: [],
+      internal: {
+        fn: rt.id,
+        frame: withVlan(args.frame, args.vlan),
+        inPort: iface.id,
+      },
+    };
+  }
+
+  return undefined;
+}
+
+/**
  * The fallback host/standalone-server dispatch answers when the port's own
  * function cannot: a plain host takes frames addressed to it, and a chassis
  * with a dhcp-server function answers a same-VLAN DISCOVER (the routing path
@@ -139,6 +252,34 @@ function canHandle(ctx: RunContext, job: Job): boolean {
   return fallbackWouldHandle(chassis, job);
 }
 
+/**
+ * True when the named port is a bridging member of this chassis whose port
+ * entry is owned by the routing function — the SVI shape. The routed frame
+ * egressing there re-enters the chassis bridge (InternalEdge rt→br) instead
+ * of looking for a link the SVI does not have.
+ */
+function sviBridgeMember(
+  chassis: Chassis,
+  routingId: FnId,
+  portId: string,
+): { port: string; bridgeId: FnId } | undefined {
+  const port = chassis.ports.find((item) => item.id === portId);
+  if (!port || port.ownedBy !== routingId) return undefined;
+  // Search every routing->fn edge: a chassis may carry more than one
+  // bridging function and the routing function may be SVI-attached to
+  // several of them. The SVI port belongs to whichever bridge carries it
+  // as a member — not merely the first edge drawn.
+  for (const edge of chassis.internal) {
+    if (edge.from !== routingId) continue;
+    const to = chassis.functions.find((item) => item.id === edge.to);
+    if (to?.kind !== 'bridging') continue;
+    if (to.members.some((member) => member.port === portId)) {
+      return { port: portId, bridgeId: to.id };
+    }
+  }
+  return undefined;
+}
+
 function execute(
   ctx: RunContext,
   job: Job,
@@ -146,7 +287,7 @@ function execute(
   | {
       hops: Hop[];
       transmissions: { outPort: string; frame: Frame }[];
-      internal?: { fn: FnId; frame: Frame };
+      internal?: { fn: FnId; frame: Frame; inPort?: string };
     }
   | undefined {
   const chassis = chassisOf(ctx, job.device);
@@ -167,6 +308,20 @@ function execute(
     ) {
       return { hops: [result.hop], transmissions: result.transmissions };
     }
+    // SVI composition (issue #71): after ingress classification has run
+    // (STP, acceptable frames, PVID, ingress filtering — the bridge already
+    // decided the frame belongs here), a chassis routing function is
+    // reachable from the bridging port for exactly two frame shapes: an ARP
+    // asking for a routing iface's IP on that iface's VLAN, and a frame
+    // addressed to a routing iface's MAC. Everything else bridges exactly
+    // as before — the narrow predicate is the frame-stealing mitigation.
+    const svi = sviDecision(ctx, chassis, fn.id, {
+      device: job.device,
+      inPort: job.inPort,
+      vlan,
+      frame: job.frame,
+    });
+    if (svi) return svi;
     if (chassisTakesLocal(chassis, job.frame, vlan)) {
       const local = handleHost(ctx, {
         device: job.device,
@@ -192,11 +347,27 @@ function execute(
     });
   }
   if (fn?.kind === 'routing') {
-    return routeFrame(ctx, {
+    const routed = routeFrame(ctx, {
       device: job.device,
       inPort: job.inPort,
       frame: job.frame,
     });
+    // SVI egress (issue #71): a transmission whose egress port is a bridging
+    // member of this chassis (the SVI port) has no link — the routed frame
+    // re-enters the bridge through the InternalEdge rt->br, exactly as if
+    // the SVI were an uplink into the VLAN. The walk enqueues the internal
+    // job onto the BRIDGE function at the SVI member port; bridging then
+    // delivers it to the VLAN's real ports.
+    const internal: { fn: FnId; frame: Frame; inPort?: string }[] = [];
+    const transmissions = routed.transmissions.flatMap((tx) => {
+      const member = sviBridgeMember(chassis, fn.id, tx.outPort);
+      if (!member) return [tx];
+      internal.push({ fn: member.bridgeId, frame: tx.frame, inPort: member.port });
+      return [];
+    });
+    return internal.length > 0
+      ? { hops: routed.hops, transmissions, internal: internal[0] }
+      : { hops: routed.hops, transmissions };
   }
   const standalone = standaloneDhcpDecision({
     device: job.device,
@@ -427,7 +598,10 @@ export function walkFrame(ctx: RunContext, args: WalkArgs): WalkResult {
     if (result.internal) {
       queue.unshift({
         device: job.device,
-        inPort: job.inPort,
+        // An internal dispatch onto another function lands on that
+        // function's port when the executor names one (the SVI handoff);
+        // otherwise it stays on the arrival port (wireless to bridge).
+        inPort: result.internal.inPort ?? job.inPort,
         frame: result.internal.frame,
         arrivedFrom: job.arrivedFrom,
         dispatchFn: result.internal.fn,

@@ -11,7 +11,8 @@ import type {
   Topology,
   VlanId,
 } from './model';
-import { createRunContext, learn, portState } from './run';
+import { createRunContext, getResolvedMac, learn, portState } from './run';
+import { resolveKey } from './host';
 import { observationAsFormatInput, walkFrame } from './walk';
 
 function trunk(
@@ -909,5 +910,379 @@ describe('catalogue row 18', () => {
     expect(drop).toBeDefined();
     if (!drop || !row18) return;
     expect(drop.reason).toBe(row18.expected);
+  });
+});
+
+describe('bridge-to-SVI composition (the L3 switch)', () => {
+  // SPEC sections 2-3: one chassis, bridging + stp + routing, hosts on
+  // access VLANs 10 and 20, and the routing function reachable from the
+  // bridging ports through switch virtual interfaces (RouterIface.vlan).
+  function l3Switch(id: string, members: BridgePort[]): Chassis {
+    // SVIs are bridging members of their VLAN — the bridge's internal
+    // interface to the route processor. Each SVI port is owned by the
+    // routing function (RouterIface.id is the SVI port id, the sub-interface
+    // shape), and an InternalEdge hands routed egress back to the bridge so
+    // a routed frame re-enters its destination VLAN exactly as an externally
+    // forwarded frame would.
+    const svi10: BridgePort = {
+      port: 'svi10',
+      mode: 'access',
+      pvid: 10,
+      taggedVlans: new Set<VlanId>(),
+      untaggedVlans: new Set<VlanId>([10]),
+      acceptableFrameTypes: 'all',
+      ingressFiltering: true,
+    };
+    const svi20: BridgePort = {
+      port: 'svi20',
+      mode: 'access',
+      pvid: 20,
+      taggedVlans: new Set<VlanId>(),
+      untaggedVlans: new Set<VlanId>([20]),
+      acceptableFrameTypes: 'all',
+      ingressFiltering: true,
+    };
+    const chassis = switchBox(id, [...members, svi10, svi20], { stp: true });
+    // SVI ports are owned by the routing function, not the bridge — the
+    // bridge carries them as members, routing owns the port.
+    for (const port of chassis.ports) {
+      if (port.id === 'svi10' || port.id === 'svi20') port.ownedBy = 'rt';
+    }
+    chassis.internal.push({ from: 'rt', to: 'br' });
+    chassis.functions.push({
+      kind: 'routing',
+      id: 'rt',
+      ifaces: [
+        {
+          id: 'svi10',
+          vlan: 10,
+          ip: '192.168.10.1',
+          prefix: 24,
+          mac: 'aa:00:00:00:10:01',
+        },
+        {
+          id: 'svi20',
+          vlan: 20,
+          ip: '192.168.20.1',
+          prefix: 24,
+          mac: 'aa:00:00:00:20:01',
+        },
+      ],
+      routes: [],
+      firewall: [],
+    });
+    return chassis;
+  }
+
+  function l3Topology(opts?: { hostVlans?: [VlanId, VlanId] }): Topology {
+    const [vlanA, vlanB] = opts?.hostVlans ?? [10, 20];
+    const sw = l3Switch('SW1', [access('1', 10), access('2', 20)]);
+    const h1 = host('H10', {
+      mac: 'aa:00:00:00:00:10',
+      ip: `192.168.${vlanA}.10`,
+      vlan: vlanA,
+    });
+    const h2 = host('H20', {
+      mac: 'aa:00:00:00:00:20',
+      ip: `192.168.${vlanB}.20`,
+      vlan: vlanB,
+    });
+    return topo(
+      [sw, h1, h2],
+      [
+        link('a', { device: 'SW1', port: '1' }, { device: 'H10', port: '1' }),
+        link('b', { device: 'SW1', port: '2' }, { device: 'H20', port: '1' }),
+      ],
+    );
+  }
+
+  it('answers ARP for the VLAN-10 SVI gateway from the bridging port', () => {
+    const ctx = createRunContext(l3Topology());
+    const result = walkFrame(ctx, {
+      device: 'SW1',
+      inPort: '1',
+      frame: {
+        srcMac: 'aa:00:00:00:00:10',
+        dstMac: defaults.broadcastMac,
+        vlan: 10,
+        size: 64,
+        encapsulation: ['ethernet', 'vlan-tag'],
+        payload: { kind: 'arp', srcIp: '192.168.10.10', dstIp: '192.168.10.1' },
+        hops: [],
+      },
+    });
+    const reply = result.hops.find(
+      (hop) => hop.device === 'SW1' && hop.step === 'arp',
+    );
+    expect(reply?.fn).toBe('rt');
+    expect(reply?.action).toBe('delivered');
+    expect(reply?.reasonCode).toBe('arp:delivered');
+    // The ARP reply carries the SVI's MAC and returns to the host that asked.
+    const atHost = result.hops.find(
+      (hop) => hop.device === 'H10' && hop.step === 'arp',
+    );
+    expect(atHost?.action).toBe('delivered');
+    const arpReply = result.hops.some(
+      (hop) => hop.device === 'H10' && hop.step === 'arp' && hop.action === 'delivered',
+    );
+    expect(arpReply).toBe(true);
+  });
+
+  it('routes a VLAN-10 frame to VLAN 20 through the chassis, once', () => {
+    const ctx = createRunContext(l3Topology());
+    // Resolve the gateway MAC first (same-run ARP, ADR 0010).
+    const arp = walkFrame(ctx, {
+      device: 'SW1',
+      inPort: '1',
+      frame: {
+        srcMac: 'aa:00:00:00:00:10',
+        dstMac: defaults.broadcastMac,
+        vlan: 10,
+        size: 64,
+        encapsulation: ['ethernet', 'vlan-tag'],
+        payload: { kind: 'arp', srcIp: '192.168.10.10', dstIp: '192.168.10.1' },
+        hops: [],
+      },
+    });
+    expect(arp.deliveredFrame).toBeUndefined();
+    expect(
+      arp.hops.some(
+        (hop) => hop.device === 'SW1' && hop.step === 'arp' && hop.action === 'delivered',
+      ),
+    ).toBe(true);
+    const gatewayMac = getResolvedMac(ctx, resolveKey('H10', '192.168.10.1'));
+    expect(gatewayMac).toBe('aa:00:00:00:10:01');
+    const result = walkFrame(ctx, {
+      device: 'SW1',
+      inPort: '1',
+      frame: {
+        srcMac: 'aa:00:00:00:00:10',
+        dstMac: gatewayMac,
+        vlan: 10,
+        size: 128,
+        encapsulation: ['ethernet', 'vlan-tag'],
+        payload: { kind: 'icmp', srcIp: '192.168.10.10', dstIp: '192.168.20.20' },
+        hops: [],
+      },
+    });
+    const routeHop = result.hops.find(
+      (hop) => hop.device === 'SW1' && hop.step === 'route-lookup',
+    );
+    expect(routeHop?.fn).toBe('rt');
+    expect(routeHop?.action).toBe('forwarded');
+    expect(routeHop?.reasonCode).toBe('route-lookup:forwarded');
+    const delivered = result.hops.find(
+      (hop) => hop.device === 'H20' && hop.step === 'delivery',
+    );
+    expect(delivered?.action).toBe('delivered');
+    expect(result.deliveredFrame?.payload).toMatchObject({
+      kind: 'icmp',
+      srcIp: '192.168.10.10',
+      dstIp: '192.168.20.20',
+    });
+    // Routed exactly once: no second route-lookup hop on the chassis.
+    expect(
+      result.hops.filter(
+        (hop) => hop.device === 'SW1' && hop.step === 'route-lookup',
+      ).length,
+    ).toBe(1);
+    // The original VLAN-10 frame is not also bridged out another VLAN-10
+    // port: the only egress-tagging forwards on SW1 carry the routed
+    // VLAN-20 frame out the destination port, never the VLAN-10 original.
+    expect(
+      result.hops.some(
+        (hop) =>
+          hop.device === 'SW1' &&
+          hop.step === 'egress-tagging' &&
+          hop.action !== 'dropped' &&
+          hop.vlan === 10,
+      ),
+    ).toBe(false);
+  });
+
+  it('does not bypass spanning tree: a blocking bridging port never reaches the SVI', () => {
+    // Two parallel trunks between SW1 (the L3 switch) and SW2: STP blocks
+    // one, so an SVI ARP arriving on the blocking port dies at stp-ingress
+    // before the routing function is ever consulted.
+    const sw1 = l3Switch('SW1', [
+      access('3', 10),
+      trunk('1', [10, 20]),
+      trunk('2', [10, 20]),
+    ]);
+    const sw2 = switchBox('SW2', [trunk('1', [10, 20]), trunk('2', [10, 20])], {
+      stp: true,
+      mac: 'aa:00:00:00:00:02',
+      priority: 4096,
+    });
+    const topology = topo(
+      [sw1, sw2],
+      [
+        link('t1', { device: 'SW1', port: '1' }, { device: 'SW2', port: '1' }),
+        link('t2', { device: 'SW1', port: '2' }, { device: 'SW2', port: '2' }),
+      ],
+    );
+    const ctx = createRunContext(topology);
+    const blockedPort =
+      portState(ctx, 'SW1', '1') === 'blocking' ? '1' : '2';
+    expect(portState(ctx, 'SW1', blockedPort)).toBe('blocking');
+    const result = walkFrame(ctx, {
+      device: 'SW1',
+      inPort: blockedPort,
+      frame: {
+        srcMac: 'aa:00:00:00:00:10',
+        dstMac: defaults.broadcastMac,
+        vlan: 10,
+        size: 64,
+        encapsulation: ['ethernet', 'vlan-tag'],
+        payload: { kind: 'arp', srcIp: '192.168.10.10', dstIp: '192.168.10.1' },
+        hops: [],
+      },
+    });
+    const drop = result.hops.find(
+      (hop) => hop.device === 'SW1' && hop.step === 'stp-ingress',
+    );
+    expect(drop?.action).toBe('dropped');
+    expect(drop?.reasonCode).toBe('stp-ingress:dropped');
+    expect(
+      result.hops.some((hop) => hop.device === 'SW1' && hop.step === 'arp'),
+    ).toBe(false);
+  });
+
+  it('does not steal a frame arriving on a different bridge of the same chassis', () => {
+    // A chassis may carry more than one bridging function. The SVI belongs
+    // to bridge brA; a frame arriving on brB's port for VLAN 10 addressed to
+    // the SVI MAC is brB's traffic and must bridge, never route.
+    const svi10: BridgePort = {
+      port: 'svi10',
+      mode: 'access',
+      pvid: 10,
+      taggedVlans: new Set<VlanId>(),
+      untaggedVlans: new Set<VlanId>([10]),
+      acceptableFrameTypes: 'all',
+      ingressFiltering: true,
+    };
+    const sw = switchBox('SW1', [access('p', 10)], { stp: true });
+    // Second bridge on the same chassis: its member port q is VLAN 10 too.
+    sw.functions.push({
+      kind: 'bridging',
+      id: 'brB',
+      vlanAware: true,
+      members: [
+        access('q', 10),
+        { ...svi10, port: 'q2' },
+      ],
+      fdb: new Map(),
+    });
+    sw.ports.push({ id: 'q', mtu: defaults.portMtu, ownedBy: 'brB' });
+    sw.ports.push({ id: 'q2', mtu: defaults.portMtu, ownedBy: 'brB' });
+    // SVI on brA only.
+    sw.functions.push({
+      kind: 'bridging',
+      id: 'brA',
+      vlanAware: true,
+      members: [access('p', 10), svi10],
+      fdb: new Map(),
+    });
+    for (const port of sw.ports) {
+      if (port.id === 'svi10') port.ownedBy = 'rt';
+    }
+    sw.internal.push({ from: 'rt', to: 'brA' });
+    sw.functions.push({
+      kind: 'routing',
+      id: 'rt',
+      ifaces: [
+        { id: 'svi10', vlan: 10, ip: '192.168.10.1', prefix: 24, mac: 'aa:00:00:00:10:01' },
+      ],
+      routes: [],
+      firewall: [],
+    });
+    const ctx = createRunContext(topo([sw]));
+    const result = walkFrame(ctx, {
+      device: 'SW1',
+      inPort: 'q',
+      frame: {
+        srcMac: 'aa:00:00:00:00:99',
+        dstMac: 'aa:00:00:00:10:01',
+        vlan: 10,
+        size: 64,
+        encapsulation: ['ethernet', 'vlan-tag'],
+        payload: { kind: 'icmp', srcIp: '192.168.10.99', dstIp: '192.168.20.20' },
+        hops: [],
+      },
+    });
+    expect(
+      result.hops.some(
+        (hop) => hop.device === 'SW1' && hop.step === 'route-lookup',
+      ),
+    ).toBe(false);
+    // brB bridges its own member ports; the frame never enters rt.
+    expect(
+      result.hops.some((hop) => hop.fn === 'brB'),
+    ).toBe(true);
+  });
+
+  it('answers the SVI on the second bridge of a multi-edge chassis', () => {
+    // rt is SVI-attached to two bridges; the FIRST internal edge points at
+    // brA, but this SVI port is a member of brB. The lookup must consider
+    // every rt->fn edge, not just the first drawn.
+    const svi30: BridgePort = {
+      port: 'svi30',
+      mode: 'access',
+      pvid: 30,
+      taggedVlans: new Set<VlanId>(),
+      untaggedVlans: new Set<VlanId>([30]),
+      acceptableFrameTypes: 'all',
+      ingressFiltering: true,
+    };
+    const sw = switchBox('SW1', [access('p', 30)], { stp: true });
+    sw.functions.push({
+      kind: 'bridging',
+      id: 'brA',
+      vlanAware: true,
+      members: [access('a1', 99)],
+      fdb: new Map(),
+    });
+    sw.functions.push({
+      kind: 'bridging',
+      id: 'brB',
+      vlanAware: true,
+      members: [access('q', 30), svi30],
+      fdb: new Map(),
+    });
+    sw.ports.push({ id: 'q', mtu: defaults.portMtu, ownedBy: 'brB' });
+    sw.ports.push({ id: 'a1', mtu: defaults.portMtu, ownedBy: 'brA' });
+    sw.ports.push({ id: 'svi30', mtu: defaults.portMtu, ownedBy: 'rt' });
+    // brA edge FIRST — the lookup must not stop at it.
+    sw.internal.push({ from: 'rt', to: 'brA' });
+    sw.internal.push({ from: 'rt', to: 'brB' });
+    sw.functions.push({
+      kind: 'routing',
+      id: 'rt',
+      ifaces: [
+        { id: 'svi30', vlan: 30, ip: '192.168.30.1', prefix: 24, mac: 'aa:00:00:00:30:01' },
+      ],
+      routes: [],
+      firewall: [],
+    });
+    const ctx = createRunContext(topo([sw]));
+    const result = walkFrame(ctx, {
+      device: 'SW1',
+      inPort: 'q',
+      frame: {
+        srcMac: 'aa:00:00:00:00:30',
+        dstMac: defaults.broadcastMac,
+        vlan: 30,
+        size: 64,
+        encapsulation: ['ethernet', 'vlan-tag'],
+        payload: { kind: 'arp', srcIp: '192.168.30.10', dstIp: '192.168.30.1' },
+        hops: [],
+      },
+    });
+    const reply = result.hops.find(
+      (hop) => hop.device === 'SW1' && hop.step === 'arp',
+    );
+    expect(reply?.fn).toBe('rt');
+    expect(reply?.action).toBe('delivered');
+    expect(reply?.reasonCode).toBe('arp:delivered');
   });
 });
