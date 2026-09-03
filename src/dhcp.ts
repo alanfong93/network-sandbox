@@ -78,15 +78,17 @@ function dhcpTypeOf(frame: Frame): string | undefined {
 
 /**
  * Standalone dispatch: a chassis carrying a dhcp-server function answers a
- * DHCP DISCOVER whose VLAN matches one of its scopes, even when the chassis
- * has no routing function — provided it carries its own mac and ip: the
- * OFFER is sourced from the server's identity, never a fabricated one
- * (RFC 2131 s4.3.1: the server IP source is its own address, not the scope's
- * gateway option). Scope matching reuses matchScope's VLAN rule; the reply
- * reuses the same OFFER shape as the router path. Reachability is honest
- * (issue #72): the answer leaves the arrival port — the frame reached this
- * chassis, so the reply follows the same path back. REQUEST and every other
- * DHCP type keep today's dispatch untouched.
+ * DHCP DISCOVER on its own addressing VLAN, even when the chassis has no
+ * routing function — provided it carries its own mac and ip: the OFFER is
+ * sourced from the server's identity, never a fabricated one (RFC 2131
+ * s4.3.1: the server IP source is its own address, not the scope's gateway
+ * option). One identity means one VLAN: a tagged frame for any other VLAN
+ * is not answered here — that server would need its own address on that
+ * VLAN, or the relay path. The reply reuses the same OFFER shape as the
+ * router path. Reachability is honest (issue #72): the answer leaves the
+ * arrival port — the frame reached this chassis, so the reply follows the
+ * same path back. REQUEST and every other DHCP type keep today's dispatch
+ * untouched.
  */
 export function standaloneDhcpDecision(args: {
   device: DeviceId;
@@ -101,11 +103,15 @@ export function standaloneDhcpDecision(args: {
   if (type !== 'discover') return { action: 'pass' };
   const server = findDhcpServer(args.chassis);
   if (!server) return { action: 'pass' };
-  // The classified VLAN: a tagged frame carries it; an untagged arrival on a
-  // host-like chassis is the chassis' own addressing VLAN (model.ts: chassis
-  // vlan is the VLAN host addressing answers on).
-  const vlan = args.frame.vlan ?? args.chassis.vlan;
-  if (vlan === undefined) return { action: 'pass' };
+  // The server has exactly one identity (one mac, one ip), so it answers on
+  // exactly one VLAN — the chassis' declared addressing VLAN. An untagged
+  // arrival is classified to it; a tagged frame is answered only when its
+  // tag names the same VLAN. Anything else is another VLAN's traffic and
+  // needs a server addressed there (or the relay path).
+  const ownVlan = args.chassis.vlan;
+  if (ownVlan === undefined) return { action: 'pass' };
+  const vlan = args.frame.vlan ?? ownVlan;
+  if (vlan !== ownVlan) return { action: 'pass' };
   const scope = server.scopes.find((item) => item.vlan === vlan);
   if (!scope) return { action: 'pass' };
   // The server answers from its own identity, never a fabricated one: an

@@ -22,7 +22,7 @@ import type {
 } from './model';
 import { createRunContext, getResolvedMac } from './run';
 import { send, senderVlan, vlanOfIp } from './send';
-import { observationAsFormatInput } from './walk';
+import { observationAsFormatInput, walkFrame } from './walk';
 import { resolveKey } from './host';
 
 function trunk(port: string, tagged: VlanId[]): BridgePort {
@@ -885,6 +885,42 @@ describe('standalone DHCP server dispatch', () => {
     ];
     const ctx = createRunContext(topology);
     const result = send(ctx, discover('H1'));
+    expect(
+      result.hops.some((hop) => hop.step === 'dhcp-server'),
+    ).toBe(false);
+  });
+
+  it('does not answer a tagged DISCOVER for a VLAN it has no identity on', () => {
+    // One identity means one VLAN: the server sits on VLAN 10 (chassis.vlan),
+    // so a VLAN-20 tagged DISCOVER with a VLAN-20 scope must not be answered
+    // from the VLAN-10 address — an unreachable identity (RFC 2131 s4.3.1).
+    const topology = standaloneServer();
+    const srv = topology.devices.find((item) => item.id === 'SRV');
+    const fn = srv?.functions.find((item) => item.kind === 'dhcp-server');
+    if (fn?.kind !== 'dhcp-server') throw new Error('expected dhcp-server');
+    fn.scopes = [
+      {
+        vlan: 20,
+        poolStart: '192.168.20.50',
+        poolEnd: '192.168.20.100',
+        gateway: '192.168.20.1',
+        resolver: '192.168.20.1',
+      },
+    ];
+    const ctx = createRunContext(topology);
+    const result = walkFrame(ctx, {
+      device: 'SRV',
+      inPort: '1',
+      frame: {
+        srcMac: 'aa:00:00:00:00:10',
+        dstMac: defaults.broadcastMac,
+        vlan: 20,
+        size: 64,
+        encapsulation: ['ethernet', 'vlan-tag'],
+        payload: { kind: 'dhcp', dhcpType: 'discover' },
+        hops: [],
+      },
+    });
     expect(
       result.hops.some((hop) => hop.step === 'dhcp-server'),
     ).toBe(false);
