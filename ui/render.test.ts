@@ -63,6 +63,17 @@ describe('inspector', () => {
     expect(html).toMatch(/data-port="lan"/);
     expect(html).not.toMatch(/data-action="start-link"[^>]*data-port="wan"/);
   });
+
+  it('dhcp-server inspector shows editable scope controls (resolver, never dns)', () => {
+    let state = addPreset(initialState, 'dhcp-server');
+    const srv = state.topology.devices[0]!.id;
+    const html = renderInspector(select(state, srv));
+    expect(html).toMatch(/data-action="scope-field"/);
+    for (const field of ['vlan', 'poolStart', 'poolEnd', 'gateway', 'resolver']) {
+      expect(html).toMatch(new RegExp(`data-field="${field}"`));
+    }
+    expect(html).not.toMatch(/\bdns\b/i);
+  });
 });
 
 describe('trace panel', () => {

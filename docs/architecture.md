@@ -134,7 +134,12 @@ computed map lives on the run context; the topology is not mutated.
 The UI is a separate entry under `ui/` that imports the engine and never the
 other way round (ADR 0016, ADR 0027). Behaviour lives in pure, unit-tested
 modules; `main.ts` is the only DOM-glue module. Presets write functions, not a
-device kind (ADR 0013); the inspector keeps PVID and `untaggedVlans` as separate
+device kind (ADR 0013): the palette includes the managed switch, the
+unmanaged switch, the router (routing+nat), the L3 switch (bridging+stp+routing
+with SVI-shaped rt-owned bridging members — the #71 composition), the
+standalone DHCP server (host-like addressing plus a `dhcp-server` scope — the
+#72 composition, with scope-editing controls), the AP and the modem; the
+inspector keeps PVID and `untaggedVlans` as separate
 controls (ADR 0008); Start link is per free port (router `wan` can be first);
 router WAN VLAN is `RouterIface.vlan`, not PVID; the modem inspector names the
 ISP check (`mode` + required VLAN); the trace panel renders the engine's own sentences — hops

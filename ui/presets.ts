@@ -221,6 +221,103 @@ export const PRESETS: PresetDef[] = [
         ],
       ),
   },
+  {
+    id: 'l3-switch',
+    label: 'L3 switch',
+    build: (id, seq) => {
+      const members = SWITCH_PORTS.map((p) => access(p, defaults.pvid));
+      // SVIs: rt-owned ports that are bridging members of their VLAN — the
+      // #71 composition. SVI10/20 give the switch a gateway IP on each VLAN.
+      const svi10 = { ...access('svi10', 10) };
+      const svi20 = { ...access('svi20', 20) };
+      return base(
+        id,
+        `L3 switch ${seq}`,
+        'l3-switch',
+        seq,
+        [
+          ...SWITCH_PORTS.map((p) => port(p, 'br')),
+          port('svi10', 'rt'),
+          port('svi20', 'rt'),
+        ],
+        [
+          {
+            kind: 'bridging',
+            id: 'br',
+            vlanAware: true,
+            members: [...members, svi10, svi20],
+            fdb: new Map(),
+          },
+          {
+            kind: 'stp',
+            id: 'stp',
+            bridge: 'br',
+            priority: defaults.stp.priority,
+            baseMac: mac(seq),
+            state: new Map(),
+          },
+          {
+            kind: 'routing',
+            id: 'rt',
+            ifaces: [
+              {
+                id: 'svi10',
+                vlan: 10,
+                ip: '192.168.10.1',
+                prefix: 24,
+                mac: mac(seq, 1),
+              },
+              {
+                id: 'svi20',
+                vlan: 20,
+                ip: '192.168.20.1',
+                prefix: 24,
+                mac: mac(seq, 2),
+              },
+            ],
+            routes: [],
+            firewall: [],
+          },
+        ],
+        { internal: [{ from: 'rt', to: 'br' }] },
+      );
+    },
+  },
+  {
+    id: 'dhcp-server',
+    label: 'DHCP server',
+    build: (id, seq) =>
+      base(
+        id,
+        `DHCP server ${seq}`,
+        'dhcp-server',
+        seq,
+        [port('1', 'none')],
+        [
+          {
+            kind: 'dhcp-server',
+            id: 'dhcp',
+            scopes: [
+              {
+                vlan: 10,
+                poolStart: '192.168.10.100',
+                poolEnd: '192.168.10.199',
+                gateway: '192.168.10.1',
+                resolver: '192.168.10.1',
+              },
+            ],
+          },
+        ],
+        {
+          // The server answers from its own identity (#72): host-like
+          // addressing on the service VLAN.
+          mac: mac(seq),
+          ip: '192.168.10.2',
+          prefix: 24,
+          vlan: 10,
+        },
+      ),
+  },
 ];
 
 export function presetById(id: string): PresetDef | undefined {

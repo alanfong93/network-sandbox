@@ -6,6 +6,7 @@ import {
   completeLink,
   initialState,
   removeDevice,
+  setDhcpScope,
   setPvid,
   setRouterIfaceVlan,
   setUntaggedVlans,
@@ -172,5 +173,33 @@ describe('editor state', () => {
         ? again.ifaces.find((iface) => iface.id === 'wan')
         : undefined;
     expect(wan500?.vlan).toBe(500);
+  });
+
+  it('setDhcpScope patches only the named scope and preserves siblings', () => {
+    let state = addPreset(initialState, 'dhcp-server');
+    const [srv] = state.topology.devices.map((d) => d.id);
+    state = setDhcpScope(state, srv!, 0, { poolStart: '192.168.10.50' });
+    const server = state.topology.devices
+      .find((d) => d.id === srv)
+      ?.functions.find((fn) => fn.kind === 'dhcp-server');
+    const scope = server && server.kind === 'dhcp-server' ? server.scopes[0] : undefined;
+    expect(scope?.poolStart).toBe('192.168.10.50');
+    // Untouched siblings-in-scope:
+    expect(scope?.poolEnd).toBe('192.168.10.199');
+    expect(scope?.gateway).toBe('192.168.10.1');
+    expect(scope?.resolver).toBe('192.168.10.1');
+    expect(scope?.vlan).toBe(10);
+  });
+
+  it('setDhcpScope rejects a vlan outside 1..4094 and an empty address', () => {
+    let state = addPreset(initialState, 'dhcp-server');
+    const [srv] = state.topology.devices.map((d) => d.id);
+    const badVlan = setDhcpScope(state, srv!, 0, { vlan: 5000 });
+    expect(badVlan.topology.devices[0]).toBe(state.topology.devices[0]);
+    expect(badVlan.notice).toMatch(/invalid/i);
+    const badVlan0 = setDhcpScope(state, srv!, 0, { vlan: 0 });
+    expect(badVlan0.notice).toMatch(/invalid/i);
+    const emptyAddr = setDhcpScope(state, srv!, 0, { gateway: '  ' });
+    expect(emptyAddr.notice).toMatch(/invalid/i);
   });
 });

@@ -108,6 +108,31 @@ export function renderInspector(state: EditorState): string {
       `<p class="isp-check">ISP check: ${esc(mode)}, required ${esc(vlan)}</p>`,
     );
   }
+  const dhcpServer = chassis.functions.find(
+    (fn) => fn.kind === 'dhcp-server',
+  );
+  if (dhcpServer && dhcpServer.kind === 'dhcp-server') {
+    dhcpServer.scopes.forEach((scope, index) => {
+      const fields: [keyof typeof scope, 'number' | 'text'][] = [
+        ['vlan', 'number'],
+        ['poolStart', 'text'],
+        ['poolEnd', 'text'],
+        ['gateway', 'text'],
+        ['resolver', 'text'],
+      ];
+      const rows = fields
+        .map(
+          ([field, type]) =>
+            `<label>${esc(field)} ` +
+            `<input type="${type}" data-action="scope-field" data-scope="${index}" ` +
+            `data-field="${esc(field)}" value="${esc(String(scope[field]))}"></label>`,
+        )
+        .join('\n');
+      parts.push(
+        `<fieldset class="dhcp-scope"><legend>DHCP scope ${index + 1}</legend>${rows}</fieldset>`,
+      );
+    });
+  }
   for (const port of chassis.ports) {
     parts.push(renderPortControls(state, chassis.id, port.id));
   }

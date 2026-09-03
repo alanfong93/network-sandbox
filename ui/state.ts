@@ -324,3 +324,46 @@ export function setRouterIfaceVlan(
     }),
   }));
 }
+
+export interface DhcpScopePatch {
+  vlan?: number;
+  poolStart?: string;
+  poolEnd?: string;
+  gateway?: string;
+  resolver?: string;
+}
+
+/**
+ * Touch only the named scope; siblings are preserved. Validation mirrors the
+ * engine's own honesty: vlan is an integer 1..4094 and the address fields are
+ * non-empty strings — no IP-format claim the engine cannot back.
+ */
+export function setDhcpScope(
+  state: EditorState,
+  deviceId: DeviceId,
+  index: number,
+  patch: DhcpScopePatch,
+): EditorState {
+  const vlanValid =
+    patch.vlan === undefined ||
+    (Number.isInteger(patch.vlan) && patch.vlan >= 1 && patch.vlan <= 4094);
+  const stringsValid = (
+    ['poolStart', 'poolEnd', 'gateway', 'resolver'] as const
+  ).every((field) => {
+    const value = patch[field];
+    return value === undefined || (typeof value === 'string' && value.trim() !== '');
+  });
+  if (!vlanValid || !stringsValid) {
+    return { ...state, notice: 'Scope fields invalid' };
+  }
+  return withChassis(state, deviceId, (chassis) => ({
+    ...chassis,
+    functions: chassis.functions.map((fn) => {
+      if (fn.kind !== 'dhcp-server') return fn;
+      const scopes = fn.scopes.map((scope, i) =>
+        i === index ? { ...scope, ...patch } : scope,
+      );
+      return { ...fn, scopes };
+    }),
+  }));
+}
