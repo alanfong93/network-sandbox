@@ -31,8 +31,10 @@ the frame, fixes the real switch — and does it alone, without asking anyone.
 Telling them **how long** reconvergence takes, or whether sessions survive a failover
 — there is no clock ([ADR 0003](adr/0003-converged-state-no-timers.md)).
 
-Vendor CLI syntax, vendor defaults, or importing a real device config. The sandbox is
-faithful to IEEE 802.1Q/802.1D, not to any one box.
+Vendor CLI syntax, vendor defaults, or **generating** real device config to paste into a
+live switch. The sandbox is faithful to IEEE 802.1Q/802.1D, not to any one box. **Reading**
+a real device config to build the topology is in scope
+([ADR 0015](adr/0015-import-real-config-before-exporting-it.md)).
 
 Telling them whether an AP covers the far end of the office. That is a site survey,
 not a standard ([ADR 0006](adr/0006-radio-is-an-estimate-not-a-result.md)).
