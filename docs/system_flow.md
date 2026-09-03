@@ -9,7 +9,10 @@ arrival on `Port.ownedBy`. An arrival that no executor will handle is still
 a hop on that chassis — the walk does not swallow it. `bridgeFrame` is one hop through one bridging
 function; `routeFrame` is one hop through one routing function, including
 NAT masquerade and port-forwards when a `nat` function is present, and
-DHCP when a `dhcp-server` or `dhcp-relay` function is present. `handoffFrame`
+DHCP when a `dhcp-server` or `dhcp-relay` function is present. A chassis
+with a `dhcp-server` function and no routing answers a same-VLAN DHCP
+DISCOVER itself — the OFFER leaves the arrival port; reachability is
+honest, a different VLAN needs the relay path. `handoffFrame`
 is one hop through an `isp-handoff`. `classifyWireless` is one hop through a
 `wireless` function at `ssid-vlan`; the walk then follows `InternalEdge` onto
 the chassis bridge. A bridging function with `canTag: false` still

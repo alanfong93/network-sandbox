@@ -1,4 +1,5 @@
 import { bridgeFrame } from './bridge';
+import { standaloneDhcpDecision } from './dhcp';
 import { usableMtu } from './defaults';
 import { format, type HopFacts, type TraceInput } from './format';
 import { makeHop } from './hop';
@@ -106,6 +107,25 @@ function chassisTakesLocal(
   return hostWouldHandle(chassis, frame);
 }
 
+/**
+ * The fallback host/standalone-server dispatch answers when the port's own
+ * function cannot: a plain host takes frames addressed to it, and a chassis
+ * with a dhcp-server function answers a same-VLAN DISCOVER (the routing path
+ * keeps its own decideDhcp branch, so a routing chassis never runs both —
+ * routing is checked before this fallback).
+ */
+function fallbackWouldHandle(chassis: Chassis, job: Job): boolean {
+  if (standaloneDhcpDecision({
+    device: job.device,
+    chassis,
+    inPort: job.inPort,
+    frame: job.frame,
+  }).action === 'respond') {
+    return true;
+  }
+  return hostWouldHandle(chassis, job.frame);
+}
+
 function canHandle(ctx: RunContext, job: Job): boolean {
   const chassis = chassisOf(ctx, job.device);
   if (!chassis) return false;
@@ -116,7 +136,7 @@ function canHandle(ctx: RunContext, job: Job): boolean {
   if (fn?.kind === 'routing') {
     return routingWouldHandle(fn, job.inPort, job.frame);
   }
-  return hostWouldHandle(chassis, job.frame);
+  return fallbackWouldHandle(chassis, job);
 }
 
 function execute(
@@ -177,6 +197,18 @@ function execute(
       inPort: job.inPort,
       frame: job.frame,
     });
+  }
+  const standalone = standaloneDhcpDecision({
+    device: job.device,
+    chassis,
+    inPort: job.inPort,
+    frame: job.frame,
+  });
+  if (standalone.action === 'respond') {
+    return {
+      hops: standalone.hops,
+      transmissions: standalone.transmissions,
+    };
   }
   return handleHost(ctx, {
     device: job.device,
