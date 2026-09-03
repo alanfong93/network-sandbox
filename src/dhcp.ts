@@ -79,11 +79,14 @@ function dhcpTypeOf(frame: Frame): string | undefined {
 /**
  * Standalone dispatch: a chassis carrying a dhcp-server function answers a
  * DHCP DISCOVER whose VLAN matches one of its scopes, even when the chassis
- * has no routing function. Scope matching reuses matchScope's VLAN rule; the
- * reply reuses the same OFFER shape as the router path. Reachability is
- * honest (issue #72): the answer leaves the arrival port — the frame reached
- * this chassis, so the reply follows the same path back. REQUEST and every
- * other DHCP type keep today's dispatch untouched.
+ * has no routing function — provided it carries its own mac and ip: the
+ * OFFER is sourced from the server's identity, never a fabricated one
+ * (RFC 2131 s4.3.1: the server IP source is its own address, not the scope's
+ * gateway option). Scope matching reuses matchScope's VLAN rule; the reply
+ * reuses the same OFFER shape as the router path. Reachability is honest
+ * (issue #72): the answer leaves the arrival port — the frame reached this
+ * chassis, so the reply follows the same path back. REQUEST and every other
+ * DHCP type keep today's dispatch untouched.
  */
 export function standaloneDhcpDecision(args: {
   device: DeviceId;
@@ -105,12 +108,19 @@ export function standaloneDhcpDecision(args: {
   if (vlan === undefined) return { action: 'pass' };
   const scope = server.scopes.find((item) => item.vlan === vlan);
   if (!scope) return { action: 'pass' };
+  // The server answers from its own identity, never a fabricated one: an
+  // OFFER's IP source is the server's address (RFC 2131 s4.3.1), not the
+  // scope's gateway option, and its Ethernet source is the chassis MAC.
+  // A server chassis without its own address cannot answer at all.
+  const mac = args.chassis.mac;
+  const ip = args.chassis.ip;
+  if (mac === undefined || ip === undefined) return { action: 'pass' };
   const iface: RouterIface = {
     id: args.inPort,
     vlan,
-    ip: scope.gateway,
+    ip,
     prefix: 24,
-    mac: args.chassis.mac ?? '00:00:00:00:00:00',
+    mac,
   };
   return {
     action: 'respond',

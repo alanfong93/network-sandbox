@@ -811,6 +811,8 @@ function standaloneServer(): Topology {
           },
         ],
         internal: [],
+        mac: 'aa:00:00:00:00:09',
+        ip: '192.168.10.9',
         vlan: 10,
       },
     ],
@@ -844,6 +846,27 @@ describe('standalone DHCP server dispatch', () => {
         ? result.deliveredFrame.payload.dstIp
         : undefined,
     ).toBe('192.168.10.50');
+    // RFC 2131 s4.3.1: the OFFER is sourced from the server's own address,
+    // never the scope's gateway option.
+    expect(result.deliveredFrame?.srcMac).toBe('aa:00:00:00:00:09');
+    expect(
+      result.deliveredFrame?.payload.kind === 'dhcp'
+        ? result.deliveredFrame.payload.srcIp
+        : undefined,
+    ).toBe('192.168.10.9');
+  });
+
+  it('does not answer when the server chassis has no address of its own', () => {
+    const topology = standaloneServer();
+    const srv = topology.devices.find((item) => item.id === 'SRV');
+    if (!srv) throw new Error('expected SRV');
+    delete srv.mac;
+    delete srv.ip;
+    const ctx = createRunContext(topology);
+    const result = send(ctx, discover('H1'));
+    expect(
+      result.hops.some((hop) => hop.step === 'dhcp-server'),
+    ).toBe(false);
   });
 
   it('drops a DISCOVER when no scope matches the VLAN', () => {
