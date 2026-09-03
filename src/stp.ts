@@ -77,7 +77,22 @@ function collectBridges(topology: Topology): Map<DeviceId, StpBridge> {
     const bridge = bridgingFn(chassis, stp.bridge);
     const ports = new Set<string>();
     if (bridge) {
-      for (const member of bridge.members) ports.add(member.port);
+      for (const member of bridge.members) {
+        // An SVI member (its port owned by the routing function) is the
+        // bridge's internal interface to the route processor, not an STP
+        // port: it never attaches to a link, and 802.1D assigns port roles
+        // only to link attachments. The physical members keep theirs.
+        const port = chassis.ports.find((item) => item.id === member.port);
+        if (
+          port &&
+          chassis.functions.some(
+            (fn) => fn.kind === 'routing' && fn.id === port.ownedBy,
+          )
+        ) {
+          continue;
+        }
+        ports.add(member.port);
+      }
     }
     bridges.set(chassis.id, {
       device: chassis.id,

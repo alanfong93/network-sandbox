@@ -12,7 +12,12 @@ NAT masquerade and port-forwards when a `nat` function is present, and
 DHCP when a `dhcp-server` or `dhcp-relay` function is present. A chassis
 with a `dhcp-server` function and no routing answers a same-VLAN DHCP
 DISCOVER itself — the OFFER leaves the arrival port; reachability is
-honest, a different VLAN needs the relay path. `handoffFrame`
+honest, a different VLAN needs the relay path. An L3 switch is
+composition, not a device kind: a bridging+routing chassis reaches its
+routing function from the bridging ports through SVIs — an ARP for an SVI
+IP is answered with the SVI's MAC, a frame addressed to an SVI MAC routes,
+and routed egress re-enters the chassis bridge; STP still gates the
+bridging ports. `handoffFrame`
 is one hop through an `isp-handoff`. `classifyWireless` is one hop through a
 `wireless` function at `ssid-vlan`; the walk then follows `InternalEdge` onto
 the chassis bridge. A bridging function with `canTag: false` still
