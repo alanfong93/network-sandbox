@@ -159,6 +159,13 @@ function sviDecision(
   if (args.vlan === null) return undefined;
   const iface = rt.ifaces.find((item) => item.vlan === args.vlan);
   if (!iface) return undefined;
+  // The SVI must belong to THIS bridge: a chassis may carry more than one
+  // bridging function, and a frame arriving on a different bridge's port is
+  // that bridge's traffic — a VLAN number alone is not a bridge identity.
+  // The check is the frame-stealing mitigation's second half.
+  if (sviBridgeMember(chassis, rt.id, iface.id)?.bridgeId !== bridgeId) {
+    return undefined;
+  }
 
   if (
     args.frame.payload.kind === 'arp' &&

@@ -1147,4 +1147,77 @@ describe('bridge-to-SVI composition (the L3 switch)', () => {
       result.hops.some((hop) => hop.device === 'SW1' && hop.step === 'arp'),
     ).toBe(false);
   });
+
+  it('does not steal a frame arriving on a different bridge of the same chassis', () => {
+    // A chassis may carry more than one bridging function. The SVI belongs
+    // to bridge brA; a frame arriving on brB's port for VLAN 10 addressed to
+    // the SVI MAC is brB's traffic and must bridge, never route.
+    const svi10: BridgePort = {
+      port: 'svi10',
+      mode: 'access',
+      pvid: 10,
+      taggedVlans: new Set<VlanId>(),
+      untaggedVlans: new Set<VlanId>([10]),
+      acceptableFrameTypes: 'all',
+      ingressFiltering: true,
+    };
+    const sw = switchBox('SW1', [access('p', 10)], { stp: true });
+    // Second bridge on the same chassis: its member port q is VLAN 10 too.
+    sw.functions.push({
+      kind: 'bridging',
+      id: 'brB',
+      vlanAware: true,
+      members: [
+        access('q', 10),
+        { ...svi10, port: 'q2' },
+      ],
+      fdb: new Map(),
+    });
+    sw.ports.push({ id: 'q', mtu: defaults.portMtu, ownedBy: 'brB' });
+    sw.ports.push({ id: 'q2', mtu: defaults.portMtu, ownedBy: 'brB' });
+    // SVI on brA only.
+    sw.functions.push({
+      kind: 'bridging',
+      id: 'brA',
+      vlanAware: true,
+      members: [access('p', 10), svi10],
+      fdb: new Map(),
+    });
+    for (const port of sw.ports) {
+      if (port.id === 'svi10') port.ownedBy = 'rt';
+    }
+    sw.internal.push({ from: 'rt', to: 'brA' });
+    sw.functions.push({
+      kind: 'routing',
+      id: 'rt',
+      ifaces: [
+        { id: 'svi10', vlan: 10, ip: '192.168.10.1', prefix: 24, mac: 'aa:00:00:00:10:01' },
+      ],
+      routes: [],
+      firewall: [],
+    });
+    const ctx = createRunContext(topo([sw]));
+    const result = walkFrame(ctx, {
+      device: 'SW1',
+      inPort: 'q',
+      frame: {
+        srcMac: 'aa:00:00:00:00:99',
+        dstMac: 'aa:00:00:00:10:01',
+        vlan: 10,
+        size: 64,
+        encapsulation: ['ethernet', 'vlan-tag'],
+        payload: { kind: 'icmp', srcIp: '192.168.10.99', dstIp: '192.168.20.20' },
+        hops: [],
+      },
+    });
+    expect(
+      result.hops.some(
+        (hop) => hop.device === 'SW1' && hop.step === 'route-lookup',
+      ),
+    ).toBe(false);
+    // brB bridges its own member ports; the frame never enters rt.
+    expect(
+      result.hops.some((hop) => hop.fn === 'brB'),
+    ).toBe(true);
+  });
 });
