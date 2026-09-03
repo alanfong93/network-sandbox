@@ -781,3 +781,100 @@ describe('decideDhcp helpers', () => {
     expect(decision.action).toBe('drop');
   });
 });
+
+function standaloneServer(): Topology {
+  return topo(
+    [
+      hostBox('H1', {
+        mac: 'aa:00:00:00:00:10',
+        gateway: '192.168.10.1',
+      }),
+      switchBox('SW1', [access('1', 10), access('2', 10)]),
+      {
+        id: 'SRV',
+        label: 'SRV',
+        ports: [{ id: '1', mtu: defaults.portMtu, ownedBy: 'none' }],
+        radios: [],
+        functions: [
+          {
+            kind: 'dhcp-server',
+            id: 'dhcp',
+            scopes: [
+              {
+                vlan: 10,
+                poolStart: '192.168.10.50',
+                poolEnd: '192.168.10.100',
+                gateway: '192.168.10.1',
+                resolver: '192.168.10.1',
+              },
+            ],
+          },
+        ],
+        internal: [],
+        vlan: 10,
+      },
+    ],
+    [
+      link('a', { device: 'H1', port: '1' }, { device: 'SW1', port: '1' }),
+      link('b', { device: 'SW1', port: '2' }, { device: 'SRV', port: '1' }),
+    ],
+  );
+}
+
+describe('standalone DHCP server dispatch', () => {
+  it('offers poolStart to a DISCOVER on a non-routing chassis', () => {
+    const ctx = createRunContext(standaloneServer());
+    const result = send(ctx, discover('H1'));
+    const offer = result.hops.find(
+      (hop) => hop.device === 'SRV' && hop.step === 'dhcp-server',
+    );
+    expect(offer?.fn).toBe('dhcp');
+    expect(offer?.inPort).toBe('1');
+    expect(offer?.outPort).toBe('1');
+    expect(offer?.action).toBe('forwarded');
+    expect(offer?.reasonCode).toBe('dhcp-server:forwarded');
+    expect(result.deliveredFrame?.payload.kind).toBe('dhcp');
+    expect(
+      result.deliveredFrame?.payload.kind === 'dhcp'
+        ? result.deliveredFrame.payload.dhcpType
+        : undefined,
+    ).toBe('offer');
+    expect(
+      result.deliveredFrame?.payload.kind === 'dhcp'
+        ? result.deliveredFrame.payload.dstIp
+        : undefined,
+    ).toBe('192.168.10.50');
+  });
+
+  it('drops a DISCOVER when no scope matches the VLAN', () => {
+    const topology = standaloneServer();
+    const srv = topology.devices.find((item) => item.id === 'SRV');
+    const fn = srv?.functions.find((item) => item.kind === 'dhcp-server');
+    if (fn?.kind !== 'dhcp-server') throw new Error('expected dhcp-server');
+    fn.scopes = [
+      {
+        vlan: 20,
+        poolStart: '192.168.20.50',
+        poolEnd: '192.168.20.100',
+        gateway: '192.168.20.1',
+        resolver: '192.168.20.1',
+      },
+    ];
+    const ctx = createRunContext(topology);
+    const result = send(ctx, discover('H1'));
+    expect(
+      result.hops.some((hop) => hop.step === 'dhcp-server'),
+    ).toBe(false);
+  });
+
+  it('keeps the router-mounted path unchanged', () => {
+    const ctx = createRunContext(localServer());
+    const result = send(ctx, discover('H1'));
+    const offer = result.hops.find(
+      (hop) => hop.device === 'R1' && hop.step === 'dhcp-server',
+    );
+    expect(offer?.fn).toBe('dhcp');
+    expect(offer?.reasonCode).toBe('dhcp-server:forwarded');
+    expect(result.deliveredFrame?.payload.kind).toBe('dhcp');
+  });
+});

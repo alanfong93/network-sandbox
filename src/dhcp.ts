@@ -76,6 +76,55 @@ function dhcpTypeOf(frame: Frame): string | undefined {
   return frame.payload.dhcpType?.toLowerCase();
 }
 
+/**
+ * Standalone dispatch: a chassis carrying a dhcp-server function answers a
+ * DHCP DISCOVER/REQUEST whose VLAN matches one of its scopes, even when the
+ * chassis has no routing function. Scope matching reuses matchScope's VLAN
+ * rule; the reply reuses the same OFFER/ACK shape as the router path.
+ * Reachability is honest (issue #72): the answer leaves the arrival port —
+ * the frame reached this chassis, so the reply follows the same path back.
+ */
+export function standaloneDhcpDecision(args: {
+  device: DeviceId;
+  chassis: Chassis;
+  inPort: string;
+  frame: Frame;
+}):
+  | { action: 'respond'; hops: Hop[]; transmissions: Transmission[] }
+  | { action: 'pass' } {
+  if (args.frame.payload.kind !== 'dhcp') return { action: 'pass' };
+  const type = dhcpTypeOf(args.frame);
+  if (type !== 'discover' && type !== 'request') return { action: 'pass' };
+  const server = findDhcpServer(args.chassis);
+  if (!server) return { action: 'pass' };
+  // The classified VLAN: a tagged frame carries it; an untagged arrival on a
+  // host-like chassis is the chassis' own addressing VLAN (model.ts: chassis
+  // vlan is the VLAN host addressing answers on).
+  const vlan = args.frame.vlan ?? args.chassis.vlan;
+  if (vlan === undefined) return { action: 'pass' };
+  const scope = server.scopes.find((item) => item.vlan === vlan);
+  if (!scope) return { action: 'pass' };
+  const iface: RouterIface = {
+    id: args.inPort,
+    vlan,
+    ip: scope.gateway,
+    prefix: 24,
+    mac: args.chassis.mac ?? '00:00:00:00:00:00',
+  };
+  return {
+    action: 'respond',
+    ...reply({
+      device: args.device,
+      server,
+      iface,
+      inPort: args.inPort,
+      frame: args.frame,
+      scope,
+      type: type === 'request' ? 'ack' : 'offer',
+    }),
+  };
+}
+
 function reply(
   args: {
     device: DeviceId;
