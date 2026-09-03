@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { addPreset, completeLink, initialState, select, startLink } from './state';
+import { addPreset, completeLink, initialState, select, setHostAddress, setPvid, setUntaggedVlans, startLink } from './state';
 import { renderInspector, renderTrace } from './render';
 import { COLD_TRACE_NOTICE, runTrace } from './trace';
 
@@ -73,6 +73,42 @@ describe('inspector', () => {
       expect(html).toMatch(new RegExp(`data-field="${field}"`));
     }
     expect(html).not.toMatch(/\bdns\b/i);
+  });
+
+  it('a placed L3 switch routes between two cabled hosts (issue #73 done-when)', () => {
+    let state = initialState;
+    state = addPreset(state, 'l3-switch');
+    state = addPreset(state, 'host');
+    state = addPreset(state, 'host');
+    const [l3s, h1, h2] = state.topology.devices.map((d) => d.id);
+    // Host 1 on access port 1 (VLAN 10), host 2 on access port 2 (VLAN 20):
+    // placing the box is not enough — the access ports must be assigned to
+    // the SVI VLANs, which is the real L3-switch workflow.
+    state = startLink(state, h1!, '1');
+    state = completeLink(state, l3s!, '1');
+    state = startLink(state, h2!, '1');
+    state = completeLink(state, l3s!, '2');
+    state = setPvid(state, l3s!, '1', 10);
+    state = setUntaggedVlans(state, l3s!, '1', [10]);
+    state = setPvid(state, l3s!, '2', 20);
+    state = setUntaggedVlans(state, l3s!, '2', [20]);
+    state = setHostAddress(state, h1!, {
+      ip: '192.168.10.10',
+      prefix: 24,
+      gateway: '192.168.10.1',
+    });
+    state = setHostAddress(state, h2!, {
+      ip: '192.168.20.20',
+      prefix: 24,
+      gateway: '192.168.20.1',
+    });
+    const trace = runTrace(state.topology, {
+      from: h1!,
+      dstIp: '192.168.20.20',
+    });
+    const html = renderTrace(trace);
+    expect(html).toMatch(/route-lookup/);
+    expect(html).toMatch(/delivered at .+ \(delivery\)/);
   });
 });
 
