@@ -265,15 +265,19 @@ function sviBridgeMember(
 ): { port: string; bridgeId: FnId } | undefined {
   const port = chassis.ports.find((item) => item.id === portId);
   if (!port || port.ownedBy !== routingId) return undefined;
-  const edge = chassis.internal.find(
-    (item) => item.from === routingId && item.to !== routingId,
-  );
-  if (!edge) return undefined;
-  const to = chassis.functions.find((item) => item.id === edge.to);
-  if (to?.kind !== 'bridging') return undefined;
-  return to.members.some((member) => member.port === portId)
-    ? { port: portId, bridgeId: to.id }
-    : undefined;
+  // Search every routing->fn edge: a chassis may carry more than one
+  // bridging function and the routing function may be SVI-attached to
+  // several of them. The SVI port belongs to whichever bridge carries it
+  // as a member — not merely the first edge drawn.
+  for (const edge of chassis.internal) {
+    if (edge.from !== routingId) continue;
+    const to = chassis.functions.find((item) => item.id === edge.to);
+    if (to?.kind !== 'bridging') continue;
+    if (to.members.some((member) => member.port === portId)) {
+      return { port: portId, bridgeId: to.id };
+    }
+  }
+  return undefined;
 }
 
 function execute(

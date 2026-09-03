@@ -1220,4 +1220,69 @@ describe('bridge-to-SVI composition (the L3 switch)', () => {
       result.hops.some((hop) => hop.fn === 'brB'),
     ).toBe(true);
   });
+
+  it('answers the SVI on the second bridge of a multi-edge chassis', () => {
+    // rt is SVI-attached to two bridges; the FIRST internal edge points at
+    // brA, but this SVI port is a member of brB. The lookup must consider
+    // every rt->fn edge, not just the first drawn.
+    const svi30: BridgePort = {
+      port: 'svi30',
+      mode: 'access',
+      pvid: 30,
+      taggedVlans: new Set<VlanId>(),
+      untaggedVlans: new Set<VlanId>([30]),
+      acceptableFrameTypes: 'all',
+      ingressFiltering: true,
+    };
+    const sw = switchBox('SW1', [access('p', 30)], { stp: true });
+    sw.functions.push({
+      kind: 'bridging',
+      id: 'brA',
+      vlanAware: true,
+      members: [access('a1', 99)],
+      fdb: new Map(),
+    });
+    sw.functions.push({
+      kind: 'bridging',
+      id: 'brB',
+      vlanAware: true,
+      members: [access('q', 30), svi30],
+      fdb: new Map(),
+    });
+    sw.ports.push({ id: 'q', mtu: defaults.portMtu, ownedBy: 'brB' });
+    sw.ports.push({ id: 'a1', mtu: defaults.portMtu, ownedBy: 'brA' });
+    sw.ports.push({ id: 'svi30', mtu: defaults.portMtu, ownedBy: 'rt' });
+    // brA edge FIRST — the lookup must not stop at it.
+    sw.internal.push({ from: 'rt', to: 'brA' });
+    sw.internal.push({ from: 'rt', to: 'brB' });
+    sw.functions.push({
+      kind: 'routing',
+      id: 'rt',
+      ifaces: [
+        { id: 'svi30', vlan: 30, ip: '192.168.30.1', prefix: 24, mac: 'aa:00:00:00:30:01' },
+      ],
+      routes: [],
+      firewall: [],
+    });
+    const ctx = createRunContext(topo([sw]));
+    const result = walkFrame(ctx, {
+      device: 'SW1',
+      inPort: 'q',
+      frame: {
+        srcMac: 'aa:00:00:00:00:30',
+        dstMac: defaults.broadcastMac,
+        vlan: 30,
+        size: 64,
+        encapsulation: ['ethernet', 'vlan-tag'],
+        payload: { kind: 'arp', srcIp: '192.168.30.10', dstIp: '192.168.30.1' },
+        hops: [],
+      },
+    });
+    const reply = result.hops.find(
+      (hop) => hop.device === 'SW1' && hop.step === 'arp',
+    );
+    expect(reply?.fn).toBe('rt');
+    expect(reply?.action).toBe('delivered');
+    expect(reply?.reasonCode).toBe('arp:delivered');
+  });
 });
