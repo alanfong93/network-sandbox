@@ -33,7 +33,8 @@ Telling them **how long** reconvergence takes, or whether sessions survive a fai
 
 Vendor CLI syntax, vendor defaults, or **generating** real device config to paste into a
 live switch. The sandbox is faithful to IEEE 802.1Q/802.1D, not to any one box. **Reading**
-a real device config to build the topology is in scope
+a real device config to build the topology is in scope, through a per-vendor grammar
+supplied as profile data
 ([ADR 0015](adr/0015-import-real-config-before-exporting-it.md)).
 
 Telling them whether an AP covers the far end of the office. That is a site survey,
