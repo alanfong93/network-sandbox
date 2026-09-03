@@ -78,11 +78,12 @@ function dhcpTypeOf(frame: Frame): string | undefined {
 
 /**
  * Standalone dispatch: a chassis carrying a dhcp-server function answers a
- * DHCP DISCOVER/REQUEST whose VLAN matches one of its scopes, even when the
- * chassis has no routing function. Scope matching reuses matchScope's VLAN
- * rule; the reply reuses the same OFFER/ACK shape as the router path.
- * Reachability is honest (issue #72): the answer leaves the arrival port —
- * the frame reached this chassis, so the reply follows the same path back.
+ * DHCP DISCOVER whose VLAN matches one of its scopes, even when the chassis
+ * has no routing function. Scope matching reuses matchScope's VLAN rule; the
+ * reply reuses the same OFFER shape as the router path. Reachability is
+ * honest (issue #72): the answer leaves the arrival port — the frame reached
+ * this chassis, so the reply follows the same path back. REQUEST and every
+ * other DHCP type keep today's dispatch untouched.
  */
 export function standaloneDhcpDecision(args: {
   device: DeviceId;
@@ -94,7 +95,7 @@ export function standaloneDhcpDecision(args: {
   | { action: 'pass' } {
   if (args.frame.payload.kind !== 'dhcp') return { action: 'pass' };
   const type = dhcpTypeOf(args.frame);
-  if (type !== 'discover' && type !== 'request') return { action: 'pass' };
+  if (type !== 'discover') return { action: 'pass' };
   const server = findDhcpServer(args.chassis);
   if (!server) return { action: 'pass' };
   // The classified VLAN: a tagged frame carries it; an untagged arrival on a
@@ -120,7 +121,7 @@ export function standaloneDhcpDecision(args: {
       inPort: args.inPort,
       frame: args.frame,
       scope,
-      type: type === 'request' ? 'ack' : 'offer',
+      type: 'offer',
     }),
   };
 }

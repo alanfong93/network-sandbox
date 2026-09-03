@@ -110,9 +110,9 @@ function chassisTakesLocal(
 /**
  * The fallback host/standalone-server dispatch answers when the port's own
  * function cannot: a plain host takes frames addressed to it, and a chassis
- * with a dhcp-server function answers a same-VLAN DISCOVER/REQUEST (the
- * routing path keeps its own decideDhcp branch, so a routing chassis never
- * runs both — routing is checked before this fallback).
+ * with a dhcp-server function answers a same-VLAN DISCOVER (the routing path
+ * keeps its own decideDhcp branch, so a routing chassis never runs both —
+ * routing is checked before this fallback).
  */
 function fallbackWouldHandle(chassis: Chassis, job: Job): boolean {
   if (standaloneDhcpDecision({
