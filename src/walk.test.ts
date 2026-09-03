@@ -891,7 +891,7 @@ describe('catalogue row 18', () => {
     // The untagged frame never traverses: SW1's other port never emits it
     // and no observation fires.
     expect(
-      result.hops.some((hop) => hop.outPort === '1' && hop.action !== 'dropped'),
+      result.hops.some((hop) => hop.device === 'SW1' && hop.action !== 'dropped'),
     ).toBe(false);
     expect(result.observations).toEqual([]);
   });
