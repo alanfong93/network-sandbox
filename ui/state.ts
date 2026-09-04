@@ -128,13 +128,14 @@ export function addPreset(state: EditorState, presetId: string): EditorState {
   const seq = state.seq + 1;
   const id = `${preset.id}-${seq}`;
   // The dhcp-server preset keys its chassis IP to the SERVER ordinal
-  // (max live ordinal + 1), never the global seq - unrelated placements
-  // must not shift server addressing (#92). Other presets ignore it.
-  const chassis = preset.build(
-    id,
-    seq,
-    nextDhcpServerIndex(state.topology.devices),
-  );
+  // (lowest unclaimed), never the global seq - unrelated placements
+  // must not shift server addressing (#92). null = static range
+  // exhausted: the server ships no IP and the notice says why (a
+  // broadcast or in-pool address would be a false affordance). Other
+  // presets ignore the ordinal.
+  const serverIndex = nextDhcpServerIndex(state.topology.devices);
+  const chassis = preset.build(id, seq, serverIndex ?? undefined);
+  const exhausted = preset.id === 'dhcp-server' && serverIndex === null;
   return {
     ...state,
     seq,
@@ -143,7 +144,9 @@ export function addPreset(state: EditorState, presetId: string): EditorState {
       devices: [...state.topology.devices, chassis],
     },
     selected: id,
-    notice: null,
+    notice: exhausted
+      ? 'DHCP server static range exhausted (153 servers on VLAN 10) - set the chassis IP manually.'
+      : null,
   };
 }
 

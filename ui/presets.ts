@@ -7,7 +7,8 @@ export interface PresetDef {
   /**
    * serverIndex is supplied only by addPreset and consumed only by the
    * dhcp-server preset; every other builder ignores it, so it stays
-   * optional and existing 2-arg call sites keep compiling.
+   * optional and existing 2-arg call sites keep compiling. undefined
+   * means the static range is exhausted - the build ships no IP.
    */
   build: (id: DeviceId, seq: number, serverIndex?: number) => Chassis;
 }
@@ -338,9 +339,10 @@ export const PRESETS: PresetDef[] = [
           // address stays clear of the pool, gateway, and broadcast at
           // every ordinal within the /24 static range.
           mac: mac(seq),
-          // addPreset always supplies the live ordinal; 1 is the
-          // first-server fallback for direct builder calls.
-          ip: dhcpServerIp(serverIndex ?? 1),
+          // addPreset supplies the lowest unclaimed ordinal; undefined
+          // means the static range is exhausted - ship no IP rather
+          // than a broadcast or in-pool address (#92 review cycle 2).
+          ip: serverIndex !== undefined ? dhcpServerIp(serverIndex) : undefined,
           prefix: 24,
           vlan: 10,
         },
@@ -348,7 +350,11 @@ export const PRESETS: PresetDef[] = [
   },
 ];
 
-/** Static host bands of the default /24 scope: .2-.99 and .200-.254. */
+/**
+ * Static host bands of the default /24 scope: .2-.99 and .200-.254.
+ * Contract: serverIndex is an integer 1..153 - addPreset guarantees it
+ * via nextDhcpServerIndex; other values are outside the derivation.
+ */
 function dhcpServerIp(serverIndex: number): string {
   const LOW_MAX = 99; // .2-.99 serves ordinals 1-98 (shipped .2/.3 stay).
   const HIGH_MIN = 200; // .200-.254 serves ordinals 99-153 (.255 broadcast).
@@ -360,16 +366,17 @@ function dhcpServerIp(serverIndex: number): string {
 }
 
 /**
- * The next free SERVER ordinal: one more than the highest ordinal any
- * live dhcp-server chassis currently occupies. Monotonic-max, not a
- * count - deleting a server must never let a new one take an ordinal a
- * surviving server still holds (#92 review cycle 1). The ordinal is
- * inverted from the chassis IP, so it works on imported topologies too;
- * hand-set addresses outside the static bands are not derivation
- * ordinals and are ignored.
+ * The lowest SERVER ordinal no live dhcp-server chassis claims, or null
+ * when all 153 are taken. Lowest-free, not count or max+1: a lone
+ * imported .254 must not push the next server to the broadcast while
+ * .2-.99 sit free, and deleting a server legitimately frees its
+ * ordinal - a new server may take it, never one a survivor still holds
+ * (#92 review cycle 2). The ordinal is inverted from the chassis IP, so
+ * it works on imported topologies; hand-set addresses outside the
+ * static bands are not derivation ordinals and are ignored.
  */
-export function nextDhcpServerIndex(devices: Chassis[]): number {
-  let max = 0;
+export function nextDhcpServerIndex(devices: Chassis[]): number | null {
+  const claimed = new Set<number>();
   for (const device of devices) {
     const isServer = device.functions.some((fn) => fn.kind === 'dhcp-server');
     if (!isServer || device.ip === undefined) continue;
@@ -380,9 +387,12 @@ export function nextDhcpServerIndex(devices: Chassis[]): number {
         : host >= 200 && host <= 254
           ? host - 101
           : NaN;
-    if (Number.isFinite(ordinal) && ordinal > max) max = ordinal;
+    if (Number.isFinite(ordinal)) claimed.add(ordinal);
   }
-  return max + 1;
+  for (let ordinal = 1; ordinal <= 153; ordinal++) {
+    if (!claimed.has(ordinal)) return ordinal;
+  }
+  return null;
 }
 
 export function presetById(id: string): PresetDef | undefined {

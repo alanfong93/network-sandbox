@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { PRESETS } from './presets';
+import { nextDhcpServerIndex, PRESETS } from './presets';
+import type { Chassis } from '../src/index';
 
 const FN_KINDS = [
   'bridging',
@@ -132,6 +133,7 @@ describe('presets', () => {
   it('dhcp-server writes a host-like chassis with one default scope', () => {
     const chassis = PRESETS.find((p) => p.id === 'dhcp-server')?.build(
       'srv1',
+      1,
       1,
     );
     expect(chassis).toBeDefined();
@@ -330,3 +332,47 @@ function presetMac(seq: number, suffix: number): string[] {
     `02:${hex((n >> 24) & 0xff)}:${hex((n >> 16) & 0xff)}:${hex((n >> 8) & 0xff)}:${hex(n & 0xff)}:00`,
   ];
 }
+
+describe('nextDhcpServerIndex', () => {
+  // Imported-shape helper: a real dhcp-server chassis with the ip and
+  // preset stamp overridden, so these tests exercise literal chassis
+  // objects the way json import would hand them over.
+  const srv = (ip?: string, ordinal?: number): Chassis => {
+    const built = PRESETS.find((p) => p.id === 'dhcp-server')!.build(
+      `srv-${ordinal ?? 0}`,
+      ordinal ?? 1,
+      ordinal ?? 1,
+    );
+    return { ...built, preset: undefined, ip };
+  };
+
+  it('an empty or server-free topology offers the first ordinal', () => {
+    expect(nextDhcpServerIndex([])).toBe(1);
+    expect(nextDhcpServerIndex([srv(undefined)])).toBe(1);
+    expect(nextDhcpServerIndex([srv('192.168.10.150')])).toBe(1);
+    expect(nextDhcpServerIndex([srv('192.168.10.999')])).toBe(1);
+  });
+
+  it('fills the lowest unclaimed ordinal, so a lone .254 does not push to broadcast (#92 cycle 2)', () => {
+    expect(nextDhcpServerIndex([srv('192.168.10.254')])).toBe(1);
+    expect(nextDhcpServerIndex([srv('192.168.10.2'), srv('192.168.10.254')])).toBe(2);
+  });
+
+  it('inverts derived addresses on imported chassis, duplicates collapse', () => {
+    expect(nextDhcpServerIndex([srv('192.168.10.2', 1)])).toBe(2);
+    // Lowest-free, not max+1: ordinal 99 is claimed (.200), ordinals
+    // 1-98 are not, so the next server takes ordinal 1 (.2).
+    expect(nextDhcpServerIndex([srv('192.168.10.200', 99)])).toBe(1);
+    expect(nextDhcpServerIndex([srv('192.168.10.2', 1), srv('192.168.10.2', 1)])).toBe(2);
+  });
+
+  it('returns null only when all 153 ordinals are claimed', () => {
+    const all = Array.from({ length: 153 }, (_, i) =>
+      srv(PRESETS.find((p) => p.id === 'dhcp-server')!.build(`s${i}`, i + 1, i + 1).ip, i + 1),
+    );
+    expect(nextDhcpServerIndex(all)).toBeNull();
+    // One freed ordinal reopens the range.
+    const withGap = all.slice(1);
+    expect(nextDhcpServerIndex(withGap)).toBe(1);
+  });
+});

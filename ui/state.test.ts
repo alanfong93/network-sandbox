@@ -64,10 +64,23 @@ describe('editor state', () => {
     state = removeDevice(state, first!);
     state = addPreset(state, 'dhcp-server');
     const third = state.topology.devices.at(-1)!;
-    // The surviving server holds .3 (ordinal 2): the next derivation is
-    // max-live-ordinal + 1 = 3 -> .4, never the live .3.
-    expect(third.ip).toBe('192.168.10.4');
+    // The surviving server holds .3 (ordinal 2); deleting the first
+    // server freed ordinal 1, and the lowest-free scan takes it - never
+    // the live .3.
+    expect(third.ip).toBe('192.168.10.2');
     expect(second).toBeDefined();
+  });
+
+  it('the 154th dhcp-server hits the exhaustion notice with no derived IP (#92)', () => {
+    let state = initialState;
+    for (let i = 0; i < 153; i++) state = addPreset(state, 'dhcp-server');
+    state = addPreset(state, 'dhcp-server');
+    const last = state.topology.devices.at(-1)!;
+    expect(state.notice).toMatch(/exhausted/i);
+    expect(last.ip).toBeUndefined();
+    // The 153 placed servers all hold valid, distinct addresses.
+    const servers = state.topology.devices.slice(0, -1);
+    expect(new Set(servers.map((d) => d.ip)).size).toBe(153);
   });
 
   it('links two placed boxes without hand-editing JSON', () => {
