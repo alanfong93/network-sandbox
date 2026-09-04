@@ -217,6 +217,59 @@ describe('inspector', () => {
     expect(html).toMatch(/all 2 ports are one broadcast domain/);
   });
 
+  it('renders one capability note per VLAN-blind bridge, each with its own member count (#97)', () => {
+    let state = addPreset(initialState, 'unmanaged-switch');
+    const usw = state.topology.devices[0]!.id;
+    const chassis = state.topology.devices.find((d) => d.id === usw)!;
+    const br = chassis.functions.find((fn) => fn.kind === 'bridging');
+    if (br?.kind !== 'bridging') throw new Error('expected bridging');
+    // Second VLAN-blind bridge carrying ports 1-2; the first keeps 3-4.
+    const secondBridge = { ...br, id: 'br2', members: br.members.slice(0, 2) };
+    br.members = br.members.slice(2);
+    chassis.functions = [...chassis.functions, secondBridge];
+    const html = renderInspector(select(state, usw));
+    // Two notes, one per VLAN-blind bridge, each with the right count.
+    const occurrences = html.match(/no VLAN awareness/g)?.length ?? 0;
+    expect(occurrences).toBe(2);
+    expect(html).toMatch(/all 2 ports are one broadcast domain/);
+  });
+
+  it('a VLAN-blind bridge with zero members renders no capability note (#97)', () => {
+    let state = addPreset(initialState, 'unmanaged-switch');
+    const usw = state.topology.devices[0]!.id;
+    const chassis = state.topology.devices.find((d) => d.id === usw)!;
+    const br = chassis.functions.find((fn) => fn.kind === 'bridging');
+    if (br?.kind !== 'bridging') throw new Error('expected bridging');
+    // A degenerate import shape: an empty VLAN-blind bridge placed FIRST,
+    // so the old single-find note picked it and rendered "all 0 ports".
+    const emptyBridge = { ...br, id: 'br0', members: [] };
+    chassis.functions = [emptyBridge, ...chassis.functions];
+    const html = renderInspector(select(state, usw));
+    expect(html).not.toMatch(/all 0 ports/);
+    // The real bridge still gets its note.
+    expect(html).toMatch(/all 4 ports are one broadcast domain/);
+  });
+
+  it('a mixed chassis renders the note for the VLAN-blind bridge only, and the aware bridge keeps its controls (#97)', () => {
+    let state = addPreset(initialState, 'switch');
+    const sw = state.topology.devices[0]!.id;
+    const chassis = state.topology.devices.find((d) => d.id === sw)!;
+    const br = chassis.functions.find((fn) => fn.kind === 'bridging');
+    if (br?.kind !== 'bridging') throw new Error('expected bridging');
+    const blindBridge = {
+      ...br,
+      id: 'br2',
+      vlanAware: false,
+      members: br.members.slice(0, 2),
+    };
+    chassis.functions = [...chassis.functions, blindBridge];
+    const html = renderInspector(select(state, sw));
+    const occurrences = html.match(/no VLAN awareness/g)?.length ?? 0;
+    expect(occurrences).toBe(1);
+    expect(html).toMatch(/all 2 ports are one broadcast domain/);
+    expect(html).toMatch(/data-action="pvid"/);
+  });
+
   it('detection is the owning function vlanAware flag, never the preset id (#67)', () => {
     // A vlan-aware chassis that happens to carry the unmanaged preset id
     // keeps its controls (function is the source of truth, ADR 0013).
