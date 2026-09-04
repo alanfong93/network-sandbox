@@ -106,6 +106,29 @@ describe('inspector', () => {
     expect(html).toMatch(/data-action="pvid"[^>]*value="1"/);
   });
 
+  it('an rt-owned bridge member with no matching routing iface keeps its controls (cycle 3)', () => {
+    // Import-only shape: a bridging member whose port is owned by the
+    // routing function, but the routing function carries no iface with that
+    // port id. The engine's SVI composition requires the iface-id match
+    // (src/walk.ts sviBridgeMember), so this port is NOT an SVI - its
+    // bridge-member VLANs are live L2 config (a flooded frame reads them at
+    // egress, src/bridge.ts) and must stay editable.
+    let state = addPreset(initialState, 'l3-switch');
+    const l3s = state.topology.devices[0]!.id;
+    const chassis = state.topology.devices.find((d) => d.id === l3s)!;
+    const rt = chassis.functions.find((fn) => fn.kind === 'routing');
+    if (rt?.kind !== 'routing') throw new Error('expected routing');
+    // Drop every routing iface: svi10/svi20 stay rt-owned bridge members,
+    // but nothing routes through them anymore.
+    chassis.functions = chassis.functions.map((fn) =>
+      fn.kind === 'routing' ? { ...fn, ifaces: [] } : fn,
+    );
+    const html = renderInspector(select(state, l3s));
+    expect(html).toMatch(/<fieldset class="port"><legend>Port svi10<\/legend>/);
+    expect(html).toMatch(/<fieldset class="port"><legend>Port svi20<\/legend>/);
+    expect(html).toMatch(/data-action="pvid"/);
+  });
+
   it('a placed L3 switch routes between two cabled hosts (issue #73 done-when)', () => {
     let state = initialState;
     state = addPreset(state, 'l3-switch');

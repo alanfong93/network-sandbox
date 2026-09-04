@@ -32,19 +32,24 @@ function renderPortControls(state: EditorState, deviceId: string, portId: string
   const chassis = state.topology.devices.find((d) => d.id === deviceId);
   if (!chassis) return '';
   const member = bridgeMemberOf(chassis, portId);
-  // An SVI port (an rt-owned port that is a bridging member) is one half
-  // of the #71 composition; the other half is the routing iface's vlan.
-  // The member's PVID/tagged/untagged controls would edit the bridge half
-  // alone and desync it from the iface half (routed egress is gated by the
-  // member's carried VLANs), so SVI ports render no bridge-member controls
-  // (#83). Every bridging function is checked - a port that is a member of
-  // any of them is SVI-shaped, not just the first (#87).
+  // An SVI port is an rt-owned port that is a bridging member AND carries a
+  // matching routing iface - the #71 composition has two halves: the
+  // routing iface's vlan and the member's carried VLANs. The member's
+  // PVID/tagged/untagged controls would edit the bridge half alone and
+  // desync it from the iface half (routed egress is gated by the member's
+  // carried VLANs), so SVI ports render no bridge-member controls (#83).
+  // The iface-id match mirrors the engine's own sviBridgeMember condition:
+  // rt-owned + bridging member WITHOUT a matching iface is not an SVI, and
+  // its member VLANs stay live L2 config (cycle 3). Every bridging function
+  // is checked - a port that is a member of any of them counts, not just
+  // the first (#87).
   if (member) {
     const port = chassis.ports.find((item) => item.id === portId);
     const ownedByRouting = chassis.functions.some(
       (fn) =>
         fn.kind === 'routing' &&
-        port?.ownedBy === fn.id,
+        port?.ownedBy === fn.id &&
+        fn.ifaces.some((iface) => iface.id === portId),
     );
     const sviMember = chassis.functions.some(
       (fn) =>
