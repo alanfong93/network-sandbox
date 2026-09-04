@@ -177,10 +177,23 @@ export function renderInspector(state: EditorState): string {
   }
   const isp = chassis.functions.find((fn) => fn.kind === 'isp-handoff');
   if (isp && isp.kind === 'isp-handoff') {
+    // The requirement is the ISP's; the customer side matches it via the
+    // router's WAN VLAN control (#61 Watch - no PPPoE client here). The
+    // controls are editable as of #68: Malaysian ISPs vary the tag, and
+    // dhcp/static handoffs are constructible without hand-editing JSON.
     const mode = isp.mode === 'pppoe' ? 'PPPoE' : isp.mode.toUpperCase();
-    const vlan = isp.vlanTag !== undefined ? `VLAN ${isp.vlanTag}` : 'no VLAN';
+    const vlan =
+      isp.vlanTag !== undefined ? `required VLAN ${isp.vlanTag}` : 'no VLAN tag';
     parts.push(
-      `<p class="isp-check">ISP check: ${esc(mode)}, required ${esc(vlan)}</p>`,
+      `<p class="isp-check">ISP check: ${esc(mode)}, ${esc(vlan)}</p>`,
+      `<label>ISP mode ` +
+        `<select data-action="isp-mode">` +
+        `<option value="pppoe"${isp.mode === 'pppoe' ? ' selected' : ''}>PPPoE</option>` +
+        `<option value="dhcp"${isp.mode === 'dhcp' ? ' selected' : ''}>DHCP</option>` +
+        `<option value="static"${isp.mode === 'static' ? ' selected' : ''}>Static</option>` +
+        `</select></label>`,
+      `<label>ISP VLAN tag ` +
+        `<input type="number" data-action="isp-vlan-tag" value="${isp.vlanTag ?? ''}"></label>`,
     );
   }
   // STP priority renders only for a chassis that HAS an stp function -

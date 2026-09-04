@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { addPreset, completeLink, initialState, select, setHostAddress, setPortAcceptable, setPvid, setUntaggedVlans, startLink } from './state';
+import { addPreset, completeLink, initialState, select, setHostAddress, setIspHandoff, setPortAcceptable, setPvid, setUntaggedVlans, startLink } from './state';
 import { renderInspector, renderTrace } from './render';
 import { COLD_TRACE_NOTICE, runTrace } from './trace';
 
@@ -50,6 +50,32 @@ describe('inspector', () => {
     expect(html).toMatch(/ISP check/);
     expect(html).toMatch(/PPPoE/i);
     expect(html).toMatch(/VLAN 500/);
+  });
+
+  it('modem inspector offers ISP mode and VLAN tag controls (#68)', () => {
+    let state = addPreset(initialState, 'modem');
+    const ont = state.topology.devices[0]!.id;
+    const html = renderInspector(select(state, ont));
+    expect(html).toMatch(/data-action="isp-mode"/);
+    expect(html).toMatch(/<option value="pppoe" selected>/);
+    expect(html).toMatch(/<option value="dhcp">/);
+    expect(html).toMatch(/<option value="static">/);
+    expect(html).toMatch(/data-action="isp-vlan-tag"/);
+    expect(html).toMatch(/data-action="isp-vlan-tag" value="500"/);
+    // Switched state: selected attr follows mode, tag and summary line
+    // are fresh, not literals (#68 review).
+    state = setIspHandoff(state, ont, { mode: 'dhcp' });
+    state = setIspHandoff(state, ont, { vlanTag: 300 });
+    const switched = renderInspector(select(state, ont));
+    expect(switched).toMatch(/<option value="dhcp" selected>/);
+    expect(switched).not.toMatch(/<option value="pppoe" selected>/);
+    expect(switched).toMatch(/data-action="isp-vlan-tag" value="300"/);
+    expect(switched).toMatch(/ISP check: DHCP, required VLAN 300/);
+    // No-tag handoff: summary says so, input renders empty.
+    state = setIspHandoff(state, ont, { vlanTag: undefined });
+    const untagged = renderInspector(select(state, ont));
+    expect(untagged).toMatch(/ISP check: DHCP, no VLAN tag/);
+    expect(untagged).toMatch(/data-action="isp-vlan-tag" value=""/);
   });
 
   it('inspector offers only free ports for linking', () => {
