@@ -32,21 +32,24 @@ export function divergentScopeWarning(topology: Topology): string | null {
     if (server?.kind !== 'dhcp-server') continue;
     const vlans = [...new Set(server.scopes.map((scope) => scope.vlan))];
     if (vlans.length < 2) continue;
+    // Covered mirrors matchScope's own local branch (src/dhcp.ts): a
+    // vlan-tagged iface matches scopes by VLAN only - the subnet leg
+    // belongs exclusively to untagged ifaces, and find returns the first
+    // match, never every match. Counting more than matchScope can reach
+    // would false-silence the warning for a stranded scope.
     const covered = new Set(
       chassis.functions.flatMap((fn) => {
         if (fn.kind !== 'routing') return [];
         return fn.ifaces.flatMap((iface) => {
-          const served: number[] = [];
-          if (iface.vlan !== undefined) served.push(iface.vlan);
-          for (const scope of server.scopes) {
-            if (
-              inSubnet(iface.ip, scope.gateway, 24) ||
-              inSubnet(iface.ip, scope.poolStart, 24)
-            ) {
-              served.push(scope.vlan);
-            }
-          }
-          return served;
+          const local =
+            iface.vlan !== undefined
+              ? server.scopes.find((scope) => scope.vlan === iface.vlan)
+              : server.scopes.find(
+                  (scope) =>
+                    inSubnet(iface.ip, scope.gateway, 24) ||
+                    inSubnet(iface.ip, scope.poolStart, 24),
+                );
+          return local ? [local.vlan] : [];
         });
       }),
     );

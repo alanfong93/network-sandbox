@@ -134,6 +134,79 @@ describe('sandbox JSON import/export (#57 envelope)', () => {
     expect(divergentScopeWarning(importSandbox(exportSandbox(state.topology)))).toBeNull();
   });
 
+  it('a vlan-tagged iface whose IP sits in another scope subnet does not cover that scope (#86)', () => {
+    // matchScope's local branch is exclusive (src/dhcp.ts): a tagged iface
+    // matches scopes by VLAN only, never by subnet - the subnet leg belongs
+    // to untagged ifaces. So a VLAN-10 iface holding 192.168.20.1 cannot
+    // serve the VLAN-20 scope; counting it covered would false-silence the
+    // warning for a genuinely stranded scope.
+    let state = initialState;
+    state = addPreset(state, 'router');
+    const rtr = state.topology.devices[0]!;
+    const rt = rtr.functions.find((fn) => fn.kind === 'routing');
+    if (rt?.kind !== 'routing') throw new Error('expected routing');
+    const scope10 = {
+      vlan: 10,
+      poolStart: '192.168.10.100',
+      poolEnd: '192.168.10.199',
+      gateway: '192.168.10.1',
+      resolver: '192.168.10.1',
+    };
+    const lan = rt.ifaces.find((iface) => iface.id === 'lan');
+    if (lan) {
+      lan.vlan = 10;
+      // Tagged VLAN 10, but the IP lives in the VLAN-20 scope's /24.
+      lan.ip = '192.168.20.1';
+    }
+    const wan = rt.ifaces.find((iface) => iface.id === 'wan');
+    if (wan) wan.vlan = 500;
+    rtr.functions = [
+      ...rtr.functions,
+      {
+        kind: 'dhcp-server' as const,
+        id: 'dhcp',
+        scopes: [scope10, { ...scope10, vlan: 20 }],
+      },
+    ];
+    const warning = divergentScopeWarning(importSandbox(exportSandbox(state.topology)));
+    expect(warning).toBe(
+      'DHCP server router-1 has scopes on VLANs 10, 20 - a standalone server answers on one VLAN only (chassis.vlan); the other scopes cannot answer.',
+    );
+  });
+
+  it('an untagged iface matching two scopes in one subnet covers only the first match (#86)', () => {
+    // matchScope uses find, not a loop: an untagged iface whose IP is in
+    // the same /24 as scopes on two VLANs serves only the first match -
+    // the second is stranded and the import must say so.
+    let state = initialState;
+    state = addPreset(state, 'router');
+    const rtr = state.topology.devices[0]!;
+    const rt = rtr.functions.find((fn) => fn.kind === 'routing');
+    if (rt?.kind !== 'routing') throw new Error('expected routing');
+    const lan = rt.ifaces.find((iface) => iface.id === 'lan');
+    if (lan) {
+      delete lan.vlan;
+      lan.ip = '192.168.10.1';
+    }
+    const wan = rt.ifaces.find((iface) => iface.id === 'wan');
+    if (wan) wan.vlan = 500;
+    rtr.functions = [
+      ...rtr.functions,
+      {
+        kind: 'dhcp-server' as const,
+        id: 'dhcp',
+        scopes: [
+          { vlan: 10, poolStart: '192.168.10.100', poolEnd: '192.168.10.199', gateway: '192.168.10.1', resolver: '192.168.10.1' },
+          { vlan: 20, poolStart: '192.168.10.150', poolEnd: '192.168.10.199', gateway: '192.168.10.1', resolver: '192.168.10.1' },
+        ],
+      },
+    ];
+    const warning = divergentScopeWarning(importSandbox(exportSandbox(state.topology)));
+    expect(warning).toBe(
+      'DHCP server router-1 has scopes on VLANs 10, 20 - a standalone server answers on one VLAN only (chassis.vlan); the other scopes cannot answer.',
+    );
+  });
+
   it('import warns when a routing chassis scope VLAN has no routing iface - decideDhcp cannot reach it (#86)', () => {
     // Presence of a routing function is not coverage: decideDhcp's matchScope
     // finds a scope via scope.vlan === iface.vlan (or an iface-IP subnet
