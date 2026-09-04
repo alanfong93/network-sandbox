@@ -89,6 +89,35 @@ describe('inspector', () => {
     expect(html).not.toMatch(/VLAN \(svi20\)/);
   });
 
+  it('a chassis with an stp function renders an STP priority control; a bare chassis does not (#69)', () => {
+    let state = addPreset(initialState, 'switch');
+    const sw = state.topology.devices[0]!.id;
+    const html = renderInspector(select(state, sw));
+    expect(html).toMatch(/STP priority/);
+    expect(html).toMatch(/data-action="stp-priority"[^>]*value="32768"/);
+    state = addPreset(state, 'unmanaged-switch');
+    const usw = state.topology.devices[1]!.id;
+    const bare = renderInspector(select(state, usw));
+    expect(bare).not.toMatch(/STP priority/);
+    expect(bare).not.toMatch(/data-action="stp-priority"/);
+  });
+
+  it('bridge-member ports render Acceptable frame types and Ingress filtering controls (#69)', () => {
+    let state = addPreset(initialState, 'switch');
+    const sw = state.topology.devices[0]!.id;
+    const html = renderInspector(select(state, sw));
+    expect(html).toMatch(/Acceptable frame types/);
+    expect(html).toMatch(/data-action="acceptable"/);
+    for (const option of ['all', 'tagged-only', 'untagged-only']) {
+      expect(html).toMatch(new RegExp(`value="${option}"`));
+    }
+    expect(html).toMatch(/Ingress filtering/);
+    expect(html).toMatch(/data-action="ingress-filtering"/);
+    expect(html).toMatch(/type="checkbox"[^>]*data-action="ingress-filtering"[^>]*checked/);
+    // ADR 0008: no control is ever labelled Native VLAN (PVID).
+    expect(html).not.toMatch(/Native VLAN \(PVID\)/);
+  });
+
   it('L3-switch SVI ports expose no independent PVID/untagged/tagged controls (#83, other half)', () => {
     let state = addPreset(initialState, 'l3-switch');
     const l3s = state.topology.devices[0]!.id;

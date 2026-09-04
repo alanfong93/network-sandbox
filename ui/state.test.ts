@@ -7,8 +7,11 @@ import {
   initialState,
   removeDevice,
   setDhcpScope,
+  setPortAcceptable,
+  setPortIngressFiltering,
   setPvid,
   setRouterIfaceVlan,
+  setStpPriority,
   setUntaggedVlans,
   startLink,
   type EditorState,
@@ -223,5 +226,49 @@ describe('editor state', () => {
     state = setDhcpScope(state, srv!, 0, { poolEnd: '192.168.10.150' });
     const chassis = state.topology.devices.find((d) => d.id === srv);
     expect(chassis?.vlan).toBe(10);
+  });
+
+  it('setStpPriority writes the stp function on that chassis only (#69)', () => {
+    let state = addPreset(initialState, 'switch');
+    const [sw] = state.topology.devices.map((d) => d.id);
+    state = setStpPriority(state, sw!, 4096);
+    const chassis = state.topology.devices.find((d) => d.id === sw);
+    const stp = chassis?.functions.find((fn) => fn.kind === 'stp');
+    expect(stp && stp.kind === 'stp' ? stp.priority : undefined).toBe(4096);
+    // A chassis with no stp function is left bare - the setter is a no-op
+    // there, never inventing a function (#67).
+    state = addPreset(state, 'unmanaged-switch');
+    const [usw] = state.topology.devices.map((d) => d.id).slice(-1);
+    const before = JSON.stringify(state.topology.devices.find((d) => d.id === usw));
+    const after = setStpPriority(state, usw!, 4096);
+    expect(
+      JSON.stringify(after.topology.devices.find((d) => d.id === usw)),
+    ).toBe(before);
+  });
+
+  it('setPortAcceptable writes the admission rule on the bridge port (#69)', () => {
+    let state = addPreset(initialState, 'switch');
+    const [sw] = state.topology.devices.map((d) => d.id);
+    state = setPortAcceptable(state, sw!, '1', 'tagged-only');
+    const chassis = state.topology.devices.find((d) => d.id === sw);
+    const bridge = chassis?.functions.find((fn) => fn.kind === 'bridging');
+    const member =
+      bridge && bridge.kind === 'bridging'
+        ? bridge.members.find((m) => m.port === '1')
+        : undefined;
+    expect(member?.acceptableFrameTypes).toBe('tagged-only');
+  });
+
+  it('setPortIngressFiltering writes the 802.1Q mechanism flag on the bridge port (#69)', () => {
+    let state = addPreset(initialState, 'switch');
+    const [sw] = state.topology.devices.map((d) => d.id);
+    state = setPortIngressFiltering(state, sw!, '1', false);
+    const chassis = state.topology.devices.find((d) => d.id === sw);
+    const bridge = chassis?.functions.find((fn) => fn.kind === 'bridging');
+    const member =
+      bridge && bridge.kind === 'bridging'
+        ? bridge.members.find((m) => m.port === '1')
+        : undefined;
+    expect(member?.ingressFiltering).toBe(false);
   });
 });

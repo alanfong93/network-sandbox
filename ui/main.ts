@@ -10,9 +10,12 @@ import {
   select,
   setDhcpScope,
   setHostAddress,
+  setPortAcceptable,
+  setPortIngressFiltering,
   setPortMode,
   setPvid,
   setRouterIfaceVlan,
+  setStpPriority,
   setTaggedVlans,
   setUntaggedVlans,
   startLink,
@@ -257,6 +260,29 @@ function onChange(event: Event): void {
       if (port) {
         state = setPortMode(state, device, port, input.value as 'access' | 'trunk');
       }
+      break;
+    case 'acceptable':
+      if (port) {
+        state = setPortAcceptable(
+          state,
+          device,
+          port,
+          input.value as 'all' | 'tagged-only' | 'untagged-only',
+        );
+      }
+      break;
+    case 'ingress-filtering':
+      if (port) {
+        state = setPortIngressFiltering(
+          state,
+          device,
+          port,
+          (input as HTMLInputElement).checked,
+        );
+      }
+      break;
+    case 'stp-priority':
+      state = setStpPriority(state, device, Number(input.value));
       break;
     case 'pvid':
       if (port) state = setPvid(state, device, port, Number(input.value));

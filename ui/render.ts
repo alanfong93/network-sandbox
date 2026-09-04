@@ -80,6 +80,18 @@ function renderPortControls(state: EditorState, deviceId: string, portId: string
       `<label>Tagged VLANs ` +
         `<input type="text" data-port="${esc(portId)}" data-action="tagged" ` +
         `value="${esc(vlans(member.taggedVlans))}"></label>`,
+      // The per-port admission rule bridge.ts enforces at ingress (#69).
+      // ADR 0008 wording applies here too: the label names the 802.1Q
+      // mechanism, never a fused "Native VLAN" phrase.
+      `<label>Acceptable frame types ` +
+        `<select data-port="${esc(portId)}" data-action="acceptable">` +
+        `<option value="all"${member.acceptableFrameTypes === 'all' ? ' selected' : ''}>all</option>` +
+        `<option value="tagged-only"${member.acceptableFrameTypes === 'tagged-only' ? ' selected' : ''}>tagged only</option>` +
+        `<option value="untagged-only"${member.acceptableFrameTypes === 'untagged-only' ? ' selected' : ''}>untagged only</option>` +
+        `</select></label>`,
+      `<label>Ingress filtering ` +
+        `<input type="checkbox" data-port="${esc(portId)}" data-action="ingress-filtering"` +
+        `${member.ingressFiltering ? ' checked' : ''}></label>`,
     );
   }
   return rows.length > 0
@@ -150,6 +162,17 @@ export function renderInspector(state: EditorState): string {
     const vlan = isp.vlanTag !== undefined ? `VLAN ${isp.vlanTag}` : 'no VLAN';
     parts.push(
       `<p class="isp-check">ISP check: ${esc(mode)}, required ${esc(vlan)}</p>`,
+    );
+  }
+  // STP priority renders only for a chassis that HAS an stp function -
+  // function presence, not preset id (#69). An unmanaged switch has no stp
+  // function and stays bare (#67).
+  const stp = chassis.functions.find((fn) => fn.kind === 'stp');
+  if (stp && stp.kind === 'stp') {
+    parts.push(
+      `<label>STP priority ` +
+        `<input type="number" step="4096" min="0" max="61440" data-action="stp-priority" ` +
+        `value="${stp.priority}"></label>`,
     );
   }
   const dhcpServer = chassis.functions.find(
