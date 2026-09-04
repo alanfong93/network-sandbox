@@ -4,7 +4,9 @@ The product workflow from [`PRODUCT.md`](PRODUCT.md). `createRunContext`
 computes spanning tree before any frame exists. `send` originates from a
 host or other sender and ARPs only when that sender lacks its next-hop MAC.
 `runFlow` sends a request, then — if it was delivered — the ICMP reply,
-against that same context. `walkFrame` follows links and dispatches each
+against that same context, and returns every observation in a
+deterministic order: the request walk's, then the reply walk's, then the
+flow-level ones (#63). `walkFrame` follows links and dispatches each
 arrival on `Port.ownedBy`. An arrival that no executor will handle is still
 a hop on that chassis — the walk does not swallow it. `bridgeFrame` is one hop through one bridging
 function; `routeFrame` is one hop through one routing function, including

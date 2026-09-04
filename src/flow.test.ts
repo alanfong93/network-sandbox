@@ -295,6 +295,85 @@ describe('Flow return type', () => {
   });
 });
 
+
+describe('walk observations flow through runFlow (#63)', () => {
+  // Row 2's two-switch PVID-mismatch: the hosts sit in ONE subnet while
+  // the two access VLANs differ - the frame leaves SW1 in VLAN 10 and
+  // arrives at SW2 in VLAN 20.
+  function pvidMismatch(): Topology {
+    return topo(
+      [
+        hostBox('H1', {
+          mac: 'aa:00:00:00:00:10',
+          ip: '192.168.10.10',
+          prefix: 24,
+          gateway: '192.168.10.1',
+        }),
+        hostBox('H2', {
+          mac: 'aa:00:00:00:00:20',
+          ip: '192.168.10.20',
+          prefix: 24,
+          gateway: '192.168.10.1',
+        }),
+        switchBox('SW1', [access('1', 10), access('2', 10)]),
+        switchBox('SW2', [access('1', 20), access('2', 20)]),
+      ],
+      [
+        link('a', { device: 'H1', port: '1' }, { device: 'SW1', port: '1' }),
+        link('b', { device: 'SW1', port: '2' }, { device: 'SW2', port: '1' }),
+        link('c', { device: 'SW2', port: '2' }, { device: 'H2', port: '1' }),
+      ],
+    );
+  }
+
+  const icmp = {
+    from: 'H1',
+    dstIp: '192.168.10.20',
+    payload: { kind: 'icmp', srcIp: '192.168.10.10', dstIp: '192.168.10.20' },
+  } as const;
+
+  it('the request walk emits the row-2 vlan-leak observation, phased request (#63)', () => {
+    const ctx = createRunContext(pvidMismatch());
+    const result = runFlow(ctx, icmp);
+    const leak = result.observations.find(
+      (item) =>
+        item.kind === 'walk' && item.observation.observation === 'vlan-leak',
+    );
+    expect(leak).toBeDefined();
+    expect(leak?.phase).toBe('request');
+    if (leak?.kind !== 'walk') return;
+    expect(leak.observation.facts.fromVlan).toBe(10);
+    expect(leak.observation.facts.toVlan).toBe(20);
+    expect(leak.observation.facts.devices).toEqual(['SW1', 'SW2']);
+  });
+
+  it('observations are ordered request, then reply, then flow (#63 ordering contract)', () => {
+    // The reply walk crosses the same mismatch in reverse (20 -> 10), so
+    // both walk phases carry observations in this shape.
+    const ctx = createRunContext(pvidMismatch());
+    const result = runFlow(ctx, icmp);
+    const rank = { request: 0, reply: 1, flow: 2 } as const;
+    const ranks = result.observations.map((item) => rank[item.phase]);
+    expect(ranks).toContain(0);
+    expect(ranks).toContain(1);
+    expect(ranks).toEqual([...ranks].sort((a, b) => a - b));
+  });
+
+  it('the reply walk emits the mirrored leak observation, phased reply (#63)', () => {
+    const ctx = createRunContext(pvidMismatch());
+    const result = runFlow(ctx, icmp);
+    const replyLeak = result.observations.find(
+      (item) =>
+        item.phase === 'reply' &&
+        item.kind === 'walk' &&
+        item.observation.observation === 'vlan-leak',
+    );
+    expect(replyLeak).toBeDefined();
+    if (replyLeak?.kind !== 'walk') return;
+    expect(replyLeak.observation.facts.fromVlan).toBe(20);
+    expect(replyLeak.observation.facts.toVlan).toBe(10);
+  });
+});
 describe('catalogue row 9', () => {
   const topology = interVlan([{ from: 20, to: 10, action: 'deny' }]);
 
@@ -323,11 +402,13 @@ describe('catalogue row 9', () => {
     expect(drop?.action).toBe('dropped');
     expect(drop?.vlan).toBe(20);
     const obs = result.observations.find(
-      (item) => item.observation === 'firewall-reply',
+      (item) =>
+        item.kind === 'flow' &&
+        item.observation.observation === 'firewall-reply',
     );
-    expect(obs?.facts.reachedVlan).toBe(20);
-    expect(obs?.facts.fromVlan).toBe(20);
-    expect(obs?.facts.toVlan).toBe(10);
+    expect(obs?.observation.facts.reachedVlan).toBe(20);
+    expect(obs?.observation.facts.fromVlan).toBe(20);
+    expect(obs?.observation.facts.toVlan).toBe(10);
   });
 
   it('is green verbatim against the catalogue table', () => {
@@ -338,12 +419,16 @@ describe('catalogue row 9', () => {
       dstIp: '192.168.20.20',
       payload: { kind: 'icmp', srcIp: '192.168.10.10', dstIp: '192.168.20.20' },
     });
-    const obs = result.observations.find(
-      (item) => item.observation === 'firewall-reply',
+    const entry = result.observations.find(
+      (item) =>
+        item.kind === 'flow' &&
+        item.observation.observation === 'firewall-reply',
     );
-    expect(obs).toBeDefined();
-    if (!obs || !row9) return;
-    expect(format(flowObservationAsFormatInput(obs))).toBe(row9.expected);
+    expect(entry).toBeDefined();
+    if (!entry || !row9) return;
+    expect(format(flowObservationAsFormatInput(entry.observation))).toBe(
+      row9.expected,
+    );
   });
 });
 
@@ -366,10 +451,12 @@ describe('catalogue row 15', () => {
     expect(delivered?.reasonCode).toBe('delivery:delivered');
     expect(delivered?.action).toBe('delivered');
     const obs = result.observations.find(
-      (item) => item.observation === 'asymmetric-path',
+      (item) =>
+        item.kind === 'flow' &&
+        item.observation.observation === 'asymmetric-path',
     );
-    expect(obs?.facts.path).toEqual(['R1', 'R2', 'R4']);
-    expect(obs?.facts.returnPath).toEqual(['R4', 'R3', 'R1']);
+    expect(obs?.observation.facts.path).toEqual(['R1', 'R2', 'R4']);
+    expect(obs?.observation.facts.returnPath).toEqual(['R4', 'R3', 'R1']);
   });
 
   it('is green verbatim against the catalogue table', () => {
@@ -380,12 +467,16 @@ describe('catalogue row 15', () => {
       dstIp: '192.168.40.10',
       payload: { kind: 'icmp', srcIp: '192.168.10.10', dstIp: '192.168.40.10' },
     });
-    const obs = result.observations.find(
-      (item) => item.observation === 'asymmetric-path',
+    const entry = result.observations.find(
+      (item) =>
+        item.kind === 'flow' &&
+        item.observation.observation === 'asymmetric-path',
     );
-    expect(obs).toBeDefined();
-    if (!obs || !row15) return;
-    expect(format(flowObservationAsFormatInput(obs))).toBe(row15.expected);
+    expect(entry).toBeDefined();
+    if (!entry || !row15) return;
+    expect(format(flowObservationAsFormatInput(entry.observation))).toBe(
+      row15.expected,
+    );
   });
 });
 

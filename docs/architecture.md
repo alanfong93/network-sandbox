@@ -154,7 +154,7 @@ ISP check as editable controls (`mode` pppoe/dhcp/static + required
 VLAN tag, cleared for a no-tag handoff); the trace panel offers two send types —
 ICMP echo to a destination IP, or DHCP DISCOVER, a broadcast that hides the
 destination input and renders request hops only (the flood path and the
-OFFERs; the observation sentences arrive with #63) — and renders the engine's
+OFFERs; walk observations labelled by phase and the flow-level ones) — and renders the engine's
 own sentences — hops
 from the walk, observations and the ADR 0011 warning through `format()` — plus
 the cold-trace notice (ADR 0010) and the no-timers notice. An stp-function
