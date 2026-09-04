@@ -358,6 +358,11 @@ export function setDhcpScope(
   }
   return withChassis(state, deviceId, (chassis) => ({
     ...chassis,
+    // The engine's standalone answer gates on chassis.vlan (src/dhcp.ts):
+    // a scope vlan that drifts from it can never answer. A vlan patch moves
+    // the service VLAN with the scope so the edit cannot silently disable
+    // the server (#84).
+    ...(patch.vlan !== undefined ? { vlan: patch.vlan } : {}),
     functions: chassis.functions.map((fn) => {
       if (fn.kind !== 'dhcp-server') return fn;
       const scopes = fn.scopes.map((scope, i) =>

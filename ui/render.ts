@@ -92,6 +92,21 @@ export function renderInspector(state: EditorState): string {
   const routing = chassis.functions.find((fn) => fn.kind === 'routing');
   if (routing && routing.kind === 'routing') {
     for (const iface of routing.ifaces) {
+      // The SVI composition (issue #71) is one mechanism: an rt-owned port
+      // that is also a bridging member of its VLAN. The generic
+      // sub-interface VLAN input would move iface.vlan alone and leave the
+      // bridging member behind, silently breaking the composition (#83),
+      // so SVI-shaped ifaces render no independent control.
+      const port = chassis.ports.find((item) => item.id === iface.id);
+      const bridge = chassis.functions.find(
+        (fn) => fn.kind === 'bridging',
+      );
+      const isSvi =
+        port !== undefined &&
+        port.ownedBy === routing.id &&
+        bridge?.kind === 'bridging' &&
+        bridge.members.some((member) => member.port === iface.id);
+      if (isSvi) continue;
       const label = iface.id === 'wan' ? 'WAN VLAN' : `VLAN (${iface.id})`;
       parts.push(
         `<label>${esc(label)} ` +

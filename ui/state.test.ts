@@ -202,4 +202,26 @@ describe('editor state', () => {
     const emptyAddr = setDhcpScope(state, srv!, 0, { gateway: '  ' });
     expect(emptyAddr.notice).toMatch(/invalid/i);
   });
+
+  it('setDhcpScope moves the service VLAN with the scope vlan - never a silent disable (#84)', () => {
+    let state = addPreset(initialState, 'dhcp-server');
+    const [srv] = state.topology.devices.map((d) => d.id);
+    state = setDhcpScope(state, srv!, 0, { vlan: 20 });
+    const chassis = state.topology.devices.find((d) => d.id === srv);
+    // The scope and the chassis addressing VLAN move together: the engine
+    // answer gates on chassis.vlan (src/dhcp.ts), so a scope vlan that has
+    // drifted from it can never answer - the sync removes the trap.
+    expect(chassis?.vlan).toBe(20);
+    const server = chassis?.functions.find((fn) => fn.kind === 'dhcp-server');
+    const scope = server && server.kind === 'dhcp-server' ? server.scopes[0] : undefined;
+    expect(scope?.vlan).toBe(20);
+  });
+
+  it('setDhcpScope preserves the chassis vlan when the patch has no vlan', () => {
+    let state = addPreset(initialState, 'dhcp-server');
+    const [srv] = state.topology.devices.map((d) => d.id);
+    state = setDhcpScope(state, srv!, 0, { poolEnd: '192.168.10.150' });
+    const chassis = state.topology.devices.find((d) => d.id === srv);
+    expect(chassis?.vlan).toBe(10);
+  });
 });

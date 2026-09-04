@@ -141,7 +141,12 @@ standalone DHCP server (host-like addressing plus a `dhcp-server` scope — the
 #72 composition, with scope-editing controls), the AP and the modem; the
 inspector keeps PVID and `untaggedVlans` as separate
 controls (ADR 0008); Start link is per free port (router `wan` can be first);
-router WAN VLAN is `RouterIface.vlan`, not PVID; the modem inspector names the
+router WAN VLAN is `RouterIface.vlan`, not PVID; SVI-shaped ifaces (an rt-owned
+port that is also a bridging member) render no independent VLAN control - the
+SVI is one mechanism and `setRouterIfaceVlan` moving `iface.vlan` alone would
+desynchronise it from the bridging member; editing a dhcp-server scope's vlan
+moves the chassis addressing VLAN with it, because the engine's standalone
+answer gates on `chassis.vlan` and a drifted scope could never answer; the modem inspector names the
 ISP check (`mode` + required VLAN); the trace panel renders the engine's own sentences — hops
 from the walk, observations and the ADR 0011 warning through `format()` — plus
 the cold-trace notice (ADR 0010) and the no-timers notice. There is no canvas

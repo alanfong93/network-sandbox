@@ -75,6 +75,20 @@ describe('inspector', () => {
     expect(html).not.toMatch(/\bdns\b/i);
   });
 
+  it('L3-switch SVI ports expose no independent iface-vlan control (#83)', () => {
+    let state = addPreset(initialState, 'l3-switch');
+    const l3s = state.topology.devices[0]!.id;
+    const html = renderInspector(select(state, l3s));
+    // The SVI composition is a preset invariant: iface.vlan and the
+    // bridging member's VLAN are one mechanism. An independent control on
+    // either half can desynchronise them silently, so neither SVI iface
+    // renders the generic sub-interface VLAN input.
+    expect(html).not.toMatch(/data-action="iface-vlan"[^>]*data-iface="svi10"/);
+    expect(html).not.toMatch(/data-action="iface-vlan"[^>]*data-iface="svi20"/);
+    expect(html).not.toMatch(/VLAN \(svi10\)/);
+    expect(html).not.toMatch(/VLAN \(svi20\)/);
+  });
+
   it('a placed L3 switch routes between two cabled hosts (issue #73 done-when)', () => {
     let state = initialState;
     state = addPreset(state, 'l3-switch');
