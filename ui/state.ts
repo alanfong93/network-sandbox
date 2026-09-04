@@ -8,7 +8,7 @@ import type {
   Topology,
   VlanId,
 } from '../src/index';
-import { presetById } from './presets';
+import { nextDhcpServerIndex, presetById } from './presets';
 
 export interface EditorState {
   topology: Topology;
@@ -127,7 +127,14 @@ export function addPreset(state: EditorState, presetId: string): EditorState {
   }
   const seq = state.seq + 1;
   const id = `${preset.id}-${seq}`;
-  const chassis = preset.build(id, seq);
+  // The dhcp-server preset keys its chassis IP to the SERVER ordinal
+  // (max live ordinal + 1), never the global seq - unrelated placements
+  // must not shift server addressing (#92). Other presets ignore it.
+  const chassis = preset.build(
+    id,
+    seq,
+    nextDhcpServerIndex(state.topology.devices),
+  );
   return {
     ...state,
     seq,

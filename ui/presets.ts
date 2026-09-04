@@ -4,7 +4,12 @@ import type { BridgePort, Chassis, DeviceId, VlanId } from '../src/index';
 export interface PresetDef {
   id: string;
   label: string;
-  build: (id: DeviceId, seq: number) => Chassis;
+  /**
+   * serverIndex is supplied only by addPreset and consumed only by the
+   * dhcp-server preset; every other builder ignores it, so it stays
+   * optional and existing 2-arg call sites keep compiling.
+   */
+  build: (id: DeviceId, seq: number, serverIndex?: number) => Chassis;
 }
 
 /**
@@ -301,7 +306,7 @@ export const PRESETS: PresetDef[] = [
   {
     id: 'dhcp-server',
     label: 'DHCP server',
-    build: (id, seq) =>
+    build: (id, seq, serverIndex) =>
       base(
         id,
         `DHCP server ${seq}`,
@@ -325,15 +330,17 @@ export const PRESETS: PresetDef[] = [
         ],
         {
           // The server answers from its own identity (#72): host-like
-          // addressing on the service VLAN. The IP derives from seq so
-          // two placed servers never share one address (.2 was the
-          // every-placement constant) and stays clear of the pool and
-          // gateway (#85) - and of the pool and broadcast at every seq
-          // within the /24 static range (#92). The range holds 153
-          // servers (98 low + 55 high); beyond it the address is invalid
-          // exactly as before - the done-when scopes to within capacity.
+          // addressing on the service VLAN. The IP derives from the
+          // SERVER ordinal, not the global placement seq - unrelated
+          // placements must never push the server into its own pool or
+          // off the shipped .2/.3 (#92, the issue's named root cause).
+          // Two placed servers never share one address (#85), and the
+          // address stays clear of the pool, gateway, and broadcast at
+          // every ordinal within the /24 static range.
           mac: mac(seq),
-          ip: dhcpServerIp(seq),
+          // addPreset always supplies the live ordinal; 1 is the
+          // first-server fallback for direct builder calls.
+          ip: dhcpServerIp(serverIndex ?? 1),
           prefix: 24,
           vlan: 10,
         },
@@ -342,12 +349,40 @@ export const PRESETS: PresetDef[] = [
 ];
 
 /** Static host bands of the default /24 scope: .2-.99 and .200-.254. */
-function dhcpServerIp(seq: number): string {
-  const LOW_MAX = 99; // .2-.99 serves seq 1-98 (shipped .2/.3 stay).
-  const HIGH_MIN = 200; // .200-.254 serves seq 99-153 (.255 broadcast).
+function dhcpServerIp(serverIndex: number): string {
+  const LOW_MAX = 99; // .2-.99 serves ordinals 1-98 (shipped .2/.3 stay).
+  const HIGH_MIN = 200; // .200-.254 serves ordinals 99-153 (.255 broadcast).
   const host =
-    seq + 1 <= LOW_MAX ? seq + 1 : HIGH_MIN + (seq - LOW_MAX);
+    serverIndex + 1 <= LOW_MAX
+      ? serverIndex + 1
+      : HIGH_MIN + (serverIndex - LOW_MAX);
   return `192.168.10.${host}`;
+}
+
+/**
+ * The next free SERVER ordinal: one more than the highest ordinal any
+ * live dhcp-server chassis currently occupies. Monotonic-max, not a
+ * count - deleting a server must never let a new one take an ordinal a
+ * surviving server still holds (#92 review cycle 1). The ordinal is
+ * inverted from the chassis IP, so it works on imported topologies too;
+ * hand-set addresses outside the static bands are not derivation
+ * ordinals and are ignored.
+ */
+export function nextDhcpServerIndex(devices: Chassis[]): number {
+  let max = 0;
+  for (const device of devices) {
+    const isServer = device.functions.some((fn) => fn.kind === 'dhcp-server');
+    if (!isServer || device.ip === undefined) continue;
+    const host = Number(device.ip.split('.')[3]);
+    const ordinal =
+      host >= 2 && host <= 99
+        ? host - 1
+        : host >= 200 && host <= 254
+          ? host - 101
+          : NaN;
+    if (Number.isFinite(ordinal) && ordinal > max) max = ordinal;
+  }
+  return max + 1;
 }
 
 export function presetById(id: string): PresetDef | undefined {
