@@ -301,10 +301,19 @@ export function setStpPriority(
   deviceId: DeviceId,
   priority: number,
 ): EditorState {
+  // 802.1D bridge priority: 0..61440 in steps of 4096 (the priority field
+  // occupies the top 4 bits of the bridge id). 0 is legal - it is the
+  // value that guarantees root - and non-multiples are not bridge ids.
   const valid =
-    Number.isInteger(priority) && priority > 0 && priority <= 61440;
+    Number.isInteger(priority) &&
+    priority >= 0 &&
+    priority <= 61440 &&
+    priority % 4096 === 0;
   if (!valid) {
-    return { ...state, notice: 'STP priority must be 1..61440' };
+    return {
+      ...state,
+      notice: 'STP priority must be 0..61440 in steps of 4096',
+    };
   }
   return withChassis(state, deviceId, (chassis) => ({
     ...chassis,

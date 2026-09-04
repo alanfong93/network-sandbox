@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { addPreset, completeLink, initialState, select, setHostAddress, setPvid, setUntaggedVlans, startLink } from './state';
+import { addPreset, completeLink, initialState, select, setHostAddress, setPortAcceptable, setPvid, setUntaggedVlans, startLink } from './state';
 import { renderInspector, renderTrace } from './render';
 import { COLD_TRACE_NOTICE, runTrace } from './trace';
 
@@ -100,6 +100,23 @@ describe('inspector', () => {
     const bare = renderInspector(select(state, usw));
     expect(bare).not.toMatch(/STP priority/);
     expect(bare).not.toMatch(/data-action="stp-priority"/);
+  });
+
+  it('the acceptable-frame-types select marks the current rule as selected (#69)', () => {
+    let state = addPreset(initialState, 'switch');
+    const sw = state.topology.devices[0]!.id;
+    state = setPortAcceptable(state, sw, '1', 'tagged-only');
+    const html = renderInspector(select(state, sw));
+    expect(html).toMatch(
+      /<option value="tagged-only" selected>tagged only<\/option>/,
+    );
+    // Port 1's own select must not still mark 'all'; other ports keep theirs.
+    const port1 = html.match(
+      /<fieldset class="port"><legend>Port 1<\/legend>[\s\S]*?<\/fieldset>/,
+    )?.[0];
+    expect(port1).toBeDefined();
+    expect(port1).toMatch(/<option value="tagged-only" selected>tagged only<\/option>/);
+    expect(port1).not.toMatch(/<option value="all" selected>/);
   });
 
   it('bridge-member ports render Acceptable frame types and Ingress filtering controls (#69)', () => {

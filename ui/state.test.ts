@@ -246,6 +246,23 @@ describe('editor state', () => {
     ).toBe(before);
   });
 
+  it('setStpPriority accepts 0 (the root-guaranteeing legal value) and rejects non-4096 multiples (#69)', () => {
+    let state = addPreset(initialState, 'switch');
+    const [sw] = state.topology.devices.map((d) => d.id);
+    // 0 is a legal 802.1D bridge priority - the top-4-bits field starts at
+    // zero, and 0 guarantees root. The first implementation rejected it.
+    state = setStpPriority(state, sw!, 0);
+    const chassis = state.topology.devices.find((d) => d.id === sw);
+    const stp = chassis?.functions.find((fn) => fn.kind === 'stp');
+    expect(stp && stp.kind === 'stp' ? stp.priority : undefined).toBe(0);
+    // Non-multiples of 4096 are not bridge ids - the priority occupies the
+    // high bits; the input's step=4096 and the setter must agree.
+    const odd = setStpPriority(state, sw!, 32767);
+    expect(odd.notice).toMatch(/steps of 4096/);
+    const overRange = setStpPriority(state, sw!, 65536);
+    expect(overRange.notice).toMatch(/0\.\.61440/);
+  });
+
   it('setPortAcceptable writes the admission rule on the bridge port (#69)', () => {
     let state = addPreset(initialState, 'switch');
     const [sw] = state.topology.devices.map((d) => d.id);
