@@ -114,6 +114,26 @@ describe('trace', () => {
     expect(trace.request.join('\n')).not.toMatch(/Outcome:/i);
   });
 
+  it('a direct-link DISCOVER renders without a flood hop and without the flood notice (#82)', () => {
+    // No switch on the path: there is nothing to flood and no MAC table to
+    // consult, so the flood-worded cold notice would be a lie here. The
+    // DISCOVER itself is unchanged - no ARP, no OFFER, request only.
+    let state = initialState;
+    state = addPreset(state, 'host');
+    state = addPreset(state, 'dhcp-server');
+    const [h1, srv] = state.topology.devices.map((d) => d.id);
+    state = startLink(state, h1!);
+    state = completeLink(state, srv!);
+    const trace = runTrace(state.topology, { from: h1!, kind: 'dhcp-discover' });
+    expect(trace.request.some((line) => line.match(/flood/i))).toBe(false);
+    expect(trace.request.some((line) => line.match(/arp/i))).toBe(false);
+    expect(trace.request.some((line) => line.match(/offer/i))).toBe(false);
+    expect(trace.reply).toEqual([]);
+    expect(trace.notices.join('\n')).toMatch(/broadcast delivery below/i);
+    expect(trace.notices.join('\n')).not.toMatch(/flood below/i);
+    expect(trace.notices.join('\n')).not.toMatch(/arp exchange below/i);
+  });
+
   it('two standalone dhcp-servers on one VLAN both OFFER a browser-originated DISCOVER (row 11 shape, #82)', () => {
     let state = initialState;
     state = addPreset(state, 'host');

@@ -24,6 +24,10 @@ import { runTrace } from './trace';
 let state: EditorState = initialState;
 let sendFrom: DeviceId | null = null;
 let lastDstIp = '192.168.1.11';
+// The draft keeps an unsent destination across re-renders (send-kind
+// toggle, device adds) - render() rebuilds the form, and lastDstIp only
+// records successful sends.
+let dstIpDraft: string | null = null;
 let sendKind: 'icmp' | 'dhcp-discover' = 'icmp';
 
 function renderLinks(state: EditorState): string {
@@ -105,7 +109,7 @@ function render(): void {
     // (#82). The ICMP path keeps its dstIp input untouched.
     (sendKind === 'icmp'
       ? '<label>Destination IP ' +
-        `<input type="text" name="dstIp" value="${esc(lastDstIp)}"></label> `
+        `<input type="text" name="dstIp" value="${esc(dstIpDraft ?? lastDstIp)}"></label> `
       : '') +
     '<button type="submit">Send</button></form>' +
     '<div id="trace-out"></div>' +
@@ -133,6 +137,7 @@ function send(event: Event): void {
     const dstIp = (form.elements.namedItem('dstIp') as HTMLInputElement).value;
     if (!dstIp) return;
     lastDstIp = dstIp;
+    dstIpDraft = null;
     const trace = runTrace(state.topology, { from, dstIp });
     lastTraceRender = renderTrace(trace);
   }
@@ -336,6 +341,14 @@ document.addEventListener('change', (event) => {
   if (target.id === 'import-file' && target.files?.[0]) {
     void importJson(target.files[0]);
   }
+});
+
+// Preserve the unsent destination draft across form re-renders: render()
+// rebuilds the input, so without this the send-kind toggle (or any other
+// re-render) would silently revert the field to the last SENT value.
+document.addEventListener('input', (event) => {
+  const target = event.target as HTMLInputElement;
+  if (target.name === 'dstIp') dstIpDraft = target.value;
 });
 
 render();

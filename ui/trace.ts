@@ -23,6 +23,11 @@ export const COLD_DISCOVER_NOTICE =
   'fresh on each send, so the broadcast reaches every member. Nothing ' +
   'carries between traces - this is correct here, not a bug.';
 
+export const COLD_DISCOVER_DIRECT_NOTICE =
+  'Every trace starts cold: the broadcast delivery below is computed fresh ' +
+  'on each send. Nothing carries between traces - this is correct here, ' +
+  'not a bug.';
+
 /** SPEC: timers are not modelled — the limit belongs in the UI, not just in the spec. */
 export const NO_TIMERS_NOTICE =
   'Timers are not modelled: the converged state is computed, so delays such ' +
@@ -72,13 +77,18 @@ export function runTrace(
   const flowNotes = result.observations.map((observation) =>
     format(flowObservationAsFormatInput(observation)),
   );
+  const request = result.flow.request.hops.map((hop) => hop.reason);
   return {
     warnings,
-    request: result.flow.request.hops.map((hop) => hop.reason),
+    request,
     reply: result.flow.reply?.hops.map((hop) => hop.reason) ?? [],
     flowNotes,
     notices: [
-      icmpArgs === undefined ? COLD_DISCOVER_NOTICE : COLD_TRACE_NOTICE,
+      icmpArgs === undefined
+        ? request.some((line) => line.match(/flood/i))
+          ? COLD_DISCOVER_NOTICE
+          : COLD_DISCOVER_DIRECT_NOTICE
+        : COLD_TRACE_NOTICE,
       NO_TIMERS_NOTICE,
     ],
     outcome: result.flow.outcome,
