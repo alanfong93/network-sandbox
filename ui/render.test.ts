@@ -52,6 +52,18 @@ describe('inspector', () => {
     expect(html).toMatch(/VLAN 500/);
   });
 
+  it('modem inspector offers ISP mode and VLAN tag controls (#68)', () => {
+    let state = addPreset(initialState, 'modem');
+    const ont = state.topology.devices[0]!.id;
+    const html = renderInspector(select(state, ont));
+    expect(html).toMatch(/data-action="isp-mode"/);
+    expect(html).toMatch(/<option value="pppoe" selected>/);
+    expect(html).toMatch(/<option value="dhcp">/);
+    expect(html).toMatch(/<option value="static">/);
+    expect(html).toMatch(/data-action="isp-vlan-tag"/);
+    expect(html).toMatch(/data-action="isp-vlan-tag" value="500"/);
+  });
+
   it('inspector offers only free ports for linking', () => {
     let state = addPreset(initialState, 'router');
     state = addPreset(state, 'modem');

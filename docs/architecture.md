@@ -149,8 +149,9 @@ alone would desynchronise `iface.vlan` from the member's carried VLANs (routed
 egress is gated by the member's VLANs at egress-membership); editing a
 dhcp-server scope's vlan moves the chassis addressing VLAN with it, because
 the engine's standalone answer gates on `chassis.vlan` and a drifted scope
-could never answer; the modem inspector names the
-ISP check (`mode` + required VLAN); the trace panel offers two send types —
+could never answer; the modem inspector offers the
+ISP check as editable controls (`mode` pppoe/dhcp/static + required
+VLAN tag, cleared for a no-tag handoff); the trace panel offers two send types —
 ICMP echo to a destination IP, or DHCP DISCOVER, a broadcast that hides the
 destination input and renders request hops only (the flood path and the
 OFFERs; the observation sentences arrive with #63) — and renders the engine's

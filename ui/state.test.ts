@@ -7,6 +7,7 @@ import {
   initialState,
   removeDevice,
   setDhcpScope,
+  setIspHandoff,
   setPortAcceptable,
   setPortIngressFiltering,
   setPvid,
@@ -124,6 +125,33 @@ describe('editor state', () => {
     expect(state.pendingLink).toBeNull();
   });
 
+  it('setIspHandoff switches mode and clears or sets the VLAN tag (#68)', () => {
+    let state = addPreset(initialState, 'modem');
+    const modem = state.topology.devices[0]!.id;
+    const isp = (s: EditorState) => {
+      const chassis = s.topology.devices.find((d) => d.id === modem)!;
+      const fn = chassis.functions.find((f) => f.kind === 'isp-handoff')!;
+      if (fn.kind !== 'isp-handoff') throw new Error('expected isp-handoff');
+      return fn;
+    };
+    // The preset ships pppoe + tag 500.
+    expect(isp(state).mode).toBe('pppoe');
+    expect(isp(state).vlanTag).toBe(500);
+    // A mode-only patch keeps the tag.
+    state = setIspHandoff(state, modem, { mode: 'dhcp' });
+    expect(isp(state).mode).toBe('dhcp');
+    expect(isp(state).vlanTag).toBe(500);
+    // An explicit undefined clears the tag - no-tag handoff.
+    state = setIspHandoff(state, modem, { vlanTag: undefined });
+    expect(isp(state).mode).toBe('dhcp');
+    expect(isp(state).vlanTag).toBeUndefined();
+    // Setting a tag on a tag-less handoff works.
+    state = setIspHandoff(state, modem, { vlanTag: 500 });
+    expect(isp(state).vlanTag).toBe(500);
+    // And the third mode.
+    state = setIspHandoff(state, modem, { mode: 'static' });
+    expect(isp(state).mode).toBe('static');
+  });
   it('setPvid writes ingress only — untaggedVlans is untouched (ADR 0008)', () => {
     let state = initialState;
     const placedSw = placed(state, 'switch');

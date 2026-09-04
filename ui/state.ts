@@ -34,6 +34,41 @@ function deviceOf(
 }
 
 /**
+ * One ISP-handoff edit: mode and/or the required VLAN tag (#68). An
+ * explicit `vlanTag: undefined` clears the tag (no tag requirement); a
+ * patch without the key leaves it alone. The modem is the ISP's
+ * requirement - the customer side matches it via the router's WAN VLAN
+ * control (#61 Watch: no PPPoE-client function exists by design).
+ */
+export function setIspHandoff(
+  state: EditorState,
+  deviceId: DeviceId,
+  patch: { mode?: 'pppoe' | 'dhcp' | 'static'; vlanTag?: VlanId },
+): EditorState {
+  const tagValid =
+    patch.vlanTag === undefined ||
+    (Number.isInteger(patch.vlanTag) &&
+      patch.vlanTag >= 1 &&
+      patch.vlanTag <= 4094);
+  if (!tagValid) {
+    return { ...state, notice: 'ISP VLAN tag invalid' };
+  }
+  return withChassis(state, deviceId, (chassis) => ({
+    ...chassis,
+    functions: chassis.functions.map((fn) => {
+      if (fn.kind !== 'isp-handoff') return fn;
+      const next = { ...fn };
+      if (patch.mode !== undefined) next.mode = patch.mode;
+      if ('vlanTag' in patch) {
+        if (patch.vlanTag === undefined) delete next.vlanTag;
+        else next.vlanTag = patch.vlanTag;
+      }
+      return next;
+    }),
+  }));
+}
+
+/**
  * The bridging function whose members include portId. First match in
  * functions[] order is canonical for member identity when an imported
  * port sits in two bridges (ADR 0028): the search covers EVERY bridging

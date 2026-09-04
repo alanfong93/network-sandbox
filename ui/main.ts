@@ -10,6 +10,7 @@ import {
   select,
   setDhcpScope,
   setHostAddress,
+  setIspHandoff,
   setPortAcceptable,
   setPortIngressFiltering,
   setPortMode,
@@ -288,6 +289,20 @@ function onChange(event: Event): void {
       const raw = input.value.trim();
       if (raw === '') break;
       state = setStpPriority(state, device, Number(raw));
+      break;
+    }
+    case 'isp-mode':
+      state = setIspHandoff(state, device, {
+        mode: input.value as 'pppoe' | 'dhcp' | 'static',
+      });
+      break;
+    case 'isp-vlan-tag': {
+      // Blank clears the tag (a no-tag handoff); a number sets it. The
+      // setter validates the range (#68).
+      const raw = input.value.trim();
+      state = setIspHandoff(state, device, {
+        vlanTag: raw === '' ? undefined : Number(raw),
+      });
       break;
     }
     case 'pvid':
