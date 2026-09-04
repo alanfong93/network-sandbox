@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { PRESETS } from './presets';
+import { nextDhcpServerIndex, PRESETS } from './presets';
+import type { Chassis } from '../src/index';
 
 const FN_KINDS = [
   'bridging',
@@ -133,6 +134,7 @@ describe('presets', () => {
     const chassis = PRESETS.find((p) => p.id === 'dhcp-server')?.build(
       'srv1',
       1,
+      1,
     );
     expect(chassis).toBeDefined();
     // Host-like addressing: its own identity answers the OFFER (#72).
@@ -157,13 +159,55 @@ describe('presets', () => {
   });
 
   it('two placed dhcp-servers carry distinct chassis IPs - the first keeps the shipped .2 (#85)', () => {
-    const first = PRESETS.find((p) => p.id === 'dhcp-server')?.build('srv-1', 1);
-    const second = PRESETS.find((p) => p.id === 'dhcp-server')?.build('srv-2', 2);
+    const first = PRESETS.find((p) => p.id === 'dhcp-server')?.build(
+      'srv-1',
+      1,
+      1,
+    );
+    const second = PRESETS.find((p) => p.id === 'dhcp-server')?.build(
+      'srv-2',
+      2,
+      2,
+    );
     expect(first?.ip).toBe('192.168.10.2');
     expect(second?.ip).toBe('192.168.10.3');
     // Both stay clear of the pool (.100-.199) and the gateway (.1).
     for (const ip of [first?.ip, second?.ip]) {
       expect(ip).toMatch(/^192\.168\.10\.(?:[2-9]|[1-9][0-9])$/);
+    }
+  });
+
+  it('dhcp-server chassis IP skips its own pool and the broadcast at every ordinal within the /24 static range (#92)', () => {
+    const build = (index: number) =>
+      PRESETS.find((p) => p.id === 'dhcp-server')?.build(
+        `srv-${index}`,
+        index,
+        index,
+      )?.ip;
+    // The first two servers keep the shipped .2/.3 (#85).
+    expect(build(1)).toBe('192.168.10.2');
+    expect(build(2)).toBe('192.168.10.3');
+    // The pool jump: ordinal 98 is the last low-band address (.2-.99),
+    // ordinal 99 jumps over the pool to .200. The global-seq derivation
+    // claimed .100 here - the bottom of the server's own pool.
+    expect(build(98)).toBe('192.168.10.99');
+    expect(build(99)).toBe('192.168.10.200');
+    expect(build(100)).toBe('192.168.10.201');
+    // The high band ends at .254 (the /24 broadcast is .255): ordinal 153
+    // is the last valid server - the static range holds 153 servers
+    // (98 low + 55 high).
+    expect(build(153)).toBe('192.168.10.254');
+    // Injective across the whole capacity, and never gateway, pool, or
+    // broadcast for any ordinal the static range can serve.
+    const ips = Array.from({ length: 153 }, (_, i) => build(i + 1)!);
+    expect(new Set(ips).size).toBe(153);
+    for (const ip of ips) {
+      const host = Number(ip.split('.')[3]);
+      expect(host).not.toBe(1);
+      expect(host).not.toBe(255);
+      expect((host >= 2 && host <= 99) || (host >= 200 && host <= 254)).toBe(
+        true,
+      );
     }
   });
 
@@ -288,3 +332,47 @@ function presetMac(seq: number, suffix: number): string[] {
     `02:${hex((n >> 24) & 0xff)}:${hex((n >> 16) & 0xff)}:${hex((n >> 8) & 0xff)}:${hex(n & 0xff)}:00`,
   ];
 }
+
+describe('nextDhcpServerIndex', () => {
+  // Imported-shape helper: a real dhcp-server chassis with the ip and
+  // preset stamp overridden, so these tests exercise literal chassis
+  // objects the way json import would hand them over.
+  const srv = (ip?: string, ordinal?: number): Chassis => {
+    const built = PRESETS.find((p) => p.id === 'dhcp-server')!.build(
+      `srv-${ordinal ?? 0}`,
+      ordinal ?? 1,
+      ordinal ?? 1,
+    );
+    return { ...built, preset: undefined, ip };
+  };
+
+  it('an empty or server-free topology offers the first ordinal', () => {
+    expect(nextDhcpServerIndex([])).toBe(1);
+    expect(nextDhcpServerIndex([srv(undefined)])).toBe(1);
+    expect(nextDhcpServerIndex([srv('192.168.10.150')])).toBe(1);
+    expect(nextDhcpServerIndex([srv('192.168.10.999')])).toBe(1);
+  });
+
+  it('fills the lowest unclaimed ordinal, so a lone .254 does not push to broadcast (#92 cycle 2)', () => {
+    expect(nextDhcpServerIndex([srv('192.168.10.254')])).toBe(1);
+    expect(nextDhcpServerIndex([srv('192.168.10.2'), srv('192.168.10.254')])).toBe(2);
+  });
+
+  it('inverts derived addresses on imported chassis, duplicates collapse', () => {
+    expect(nextDhcpServerIndex([srv('192.168.10.2', 1)])).toBe(2);
+    // Lowest-free, not max+1: ordinal 99 is claimed (.200), ordinals
+    // 1-98 are not, so the next server takes ordinal 1 (.2).
+    expect(nextDhcpServerIndex([srv('192.168.10.200', 99)])).toBe(1);
+    expect(nextDhcpServerIndex([srv('192.168.10.2', 1), srv('192.168.10.2', 1)])).toBe(2);
+  });
+
+  it('returns null only when all 153 ordinals are claimed', () => {
+    const all = Array.from({ length: 153 }, (_, i) =>
+      srv(PRESETS.find((p) => p.id === 'dhcp-server')!.build(`s${i}`, i + 1, i + 1).ip, i + 1),
+    );
+    expect(nextDhcpServerIndex(all)).toBeNull();
+    // One freed ordinal reopens the range.
+    const withGap = all.slice(1);
+    expect(nextDhcpServerIndex(withGap)).toBe(1);
+  });
+});

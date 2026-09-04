@@ -42,6 +42,47 @@ describe('editor state', () => {
     expect(state.selected).toBe(second?.id ?? null);
   });
 
+  it('a dhcp-server chassis IP tracks the server count, not the global seq (#92)', () => {
+    let state = initialState;
+    state = addPreset(state, 'host');
+    state = addPreset(state, 'host');
+    state = addPreset(state, 'host');
+    state = addPreset(state, 'dhcp-server');
+    const server = state.topology.devices[state.topology.devices.length - 1]!;
+    // Three unrelated placements must not push the first server off .2:
+    // the derivation is keyed to the server ordinal, the issue's named
+    // root cause, not the global placement seq.
+    expect(server.ip).toBe('192.168.10.2');
+  });
+
+  it('a dhcp-server chassis IP never reuses a live ordinal after a delete (#92)', () => {
+    let state = initialState;
+    state = addPreset(state, 'dhcp-server');
+    state = addPreset(state, 'dhcp-server');
+    const [first, second] = state.topology.devices.slice(-2).map((d) => d.id);
+    expect(state.topology.devices.at(-1)?.ip).toBe('192.168.10.3');
+    state = removeDevice(state, first!);
+    state = addPreset(state, 'dhcp-server');
+    const third = state.topology.devices.at(-1)!;
+    // The surviving server holds .3 (ordinal 2); deleting the first
+    // server freed ordinal 1, and the lowest-free scan takes it - never
+    // the live .3.
+    expect(third.ip).toBe('192.168.10.2');
+    expect(second).toBeDefined();
+  });
+
+  it('the 154th dhcp-server hits the exhaustion notice with no derived IP (#92)', () => {
+    let state = initialState;
+    for (let i = 0; i < 153; i++) state = addPreset(state, 'dhcp-server');
+    state = addPreset(state, 'dhcp-server');
+    const last = state.topology.devices.at(-1)!;
+    expect(state.notice).toMatch(/exhausted/i);
+    expect(last.ip).toBeUndefined();
+    // The 153 placed servers all hold valid, distinct addresses.
+    const servers = state.topology.devices.slice(0, -1);
+    expect(new Set(servers.map((d) => d.ip)).size).toBe(153);
+  });
+
   it('links two placed boxes without hand-editing JSON', () => {
     let state = initialState;
     const placed2 = placed(state, 'host', 2);
