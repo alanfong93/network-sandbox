@@ -223,15 +223,17 @@ describe('inspector', () => {
     const chassis = state.topology.devices.find((d) => d.id === usw)!;
     const br = chassis.functions.find((fn) => fn.kind === 'bridging');
     if (br?.kind !== 'bridging') throw new Error('expected bridging');
-    // Second VLAN-blind bridge carrying ports 1-2; the first keeps 3-4.
-    const secondBridge = { ...br, id: 'br2', members: br.members.slice(0, 2) };
-    br.members = br.members.slice(2);
+    // Distinct counts (3 and 1) so a regression that reused the FIRST
+    // bridge's count for every note cannot pass (review cycle 1).
+    const secondBridge = { ...br, id: 'br2', members: br.members.slice(0, 3) };
+    br.members = br.members.slice(3);
     chassis.functions = [...chassis.functions, secondBridge];
     const html = renderInspector(select(state, usw));
-    // Two notes, one per VLAN-blind bridge, each with the right count.
+    // Two notes, one per VLAN-blind bridge, each with its own count.
     const occurrences = html.match(/no VLAN awareness/g)?.length ?? 0;
     expect(occurrences).toBe(2);
-    expect(html).toMatch(/all 2 ports are one broadcast domain/);
+    expect(html).toMatch(/all 3 ports are one broadcast domain/);
+    expect(html).toMatch(/all 1 ports are one broadcast domain/);
   });
 
   it('a VLAN-blind bridge with zero members renders no capability note (#97)', () => {
