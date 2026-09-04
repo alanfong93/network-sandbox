@@ -155,4 +155,98 @@ describe('presets', () => {
     // The field is resolver, never dns (CONTEXT).
     expect(JSON.stringify(chassis)).not.toMatch(/"dns"/i);
   });
+
+  it('two placed dhcp-servers carry distinct chassis IPs - the first keeps the shipped .2 (#85)', () => {
+    const first = PRESETS.find((p) => p.id === 'dhcp-server')?.build('srv-1', 1);
+    const second = PRESETS.find((p) => p.id === 'dhcp-server')?.build('srv-2', 2);
+    expect(first?.ip).toBe('192.168.10.2');
+    expect(second?.ip).toBe('192.168.10.3');
+    // Both stay clear of the pool (.100-.199) and the gateway (.1).
+    for (const ip of [first?.ip, second?.ip]) {
+      expect(ip).toMatch(/^192\.168\.10\.(?:[2-9]|[1-9][0-9])$/);
+    }
+  });
+
+  it('for any placement sequence, every chassis MAC and routing-iface MAC is pairwise distinct (#85)', () => {
+    // The property is the contract, not any particular formula: place a
+    // generated sequence of presets (any order, any repeats - placements
+    // carry incrementing seq) and collect every identity MAC in the
+    // topology: chassis MACs, stp baseMac, and every routing iface MAC.
+    // Two identities sharing a MAC is an L2 namespace collision the user
+    // did not choose - the #85 SVI20/next-host trace proved it can break
+    // the gateway path silently (FDB learns the host's port as the
+    // gateway's MAC), so the derivation must be injective, not policed.
+    const seen = new Set<string>();
+    const colliding: string[] = [];
+    // Deterministic pseudo-random sequences: 32 rounds, each placing a
+    // pseudo-random preset, seq 1..N - covers repeats and every order.
+    let seed = 85;
+    const rand = () => {
+      seed = (seed * 1103515245 + 12345) % 2147483648;
+      return seed / 2147483648;
+    };
+    let seq = 0;
+    for (let round = 0; round < 32; round++) {
+      const preset = PRESETS[Math.floor(rand() * PRESETS.length)]!;
+      seq += 1;
+      const chassis = preset.build(`${preset.id}-${seq}`, seq);
+      const macs = [chassis.mac, ...collectIfacesMacs(chassis), ...collectStpBaseMacs(chassis)];
+      for (const mac of macs) {
+        if (mac === undefined) continue;
+        if (seen.has(mac)) colliding.push(mac);
+        seen.add(mac);
+      }
+    }
+    expect(colliding, `duplicate MACs: ${[...new Set(colliding)].join(', ')}`).toEqual([]);
+  });
+
+  it('the place-L3-switch-then-host workflow has no MAC self-collision (#85, the traced failure)', () => {
+    // The exact workflow #85 traced: L3 switch at seq 1, then the host to
+    // cable at seq 2. The old derivation made svi20's iface MAC equal the
+    // host's chassis MAC (02:00:00:00:00:04), so the host's gateway ARP
+    // resolved to its own port.
+    const l3s = PRESETS.find((p) => p.id === 'l3-switch')?.build('l3s-1', 1);
+    const host = PRESETS.find((p) => p.id === 'host')?.build('host-2', 2);
+    const l3sMacs = new Set([
+      l3s?.mac,
+      ...collectIfacesMacs(l3s!),
+      ...collectStpBaseMacs(l3s!),
+    ].filter((m): m is string => m !== undefined));
+    expect(l3sMacs.has(host?.mac!)).toBe(false);
+  });
 });
+
+function collectIfacesMacs(chassis: { functions: unknown[] }): string[] {
+  const macs: string[] = [];
+  for (const fn of chassis.functions) {
+    if (
+      typeof fn === 'object' &&
+      fn !== null &&
+      'kind' in fn &&
+      (fn as { kind: unknown }).kind === 'routing' &&
+      'ifaces' in fn
+    ) {
+      for (const iface of (fn as { ifaces: { mac?: string }[] }).ifaces) {
+        if (iface.mac !== undefined) macs.push(iface.mac);
+      }
+    }
+  }
+  return macs;
+}
+
+function collectStpBaseMacs(chassis: { functions: unknown[] }): string[] {
+  const macs: string[] = [];
+  for (const fn of chassis.functions) {
+    if (
+      typeof fn === 'object' &&
+      fn !== null &&
+      'kind' in fn &&
+      (fn as { kind: unknown }).kind === 'stp' &&
+      'baseMac' in fn
+    ) {
+      const base = (fn as { baseMac?: string }).baseMac;
+      if (base !== undefined) macs.push(base);
+    }
+  }
+  return macs;
+}
