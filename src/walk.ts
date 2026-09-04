@@ -330,6 +330,26 @@ function execute(
       });
       if (local) return local;
     }
+    // Bridge-embedded DHCP server (issue #79): after ingress classification
+    // has run — the same seam as sviDecision and chassisTakesLocal — a
+    // co-resident dhcp-server function answers a same-VLAN DISCOVER. The
+    // predicate stays standaloneDhcpDecision's own narrow conditions
+    // (classified VLAN === chassis.vlan, matching scope, own identity), so
+    // the answer never steals frames the server would not take. The flood
+    // is NOT suppressed: a DISCOVER is broadcast, so the chassis answers
+    // while the bridge still forwards it to every other member port.
+    const standaloneAnswer = standaloneDhcpDecision({
+      device: job.device,
+      chassis,
+      inPort: job.inPort,
+      frame: { ...job.frame, vlan },
+    });
+    if (standaloneAnswer.action === 'respond') {
+      return {
+        hops: [result.hop, ...standaloneAnswer.hops],
+        transmissions: [...result.transmissions, ...standaloneAnswer.transmissions],
+      };
+    }
     return { hops: [result.hop], transmissions: result.transmissions };
   }
   if (fn?.kind === 'wireless') {

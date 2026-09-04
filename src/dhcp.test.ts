@@ -20,7 +20,7 @@ import type {
   Topology,
   VlanId,
 } from './model';
-import { createRunContext, getResolvedMac } from './run';
+import { createRunContext, getResolvedMac, portState } from './run';
 import { send, senderVlan, vlanOfIp } from './send';
 import { observationAsFormatInput, walkFrame } from './walk';
 import { resolveKey } from './host';
@@ -935,5 +935,202 @@ describe('standalone DHCP server dispatch', () => {
     expect(offer?.fn).toBe('dhcp');
     expect(offer?.reasonCode).toBe('dhcp-server:forwarded');
     expect(result.deliveredFrame?.payload.kind).toBe('dhcp');
+  });
+});
+
+/**
+ * Issue #79: a chassis composed of bridging + dhcp-server (no routing).
+ * The walk's dispatch order once shadowed the server behind the bridging
+ * branch — the DISCOVER flooded but the co-resident server never answered.
+ * The settled ruling: flood + answer, never answer-instead-of-flood.
+ */
+function bridgeEmbeddedServerTopology(): Topology {
+  // SW1 is a managed switch with an embedded DHCP server: the bridging
+  // function owns ports 1-3, and a dhcp-server function lives on the same
+  // chassis with a VLAN-10 scope and the chassis' own identity.
+  const members = [access('1', 10), access('2', 10), access('3', 10)];
+  return topo(
+    [
+      hostBox('H1', { mac: 'aa:00:00:00:00:10', gateway: '192.168.10.1' }),
+      {
+        id: 'SW1',
+        label: 'SW1',
+        ports: members.map((member) => ({
+          id: member.port,
+          mtu: defaults.portMtu,
+          ownedBy: 'br',
+        })),
+        radios: [],
+        functions: [
+          {
+            kind: 'bridging' as const,
+            id: 'br',
+            vlanAware: true,
+            members,
+            fdb: new Map(),
+          },
+          {
+            kind: 'dhcp-server' as const,
+            id: 'dhcp',
+            scopes: [
+              {
+                vlan: 10,
+                poolStart: '192.168.10.50',
+                poolEnd: '192.168.10.100',
+                gateway: '192.168.10.1',
+                resolver: '192.168.10.1',
+              },
+            ],
+          },
+        ],
+        internal: [],
+        mac: 'aa:00:00:00:00:09',
+        ip: '192.168.10.9',
+        vlan: 10,
+      },
+      hostBox('H2', { mac: 'aa:00:00:00:00:11', gateway: '192.168.10.1' }),
+    ],
+    [
+      link('a', { device: 'H1', port: '1' }, { device: 'SW1', port: '1' }),
+      link('b', { device: 'SW1', port: '2' }, { device: 'H2', port: '1' }),
+    ],
+  );
+}
+
+describe('bridge-embedded DHCP server (issue #79)', () => {
+  it('answers a same-VLAN DISCOVER AND the DISCOVER still floods - both behaviours, one walk', () => {
+    const ctx = createRunContext(bridgeEmbeddedServerTopology());
+    const result = send(ctx, discover('H1'));
+    // The OFFER fires: the co-resident server answers with its own identity.
+    const offer = result.hops.find(
+      (hop) => hop.device === 'SW1' && hop.step === 'dhcp-server',
+    );
+    expect(offer?.fn).toBe('dhcp');
+    expect(offer?.inPort).toBe('1');
+    expect(offer?.reasonCode).toBe('dhcp-server:forwarded');
+    expect(result.deliveredFrame?.payload.kind).toBe('dhcp');
+    expect(
+      result.deliveredFrame?.payload.kind === 'dhcp'
+        ? result.deliveredFrame.payload.dhcpType
+        : undefined,
+    ).toBe('offer');
+    // The flood is NOT suppressed: the DISCOVER still reaches H2 - a DHCP
+    // host receiving a DISCOVER drops it (the untagged access egress
+    // arrives vlan null), so the visible proof is H2's delivery-step drop
+    // hop, and H1 gets the OFFER back.
+    expect(
+      result.hops.some(
+        (hop) => hop.device === 'H2' && hop.step === 'delivery',
+      ),
+    ).toBe(true);
+    expect(
+      result.hops.some(
+        (hop) => hop.device === 'H1' && hop.step === 'delivery' && hop.action === 'delivered',
+      ),
+    ).toBe(true);
+  });
+
+  it('does not answer when the classified VLAN is not the server identity VLAN - flood only', () => {
+    const topology = bridgeEmbeddedServerTopology();
+    const sw = topology.devices.find((item) => item.id === 'SW1');
+    if (!sw) throw new Error('expected SW1');
+    sw.vlan = 20;
+    const ctx = createRunContext(topology);
+    const result = send(ctx, discover('H1'));
+    expect(
+      result.hops.some((hop) => hop.step === 'dhcp-server'),
+    ).toBe(false);
+    expect(
+      result.hops.some(
+        (hop) => hop.device === 'H2' && hop.step === 'delivery',
+      ),
+    ).toBe(true);
+  });
+
+  it('does not answer when no scope matches - flood only', () => {
+    const topology = bridgeEmbeddedServerTopology();
+    const sw = topology.devices.find((item) => item.id === 'SW1');
+    const fn = sw?.functions.find((item) => item.kind === 'dhcp-server');
+    if (fn?.kind !== 'dhcp-server') throw new Error('expected dhcp-server');
+    fn.scopes = [
+      {
+        vlan: 20,
+        poolStart: '192.168.20.50',
+        poolEnd: '192.168.20.100',
+        gateway: '192.168.20.1',
+        resolver: '192.168.20.1',
+      },
+    ];
+    const ctx = createRunContext(topology);
+    const result = send(ctx, discover('H1'));
+    expect(
+      result.hops.some((hop) => hop.step === 'dhcp-server'),
+    ).toBe(false);
+    expect(
+      result.hops.some(
+        (hop) => hop.device === 'H2' && hop.step === 'delivery',
+      ),
+    ).toBe(true);
+  });
+
+  it('does not answer when the arrival port is STP-blocked - egress follows the bridge port state', () => {
+    // The frame is sent FROM SW2, whose arrival-side port on SW2 is
+    // blocking (the converged STP computation in createRunContext puts
+    // SW2:1 in blocking on the redundant SW1-SW2 path). The bridge drops
+    // the DISCOVER at stp-ingress, so the embedded server on SW2's
+    // neighbour never sees a frame it would answer.
+    const topology = bridgeEmbeddedServerTopology();
+    const sw = topology.devices.find((item) => item.id === 'SW1');
+    if (!sw) throw new Error('expected SW1');
+    sw.functions.push({
+      kind: 'stp',
+      id: 'stp',
+      bridge: 'br',
+      priority: defaults.stp.priority,
+      baseMac: 'aa:00:00:00:00:09',
+      state: new Map(),
+    });
+    const sw2 = {
+      ...switchBox('SW2', [access('1', 10), access('2', 10)]),
+    };
+    sw2.functions.push({
+      kind: 'stp' as const,
+      id: 'stp',
+      bridge: 'br',
+      priority: defaults.stp.priority,
+      baseMac: 'aa:00:00:00:00:12',
+      state: new Map<string, Map<string, never>>(),
+    });
+    topology.devices.push(sw2);
+    topology.links.push(
+      link('c', { device: 'SW1', port: '3' }, { device: 'SW2', port: '1' }),
+      link('d', { device: 'SW1', port: '2' }, { device: 'SW2', port: '2' }),
+    );
+    const ctx = createRunContext(topology);
+    // SW2's port 1 is the blocked one on this redundant path.
+    const blocked = portState(ctx, 'SW2', '1');
+    if (blocked !== 'blocking') {
+      throw new Error(`expected SW2:1 blocking, got ${String(blocked)}`);
+    }
+    const result = walkFrame(ctx, {
+      device: 'SW2',
+      inPort: '1',
+      frame: {
+        srcMac: 'aa:00:00:00:00:10',
+        dstMac: defaults.broadcastMac,
+        vlan: null,
+        size: 64,
+        encapsulation: ['ethernet'],
+        payload: { kind: 'dhcp', dhcpType: 'discover' },
+        hops: [],
+      },
+      arrivedFrom: 'SW1',
+    });
+    expect(
+      result.hops.some((hop) => hop.step === 'stp-ingress'),
+    ).toBe(true);
+    expect(
+      result.hops.some((hop) => hop.step === 'dhcp-server'),
+    ).toBe(false);
   });
 });
