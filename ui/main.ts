@@ -281,9 +281,15 @@ function onChange(event: Event): void {
         );
       }
       break;
-    case 'stp-priority':
-      state = setStpPriority(state, device, Number(input.value));
+    case 'stp-priority': {
+      // A cleared number input reports '' and Number('') is 0 - without
+      // this guard, blanking the field would silently commit priority 0,
+      // the root-guaranteeing value (#95 review). Treat blank as no-op.
+      const raw = input.value.trim();
+      if (raw === '') break;
+      state = setStpPriority(state, device, Number(raw));
       break;
+    }
     case 'pvid':
       if (port) state = setPvid(state, device, port, Number(input.value));
       break;
