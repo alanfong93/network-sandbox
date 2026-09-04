@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { addPreset, completeLink, initialState, setPortMode, setTaggedVlans, startLink } from './state';
+import { addPreset, completeLink, initialState, setPortMode, setPvid, setTaggedVlans, setUntaggedVlans, startLink } from './state';
 import { COLD_TRACE_NOTICE, NO_TIMERS_NOTICE, runTrace } from './trace';
 
 function twoHostsOnASwitch() {
@@ -84,5 +84,65 @@ describe('trace', () => {
       dstIp: '192.168.1.1',
     });
     expect(trace.warnings).toHaveLength(0);
+  });
+
+  it('a DHCP DISCOVER from a host on a serverless VLAN shows the flooded walk, no OFFER (row 8 shape, #82)', () => {
+    let state = initialState;
+    state = addPreset(state, 'host');
+    state = addPreset(state, 'switch');
+    state = addPreset(state, 'host');
+    const [h1, sw, h2] = state.topology.devices.map((d) => d.id);
+    state = startLink(state, h1!);
+    state = completeLink(state, sw!);
+    state = startLink(state, sw!);
+    state = completeLink(state, h2!);
+    // No dhcp-server anywhere: the DISCOVER floods and nothing answers.
+    const trace = runTrace(state.topology, { from: h1!, kind: 'dhcp-discover' });
+    expect(trace.request.length).toBeGreaterThan(0);
+    expect(trace.request.some((line) => line.match(/flood/i))).toBe(true);
+    expect(trace.request.some((line) => line.match(/offer/i))).toBe(false);
+    // Request-only trace: a DISCOVER is broadcast, there is no ICMP reply
+    // leg to render (flow.ts early-returns for non-ICMP payloads).
+    expect(trace.reply).toEqual([]);
+    // No verdict/summary line (ADR 0002).
+    expect(trace.request.join('\n')).not.toMatch(/Outcome:/i);
+  });
+
+  it('two standalone dhcp-servers on one VLAN both OFFER a browser-originated DISCOVER (row 11 shape, #82)', () => {
+    let state = initialState;
+    state = addPreset(state, 'host');
+    state = addPreset(state, 'switch');
+    state = addPreset(state, 'dhcp-server');
+    state = addPreset(state, 'dhcp-server');
+    const [h1, sw, srv1, srv2] = state.topology.devices.map((d) => d.id);
+    state = startLink(state, h1!);
+    state = completeLink(state, sw!);
+    state = startLink(state, sw!);
+    state = completeLink(state, srv1!);
+    state = startLink(state, sw!);
+    state = completeLink(state, srv2!);
+    // The switch preset's access ports sit on VLAN 1; the servers answer
+    // on chassis.vlan 10, so move everyone onto the service VLAN.
+    state = setPvid(state, sw!, '1', 10);
+    state = setUntaggedVlans(state, sw!, '1', [10]);
+    state = setPvid(state, sw!, '2', 10);
+    state = setUntaggedVlans(state, sw!, '2', [10]);
+    state = setPvid(state, sw!, '3', 10);
+    state = setUntaggedVlans(state, sw!, '3', [10]);
+    state = setPvid(state, sw!, '4', 10);
+    state = setUntaggedVlans(state, sw!, '4', [10]);
+    const trace = runTrace(state.topology, { from: h1!, kind: 'dhcp-discover' });
+    // Row 11's hop truth before #63: both servers forward an answer back
+    // (the OFFER), each as a dhcp-server hop naming the server chassis.
+    const serverLines = trace.request.filter((line) =>
+      line.match(/dhcp-server/),
+    );
+    expect(serverLines.length).toBeGreaterThanOrEqual(2);
+    expect(trace.request.some((line) => line.includes(srv1!))).toBe(true);
+    expect(trace.request.some((line) => line.includes(srv2!))).toBe(true);
+    // The OFFERs come back to the discovering host.
+    expect(
+      trace.request.filter((line) => line.match(/delivered at host-1/)).length,
+    ).toBeGreaterThanOrEqual(2);
   });
 });

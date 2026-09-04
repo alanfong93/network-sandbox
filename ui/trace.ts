@@ -34,19 +34,28 @@ export interface TraceRender {
  * Render one send as sentences. Hop sentences are the engine's own — the walk
  * produced them with `format()` at trace time — and observations and STP
  * warnings go through `format()` here. The UI never re-derives a sentence.
+ *
+ * Two origins: an ICMP echo to a destination IP, or a DHCP DISCOVER — a
+ * broadcast that needs no destination (#82). A DISCOVER trace is
+ * request-only: flow.ts early-returns for non-ICMP payloads, so the hops
+ * (flood path, OFFERs) are the honest as-shipped truth; the observation
+ * sentences arrive with #63.
  */
 export function runTrace(
   topology: Topology,
-  args: { from: DeviceId; dstIp: string },
+  args: { from: DeviceId; dstIp: string } | { from: DeviceId; kind: 'dhcp-discover' },
 ): TraceRender {
   const ctx = createRunContext(topology);
   const warnings = ctx.warnings.map((warning) =>
     format(warningAsFormatInput(warning)),
   );
+  const discover = 'kind' in args && args.kind === 'dhcp-discover';
   const result = runFlow(ctx, {
     from: args.from,
-    dstIp: args.dstIp,
-    payload: { kind: 'icmp' },
+    dstIp: discover ? '255.255.255.255' : (args as { dstIp: string }).dstIp,
+    payload: discover
+      ? { kind: 'dhcp', dhcpType: 'discover' }
+      : { kind: 'icmp' },
   });
   const flowNotes = result.observations.map((observation) =>
     format(flowObservationAsFormatInput(observation)),

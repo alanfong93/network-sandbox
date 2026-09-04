@@ -24,6 +24,7 @@ import { runTrace } from './trace';
 let state: EditorState = initialState;
 let sendFrom: DeviceId | null = null;
 let lastDstIp = '192.168.1.11';
+let sendKind: 'icmp' | 'dhcp-discover' = 'icmp';
 
 function renderLinks(state: EditorState): string {
   if (state.topology.links.length === 0) {
@@ -95,8 +96,17 @@ function render(): void {
     'ICMP to the destination IP, then the reply, against one cold run context.</p>' +
     '<form id="send-form"><label>From ' +
     `<select id="send-from" name="from">${options}</select></label> ` +
-    '<label>Destination IP ' +
-    `<input type="text" name="dstIp" value="${esc(lastDstIp)}"></label> ` +
+    '<label>Send type ' +
+    '<select id="send-kind" name="kind">' +
+    `<option value="icmp"${sendKind === 'icmp' ? ' selected' : ''}>ICMP echo</option>` +
+    `<option value="dhcp-discover"${sendKind === 'dhcp-discover' ? ' selected' : ''}>DHCP DISCOVER</option>` +
+    '</select></label> ' +
+    // A DISCOVER is broadcast: no destination IP is sent or asked for
+    // (#82). The ICMP path keeps its dstIp input untouched.
+    (sendKind === 'icmp'
+      ? '<label>Destination IP ' +
+        `<input type="text" name="dstIp" value="${esc(lastDstIp)}"></label> `
+      : '') +
     '<button type="submit">Send</button></form>' +
     '<div id="trace-out"></div>' +
     '<h2>Sandbox JSON</h2>' +
@@ -114,11 +124,18 @@ function send(event: Event): void {
   event.preventDefault();
   const form = event.target as HTMLFormElement;
   const from = (form.elements.namedItem('from') as HTMLSelectElement).value;
-  const dstIp = (form.elements.namedItem('dstIp') as HTMLInputElement).value;
-  if (!from || !dstIp) return;
-  lastDstIp = dstIp;
-  const trace = runTrace(state.topology, { from, dstIp });
-  lastTraceRender = renderTrace(trace);
+  if (!from) return;
+  if (sendKind === 'dhcp-discover') {
+    // A DISCOVER is broadcast (#82): no destination IP, request-only trace.
+    const trace = runTrace(state.topology, { from, kind: 'dhcp-discover' });
+    lastTraceRender = renderTrace(trace);
+  } else {
+    const dstIp = (form.elements.namedItem('dstIp') as HTMLInputElement).value;
+    if (!dstIp) return;
+    lastDstIp = dstIp;
+    const trace = runTrace(state.topology, { from, dstIp });
+    lastTraceRender = renderTrace(trace);
+  }
   render();
   const out = document.querySelector<HTMLDivElement>('#trace-out');
   out?.scrollIntoView({ behavior: 'smooth' });
@@ -310,10 +327,14 @@ document.addEventListener('submit', (event) => {
   if ((event.target as HTMLElement).id === 'send-form') send(event);
 });
 document.addEventListener('change', (event) => {
-  const input = event.target as HTMLInputElement;
-  if (input.id === 'send-from') sendFrom = input.value;
-  if (input.id === 'import-file' && input.files?.[0]) {
-    void importJson(input.files[0]);
+  const target = event.target as HTMLInputElement;
+  if (target.id === 'send-from') sendFrom = target.value;
+  if (target.id === 'send-kind') {
+    sendKind = target.value === 'dhcp-discover' ? 'dhcp-discover' : 'icmp';
+    render();
+  }
+  if (target.id === 'import-file' && target.files?.[0]) {
+    void importJson(target.files[0]);
   }
 });
 
