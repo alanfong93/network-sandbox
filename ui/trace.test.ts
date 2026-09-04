@@ -195,3 +195,75 @@ describe('trace', () => {
     ).toBe(2);
   });
 });
+
+describe('walk observations render in the trace panel (#63)', () => {
+  function pvidMismatchState() {
+    let state = initialState;
+    state = addPreset(state, 'host');
+    state = addPreset(state, 'switch');
+    state = addPreset(state, 'switch');
+    state = addPreset(state, 'host');
+    const [h1, sw1, sw2, h2] = state.topology.devices.map((d) => d.id);
+    state = startLink(state, h1!);
+    state = completeLink(state, sw1!);
+    state = startLink(state, sw1!);
+    state = completeLink(state, sw2!);
+    state = startLink(state, sw2!);
+    state = completeLink(state, h2!);
+    // Row 2: SW1 side in VLAN 10, SW2 side in VLAN 20. The sw1<->sw2
+    // link occupies sw1 p2 and sw2 p1 (first-free port wiring above).
+    state = setPvid(state, sw1!, '1', 10);
+    state = setUntaggedVlans(state, sw1!, '1', [10]);
+    state = setPvid(state, sw1!, '2', 10);
+    state = setUntaggedVlans(state, sw1!, '2', [10]);
+    state = setPvid(state, sw2!, '1', 20);
+    state = setUntaggedVlans(state, sw2!, '1', [20]);
+    state = setPvid(state, sw2!, '2', 20);
+    state = setUntaggedVlans(state, sw2!, '2', [20]);
+    const first = state.topology.devices[0]!;
+    const last = state.topology.devices[3]!;
+    return { state, h1: h1!, dstIp: last.ip! };
+  }
+
+  it('the row-2 vlan-leak sentence renders, labelled with its phase (#63)', () => {
+    const { state, h1, dstIp } = pvidMismatchState();
+    const trace = runTrace(state.topology, { from: h1, dstIp });
+    const leak = trace.flowNotes.find((line) => /VLAN leak/.test(line));
+    expect(leak).toBeDefined();
+    expect(leak).toMatch(/^Request: /);
+    expect(leak).toMatch(/entered VLAN 10 at/);
+    expect(leak).toMatch(/arrived as VLAN 20 at/);
+    // The reply walk mirrors the leak in the same panel.
+    const replyLeak = trace.flowNotes.find(
+      (line) => /^Reply: /.test(line) && /VLAN leak/.test(line),
+    );
+    expect(replyLeak).toBeDefined();
+  });
+
+  it('the row-6 loop observation renders on an unmanaged cycle (#63)', () => {
+    let state = initialState;
+    state = addPreset(state, 'unmanaged-switch');
+    state = addPreset(state, 'unmanaged-switch');
+    state = addPreset(state, 'host');
+    state = addPreset(state, 'host');
+    const [u1, u2, h1, h2] = state.topology.devices.map((d) => d.id);
+    state = startLink(state, h1!);
+    state = completeLink(state, u1!);
+    state = startLink(state, u1!);
+    state = completeLink(state, u2!);
+    state = startLink(state, u2!);
+    state = completeLink(state, u1!);
+    state = startLink(state, h2!);
+    state = completeLink(state, u2!);
+    const trace = runTrace(state.topology, {
+      from: h1!,
+      dstIp: state.topology.devices[3]!.ip!,
+    });
+    const loop = trace.flowNotes.find((line) => /looped/i.test(line));
+    expect(loop).toBeDefined();
+    expect(loop).toMatch(/^Request: /);
+    expect(loop).toMatch(/STP cannot break this loop/);
+    // No verdict/summary line (ADR 0002).
+    expect(trace.flowNotes.join('\n')).not.toMatch(/Outcome:/i);
+  });
+});

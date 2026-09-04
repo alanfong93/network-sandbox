@@ -383,13 +383,15 @@ describe('catalogue row 13', () => {
     expect(drop?.reasonCode).toBe('route-lookup:dropped');
     expect(drop?.action).toBe('dropped');
     const obs = result.observations.find(
-      (item) => item.observation === 'missing-return-route',
+      (item) =>
+        item.kind === 'flow' &&
+        item.observation.observation === 'missing-return-route',
     );
-    expect(obs?.facts.otherIp).toBe('10.20.0.5');
-    expect(obs?.facts.via).toBe('R2');
-    expect(obs?.facts.ip).toBe('192.168.50.10');
-    expect(obs?.facts.devices).toEqual(['R1']);
-    expect(obs?.facts.prefix).toBe('192.168.50.0/24');
+    expect(obs?.observation.facts.otherIp).toBe('10.20.0.5');
+    expect(obs?.observation.facts.via).toBe('R2');
+    expect(obs?.observation.facts.ip).toBe('192.168.50.10');
+    expect(obs?.observation.facts.devices).toEqual(['R1']);
+    expect(obs?.observation.facts.prefix).toBe('192.168.50.0/24');
   });
 
   it('is green verbatim against the catalogue table', () => {
@@ -400,12 +402,16 @@ describe('catalogue row 13', () => {
       dstIp: '10.20.0.5',
       payload: { kind: 'icmp', srcIp: '192.168.50.10', dstIp: '10.20.0.5' },
     });
-    const obs = result.observations.find(
-      (item) => item.observation === 'missing-return-route',
+    const entry = result.observations.find(
+      (item) =>
+        item.kind === 'flow' &&
+        item.observation.observation === 'missing-return-route',
     );
-    expect(obs).toBeDefined();
-    if (!obs || !row13) return;
-    expect(format(flowObservationAsFormatInput(obs))).toBe(row13.expected);
+    expect(entry).toBeDefined();
+    if (!entry || !row13) return;
+    expect(format(flowObservationAsFormatInput(entry.observation))).toBe(
+      row13.expected,
+    );
   });
 });
 

@@ -3,6 +3,7 @@ import { formatPrefix } from './ip';
 import type { DeviceId, Flow, Frame, FramePayload, Hop, Topology } from './model';
 import type { RunContext } from './run';
 import { send, senderVlan, type SendArgs } from './send';
+import type { WalkObservation } from './walk';
 
 export type FlowArgs = SendArgs;
 
@@ -11,9 +12,26 @@ export interface FlowObservation {
   facts: HopFacts;
 }
 
+/** Where an observation came from: the request walk, the reply walk, or
+ * the flow-level analysis. Part of the ordering contract (#63). */
+export type FlowPhase = 'request' | 'reply' | 'flow';
+
+export type FlowResultObservation =
+  | {
+      phase: 'request' | 'reply';
+      kind: 'walk';
+      observation: WalkObservation;
+    }
+  | { phase: 'flow'; kind: 'flow'; observation: FlowObservation };
+
 export interface FlowResult {
   flow: Flow;
-  observations: FlowObservation[];
+  /**
+   * Ordering contract (#63): the request walk's observations (in walk
+   * order), then the reply walk's (in walk order), then the flow-level
+   * observations. Renderers must not reorder.
+   */
+  observations: FlowResultObservation[];
 }
 
 export function flowObservationAsFormatInput(obs: FlowObservation): FlowInput {
@@ -43,6 +61,17 @@ function asFrame(
     payload,
     hops,
   };
+}
+
+function phaseOf(
+  phase: 'request' | 'reply',
+  observations: WalkObservation[],
+): FlowResultObservation[] {
+  return observations.map((observation) => ({
+    phase,
+    kind: 'walk',
+    observation,
+  }));
 }
 
 function deliveryDevice(hops: Hop[]): DeviceId | undefined {
@@ -100,7 +129,7 @@ export function runFlow(ctx: RunContext, args: FlowArgs): FlowResult {
         request,
         outcome: 'request-failed',
       },
-      observations: [],
+      observations: phaseOf('request', requestWalk.observations),
     };
   }
 
@@ -112,7 +141,7 @@ export function runFlow(ctx: RunContext, args: FlowArgs): FlowResult {
         request,
         outcome: 'round-trip',
       },
-      observations: [],
+      observations: phaseOf('request', requestWalk.observations),
     };
   }
 
@@ -188,5 +217,16 @@ export function runFlow(ctx: RunContext, args: FlowArgs): FlowResult {
   };
   if (asymmetric) flow.asymmetric = true;
 
-  return { flow, observations };
+  return {
+    flow,
+    observations: [
+      ...phaseOf('request', requestWalk.observations),
+      ...phaseOf('reply', replyWalk.observations),
+      ...observations.map((observation) => ({
+        phase: 'flow' as const,
+        kind: 'flow' as const,
+        observation,
+      })),
+    ],
+  };
 }

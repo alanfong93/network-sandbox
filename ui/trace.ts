@@ -2,6 +2,7 @@ import {
   createRunContext,
   flowObservationAsFormatInput,
   format,
+  observationAsFormatInput,
   runFlow,
   warningAsFormatInput,
 } from '../src/index';
@@ -51,7 +52,7 @@ export interface TraceRender {
  * broadcast that needs no destination (#82). A DISCOVER trace is
  * request-only: flow.ts early-returns for non-ICMP payloads, so the hops
  * (flood path, OFFERs) are the honest as-shipped truth; the observation
- * sentences arrive with #63.
+ * sentences render here, labelled by phase (#63).
  */
 export function runTrace(
   topology: Topology,
@@ -74,9 +75,19 @@ export function runTrace(
           dstIp: icmpArgs.dstIp,
           payload: { kind: 'icmp' },
         });
-  const flowNotes = result.observations.map((observation) =>
-    format(flowObservationAsFormatInput(observation)),
-  );
+  // Every observation is the engine's own sentence via format() - walk
+  // observations are labelled with the leg that produced them, flow
+  // observations need no label (#63). Order is the runFlow contract:
+  // request, then reply, then flow-level.
+  const flowNotes = result.observations.map((entry) => {
+    const sentence =
+      entry.kind === 'walk'
+        ? format(observationAsFormatInput(entry.observation))
+        : format(flowObservationAsFormatInput(entry.observation));
+    return entry.phase === 'flow'
+      ? sentence
+      : `${entry.phase[0]!.toUpperCase()}${entry.phase.slice(1)}: ${sentence}`;
+  });
   const request = result.flow.request.hops.map((hop) => hop.reason);
   return {
     warnings,
