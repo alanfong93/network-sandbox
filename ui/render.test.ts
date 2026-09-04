@@ -309,6 +309,56 @@ describe('inspector', () => {
     expect(apHtml).toMatch(/data-action="untagged"/);
   });
 
+  it('an access port living only in a second bridging function renders its controls (#89)', () => {
+    // Import-only shape: palette presets carry one bridging function, but
+    // json round-trips many. First-bridge-only lookup rendered this port
+    // as nothing; multi-bridge lookup (ADR 0028) makes it editable.
+    let state = addPreset(initialState, 'switch');
+    const sw = state.topology.devices[0]!.id;
+    const chassis = state.topology.devices.find((d) => d.id === sw)!;
+    const br = chassis.functions.find((fn) => fn.kind === 'bridging');
+    if (br?.kind !== 'bridging') throw new Error('expected bridging');
+    const secondBridge = {
+      ...br,
+      id: 'br2',
+      members: br.members.filter((m) => m.port === '3'),
+    };
+    br.members = br.members.filter((m) => m.port !== '3');
+    chassis.functions = [...chassis.functions, secondBridge];
+    const html = renderInspector(select(state, sw));
+    expect(html).toMatch(/<fieldset class="port"><legend>Port 3<\/legend>/);
+    expect(html).toMatch(/data-action="pvid"/);
+  });
+
+  it('a port in two bridges resolves its member from the first bridging function (#89 identity pin)', () => {
+    // First match in functions[] order is canonical for member identity
+    // (ADR 0028): edits land in the first bridge that carries the port.
+    let state = addPreset(initialState, 'switch');
+    const sw = state.topology.devices[0]!.id;
+    const chassis = state.topology.devices.find((d) => d.id === sw)!;
+    const br = chassis.functions.find((fn) => fn.kind === 'bridging');
+    if (br?.kind !== 'bridging') throw new Error('expected bridging');
+    const shadowBridge = {
+      ...br,
+      id: 'br2',
+      members: [{ ...br.members[0]!, pvid: 99 }],
+    };
+    chassis.functions = [...chassis.functions, shadowBridge];
+    state = setPvid(state, sw, '1', 42);
+    // The update is immutable - re-read from the NEW state.
+    const updated = state.topology.devices.find((d) => d.id === sw)!;
+    const bridges = updated.functions.filter((fn) => fn.kind === 'bridging');
+    const first = bridges[0]!.members.find((m) => m.port === '1')!;
+    const shadow = bridges[1]!.members.find((m) => m.port === '1')!;
+    expect(first.pvid).toBe(42);
+    expect(shadow.pvid).toBe(99);
+    // Render-side identity: the DOM shows the FIRST bridge's member
+    // value, never the shadow bridge's.
+    const html = renderInspector(select(state, sw));
+    expect(html).toMatch(/data-action="pvid"[^>]*value="42"/);
+    expect(html).not.toMatch(/data-action="pvid"[^>]*value="99"/);
+  });
+
   it('a two-bridge chassis suppresses the SVI controls when the SVI port sits only in the second bridge (#87)', () => {
     // Import-only shape (#87): a chassis whose routing function is SVI-
     // attached via a SECOND bridging function. The pre-fix predicate read

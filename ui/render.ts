@@ -1,5 +1,5 @@
 import type { EditorState } from './state';
-import { bridgeMemberOf, freePorts } from './state';
+import { bridgeMemberOf, freePorts, owningBridgeOf } from './state';
 import type { TraceRender } from './trace';
 
 function esc(text: string): string {
@@ -33,12 +33,9 @@ function renderPortControls(state: EditorState, deviceId: string, portId: string
   if (!chassis) return '';
   const member = bridgeMemberOf(chassis, portId);
   // The owning bridging function is the source of truth for what this
-  // port's controls are (ADR 0013), never the preset id.
-  const owningBridge = member
-    ? chassis.functions.find(
-        (fn) => fn.kind === 'bridging' && fn.members.some((m) => m.port === portId),
-      )
-    : undefined;
+  // port's controls are (ADR 0013), never the preset id. The lookup is
+  // port-scoped across every bridging function (ADR 0028).
+  const owningBridge = owningBridgeOf(chassis, portId);
   // A VLAN-blind bridge reads none of the per-port VLAN membership config:
   // PVID is applied only when vlanAware (src/bridge.ts:216), membership
   // tests are vacuously true (:65), egress ignores untaggedVlans (:157),
@@ -55,9 +52,10 @@ function renderPortControls(state: EditorState, deviceId: string, portId: string
   // carried VLANs), so SVI ports render no bridge-member controls (#83).
   // The iface-id match mirrors the engine's own sviBridgeMember condition:
   // rt-owned + bridging member WITHOUT a matching iface is not an SVI, and
-  // its member VLANs stay live L2 config (cycle 3). Every bridging function
-  // is checked - a port that is a member of any of them counts, not just
-  // the first (#87).
+  // its member VLANs stay live L2 config (cycle 3). `member` is truthy
+  // exactly when SOME bridging function carries the port - the lookup is
+  // port-scoped across all of them (ADR 0028) - so no second predicate
+  // is needed here.
   if (member) {
     const port = chassis.ports.find((item) => item.id === portId);
     const ownedByRouting = chassis.functions.some(
@@ -66,12 +64,7 @@ function renderPortControls(state: EditorState, deviceId: string, portId: string
         port?.ownedBy === fn.id &&
         fn.ifaces.some((iface) => iface.id === portId),
     );
-    const sviMember = chassis.functions.some(
-      (fn) =>
-        fn.kind === 'bridging' &&
-        fn.members.some((m) => m.port === portId),
-    );
-    if (ownedByRouting && sviMember) {
+    if (ownedByRouting) {
       return '';
     }
   }
