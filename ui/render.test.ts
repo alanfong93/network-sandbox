@@ -89,6 +89,23 @@ describe('inspector', () => {
     expect(html).not.toMatch(/VLAN \(svi20\)/);
   });
 
+  it('L3-switch SVI ports expose no independent PVID/untagged/tagged controls (#83, other half)', () => {
+    let state = addPreset(initialState, 'l3-switch');
+    const l3s = state.topology.devices[0]!.id;
+    const html = renderInspector(select(state, l3s));
+    // Routed egress out an SVI is gated by the member's carried VLANs
+    // (src/bridge.ts egress-membership), so editing the member's PVID or
+    // untagged set while iface.vlan stays put desyncs the same composition
+    // from the other direction. The SVI member port renders no bridge-member
+    // VLAN controls either - the access ports keep theirs.
+    for (const svi of ['svi10', 'svi20']) {
+      const fieldset = new RegExp(`<fieldset class="port"><legend>Port ${svi}</legend>`);
+      expect(html).not.toMatch(fieldset);
+    }
+    expect(html).toMatch(/<fieldset class="port"><legend>Port 1<\/legend>/);
+    expect(html).toMatch(/data-action="pvid"[^>]*value="1"/);
+  });
+
   it('a placed L3 switch routes between two cabled hosts (issue #73 done-when)', () => {
     let state = initialState;
     state = addPreset(state, 'l3-switch');

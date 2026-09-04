@@ -32,6 +32,29 @@ function renderPortControls(state: EditorState, deviceId: string, portId: string
   const chassis = state.topology.devices.find((d) => d.id === deviceId);
   if (!chassis) return '';
   const member = bridgeMemberOf(chassis, portId);
+  // An SVI port (an rt-owned port that is a bridging member) is one half
+  // of the #71 composition; the other half is the routing iface's vlan.
+  // The member's PVID/tagged/untagged controls would edit the bridge half
+  // alone and desync it from the iface half (routed egress is gated by the
+  // member's carried VLANs), so SVI ports render no bridge-member controls
+  // (#83). Every bridging function is checked - a port that is a member of
+  // any of them is SVI-shaped, not just the first (#87).
+  if (member) {
+    const port = chassis.ports.find((item) => item.id === portId);
+    const ownedByRouting = chassis.functions.some(
+      (fn) =>
+        fn.kind === 'routing' &&
+        port?.ownedBy === fn.id,
+    );
+    const sviMember = chassis.functions.some(
+      (fn) =>
+        fn.kind === 'bridging' &&
+        fn.members.some((m) => m.port === portId),
+    );
+    if (ownedByRouting && sviMember) {
+      return '';
+    }
+  }
   const rows: string[] = [];
   if (member) {
     rows.push(
@@ -96,16 +119,17 @@ export function renderInspector(state: EditorState): string {
       // that is also a bridging member of its VLAN. The generic
       // sub-interface VLAN input would move iface.vlan alone and leave the
       // bridging member behind, silently breaking the composition (#83),
-      // so SVI-shaped ifaces render no independent control.
+      // so SVI-shaped ifaces render no independent control. Every bridging
+      // function is checked, not just the first (#87).
       const port = chassis.ports.find((item) => item.id === iface.id);
-      const bridge = chassis.functions.find(
-        (fn) => fn.kind === 'bridging',
-      );
       const isSvi =
         port !== undefined &&
         port.ownedBy === routing.id &&
-        bridge?.kind === 'bridging' &&
-        bridge.members.some((member) => member.port === iface.id);
+        chassis.functions.some(
+          (fn) =>
+            fn.kind === 'bridging' &&
+            fn.members.some((member) => member.port === iface.id),
+        );
       if (isSvi) continue;
       const label = iface.id === 'wan' ? 'WAN VLAN' : `VLAN (${iface.id})`;
       parts.push(
