@@ -114,6 +114,24 @@ describe('trace', () => {
     expect(trace.request.join('\n')).not.toMatch(/Outcome:/i);
   });
 
+  it('a device id containing flood never flips the notice - only the flooded action does (#82)', () => {
+    // Import preserves arbitrary device ids, so a delivered-to id like
+    // 'flood-host' puts the WORD flood into a hop sentence without any
+    // flood action. The notice selector must key on the leading action
+    // token, not the substring anywhere in the line.
+    let state = initialState;
+    state = addPreset(state, 'host');
+    state = addPreset(state, 'host');
+    const [h1, other] = state.topology.devices.map((d) => d.id);
+    state.topology.devices[1]!.id = 'flood-host';
+    state = startLink(state, h1!);
+    state = completeLink(state, other!);
+    const trace = runTrace(state.topology, { from: h1!, kind: 'dhcp-discover' });
+    expect(trace.request.some((line) => /^flooded\b/.test(line))).toBe(false);
+    expect(trace.notices.join('\n')).toMatch(/broadcast delivery below/i);
+    expect(trace.notices.join('\n')).not.toMatch(/flood below/i);
+  });
+
   it('a direct-link DISCOVER renders without a flood hop and without the flood notice (#82)', () => {
     // No switch on the path: there is nothing to flood and no MAC table to
     // consult, so the flood-worded cold notice would be a lie here. The

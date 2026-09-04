@@ -84,8 +84,12 @@ export function runTrace(
     reply: result.flow.reply?.hops.map((hop) => hop.reason) ?? [],
     flowNotes,
     notices: [
+      // The action token leads every formatted hop sentence, so 'flooded'
+      // at line-start is a real flood; a device id merely CONTAINING
+      // 'flood' (import preserves arbitrary ids) must not flip the
+      // notice.
       icmpArgs === undefined
-        ? request.some((line) => line.match(/flood/i))
+        ? request.some((line) => /^flooded\b/.test(line))
           ? COLD_DISCOVER_NOTICE
           : COLD_DISCOVER_DIRECT_NOTICE
         : COLD_TRACE_NOTICE,
