@@ -175,18 +175,23 @@ describe('inspector', () => {
     expect(html).toMatch(/data-action="pvid"/);
   });
 
-  it('unmanaged-switch ports render zero VLAN controls - the bridge is VLAN-blind (ADR 0007, #67)', () => {
+  it('unmanaged-switch ports keep only the live acceptable-frame-types control - the inert VLAN controls are hidden (ADR 0007, #67)', () => {
     let state = addPreset(initialState, 'unmanaged-switch');
     const usw = state.topology.devices[0]!.id;
     const html = renderInspector(select(state, usw));
-    // One flat broadcast domain: no mode, no PVID, no untagged, no tagged.
+    // The inert membership controls: no mode, no PVID, no untagged, no
+    // tagged, no ingress filtering (isMember is vacuously true on a
+    // VLAN-blind bridge, so the filtering drop branch is unreachable).
     // Alan's call: hide, not disable.
     expect(html).not.toMatch(/data-action="mode"/);
     expect(html).not.toMatch(/PVID \(ingress\)/);
     expect(html).not.toMatch(/data-action="untagged"/);
     expect(html).not.toMatch(/data-action="tagged"/);
-    // No port fieldsets at all - there is nothing to configure.
-    expect(html).not.toMatch(/<fieldset class="port">/);
+    expect(html).not.toMatch(/data-action="ingress-filtering"/);
+    // Acceptable frame types STAYS: src/bridge.ts enforces it
+    // unconditionally, VLAN-blind or not - hiding a live control would be
+    // the false affordance in reverse (#96 review cycle 1).
+    expect(html).toMatch(/data-action="acceptable"/);
   });
 
   it('the unmanaged chassis renders the one-broadcast-domain capability note once, with the port count (#67)', () => {
@@ -200,6 +205,16 @@ describe('inspector', () => {
     // Once per chassis, not once per port.
     const occurrences = html.match(/no VLAN awareness/g)?.length ?? 0;
     expect(occurrences).toBe(1);
+  });
+
+  it('the note counts the VLAN-blind bridge members, not the chassis ports (#96 review cycle 1)', () => {
+    let state = addPreset(initialState, 'unmanaged-switch');
+    const usw = state.topology.devices[0]!.id;
+    const chassis = state.topology.devices.find((d) => d.id === usw)!;
+    const bridge = chassis.functions.find((fn) => fn.kind === 'bridging');
+    if (bridge?.kind === 'bridging') bridge.members.splice(2); // 2 of 4 ports
+    const html = renderInspector(select(state, usw));
+    expect(html).toMatch(/all 2 ports are one broadcast domain/);
   });
 
   it('detection is the owning function vlanAware flag, never the preset id (#67)', () => {

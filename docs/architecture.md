@@ -159,8 +159,13 @@ from the walk, observations and the ADR 0011 warning through `format()` — plus
 the cold-trace notice (ADR 0010) and the no-timers notice. An stp-function
 chassis renders an STP priority control (function presence, never preset id —
 the unmanaged switch stays bare); every bridge-member port renders its
-Acceptable frame types admission rule and the Ingress filtering flag, because
-one control edits one 802.1Q mechanism (ADR 0008). There is no canvas
+Acceptable frame types admission rule — the one admission control the engine
+enforces even on a VLAN-blind bridge — and a VLAN-aware member port adds the
+Ingress filtering flag, because one control edits one 802.1Q mechanism
+(ADR 0008). A VLAN-blind bridge hides its inert membership controls (mode,
+PVID, untagged, tagged) and states the capability in one note per chassis;
+the owning function's `vlanAware` flag decides, never the preset id
+(ADR 0007, ADR 0013). There is no canvas
 and no layout state: the Topology JSON is the file, and `ui/jsonio.ts` hands it
 to the same `toJson` / `fromJson` envelope as everything else.
 

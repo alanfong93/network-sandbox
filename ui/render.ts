@@ -32,19 +32,21 @@ function renderPortControls(state: EditorState, deviceId: string, portId: string
   const chassis = state.topology.devices.find((d) => d.id === deviceId);
   if (!chassis) return '';
   const member = bridgeMemberOf(chassis, portId);
-  // A VLAN-blind bridge reads none of the per-port VLAN membership config
-  // (PVID, membership, egress untagged set - src/bridge.ts vacuous-membership
-  // path), so the controls would be a false affordance: edits that change
-  // nothing. Alan's call: HIDE, not disable (#67, ADR 0007). Detection is
-  // the owning function's vlanAware flag, never the preset id (ADR 0013).
-  if (member) {
-    const owningBridge = chassis.functions.find(
-      (fn) => fn.kind === 'bridging' && fn.members.some((m) => m.port === portId),
-    );
-    if (owningBridge?.kind === 'bridging' && !owningBridge.vlanAware) {
-      return '';
-    }
-  }
+  // The owning bridging function is the source of truth for what this
+  // port's controls are (ADR 0013), never the preset id.
+  const owningBridge = member
+    ? chassis.functions.find(
+        (fn) => fn.kind === 'bridging' && fn.members.some((m) => m.port === portId),
+      )
+    : undefined;
+  // A VLAN-blind bridge reads none of the per-port VLAN membership config:
+  // PVID is applied only when vlanAware (src/bridge.ts:216), membership
+  // tests are vacuously true (:65), egress ignores untaggedVlans (:157),
+  // flood candidate selection skips the VLAN filter (:260), and ingress
+  // filtering's drop branch is unreachable because isMember never returns
+  // false. Those controls would be a false affordance: edits that change
+  // nothing. Alan's call: HIDE, not disable (#67, ADR 0007).
+  const vlanBlind = owningBridge?.kind === 'bridging' && !owningBridge.vlanAware;
   // An SVI port is an rt-owned port that is a bridging member AND carries a
   // matching routing iface - the #71 composition has two halves: the
   // routing iface's vlan and the member's carried VLANs. The member's
@@ -75,37 +77,48 @@ function renderPortControls(state: EditorState, deviceId: string, portId: string
   }
   const rows: string[] = [];
   if (member) {
+    if (!vlanBlind) {
+      rows.push(
+        `<label>Port mode ` +
+          `<select data-port="${esc(portId)}" data-action="mode">` +
+          `<option value="access"${member.mode === 'access' ? ' selected' : ''}>access</option>` +
+          `<option value="trunk"${member.mode === 'trunk' ? ' selected' : ''}>trunk</option>` +
+          `</select></label>`,
+        // ADR 0008: PVID is ingress, the egress-untagged set is a separate
+        // mechanism, and one control edits one mechanism. The fused
+        // "Native VLAN (PVID)" label is forbidden.
+        `<label>PVID (ingress) ` +
+          `<input type="number" data-port="${esc(portId)}" data-action="pvid" ` +
+          `value="${member.pvid}"></label>`,
+        `<label>Untagged VLANs (egress) ` +
+          `<input type="text" data-port="${esc(portId)}" data-action="untagged" ` +
+          `value="${esc(vlans(member.untaggedVlans))}"></label>`,
+        `<label>Tagged VLANs ` +
+          `<input type="text" data-port="${esc(portId)}" data-action="tagged" ` +
+          `value="${esc(vlans(member.taggedVlans))}"></label>`,
+      );
+    }
+    // Acceptable frame types is enforced unconditionally by bridge.ts
+    // (:193-213), VLAN-blind or not - the control is live on an unmanaged
+    // port and stays (#96 review cycle 1). ADR 0008 wording applies: the
+    // label names the 802.1Q mechanism, never a fused "Native VLAN" phrase.
     rows.push(
-      `<label>Port mode ` +
-        `<select data-port="${esc(portId)}" data-action="mode">` +
-        `<option value="access"${member.mode === 'access' ? ' selected' : ''}>access</option>` +
-        `<option value="trunk"${member.mode === 'trunk' ? ' selected' : ''}>trunk</option>` +
-        `</select></label>`,
-      // ADR 0008: PVID is ingress, the egress-untagged set is a separate
-      // mechanism, and one control edits one mechanism. The fused
-      // "Native VLAN (PVID)" label is forbidden.
-      `<label>PVID (ingress) ` +
-        `<input type="number" data-port="${esc(portId)}" data-action="pvid" ` +
-        `value="${member.pvid}"></label>`,
-      `<label>Untagged VLANs (egress) ` +
-        `<input type="text" data-port="${esc(portId)}" data-action="untagged" ` +
-        `value="${esc(vlans(member.untaggedVlans))}"></label>`,
-      `<label>Tagged VLANs ` +
-        `<input type="text" data-port="${esc(portId)}" data-action="tagged" ` +
-        `value="${esc(vlans(member.taggedVlans))}"></label>`,
-      // The per-port admission rule bridge.ts enforces at ingress (#69).
-      // ADR 0008 wording applies here too: the label names the 802.1Q
-      // mechanism, never a fused "Native VLAN" phrase.
       `<label>Acceptable frame types ` +
         `<select data-port="${esc(portId)}" data-action="acceptable">` +
         `<option value="all"${member.acceptableFrameTypes === 'all' ? ' selected' : ''}>all</option>` +
         `<option value="tagged-only"${member.acceptableFrameTypes === 'tagged-only' ? ' selected' : ''}>tagged only</option>` +
         `<option value="untagged-only"${member.acceptableFrameTypes === 'untagged-only' ? ' selected' : ''}>untagged only</option>` +
         `</select></label>`,
-      `<label>Ingress filtering ` +
-        `<input type="checkbox" data-port="${esc(portId)}" data-action="ingress-filtering"` +
-        `${member.ingressFiltering ? ' checked' : ''}></label>`,
     );
+    if (!vlanBlind) {
+      // The per-port admission rule bridge.ts enforces at ingress (#69) -
+      // live only when membership can actually reject, i.e. vlanAware.
+      rows.push(
+        `<label>Ingress filtering ` +
+          `<input type="checkbox" data-port="${esc(portId)}" data-action="ingress-filtering"` +
+          `${member.ingressFiltering ? ' checked' : ''}></label>`,
+      );
+    }
   }
   return rows.length > 0
     ? `<fieldset class="port"><legend>Port ${esc(portId)}</legend>${rows.join('\n')}</fieldset>`
@@ -195,7 +208,10 @@ export function renderInspector(state: EditorState): string {
     (fn) => fn.kind === 'bridging' && !fn.vlanAware,
   );
   if (vlanBlindBridge?.kind === 'bridging') {
-    const portCount = chassis.ports.length;
+    // The count is the bridge's members - the actual broadcast domain -
+    // not the chassis's whole port list (#96 review cycle 1). For the
+    // standard unmanaged preset those are the same 4 ports.
+    const portCount = vlanBlindBridge.members.length;
     parts.push(
       `<p class="hint">This switch has no VLAN awareness - all ${portCount} ` +
         `ports are one broadcast domain. No configurable per-port VLAN ` +
