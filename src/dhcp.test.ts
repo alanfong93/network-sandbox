@@ -1030,6 +1030,50 @@ describe('bridge-embedded DHCP server (issue #79)', () => {
     ).toBe(true);
   });
 
+  it('the OFFER egress honours the arrival port egress rule, not the ingress encapsulation (#79)', () => {
+    // Trunk port 1 carries VLAN 10 UNTAGGED (its untaggedVlans set) and
+    // VLAN 20 tagged. A DISCOVER arrives TAGGED on the native VLAN - the
+    // OFFER must leave UNTAGGED per the port's egress rule, not keep the
+    // ingress encapsulation it arrived with.
+    const topology = bridgeEmbeddedServerTopology();
+    const sw = topology.devices.find((item) => item.id === 'SW1');
+    if (!sw) throw new Error('expected SW1');
+    const br = sw.functions.find((item) => item.kind === 'bridging');
+    if (br?.kind !== 'bridging') throw new Error('expected bridging');
+    br.members = br.members.map((member) =>
+      member.port === '1'
+        ? trunk(member.port, [10, 20])
+        : member,
+    );
+    // Trunk on the client side: VLAN 10 untagged (native), VLAN 20 tagged.
+    br.members[0] = {
+      ...trunk('1', [20]),
+      untaggedVlans: new Set([10]),
+    };
+    const ctx = createRunContext(topology);
+    const result = walkFrame(ctx, {
+      device: 'SW1',
+      inPort: '1',
+      frame: {
+        srcMac: 'aa:00:00:00:00:10',
+        dstMac: 'ff:ff:ff:ff:ff:ff',
+        vlan: 10,
+        size: 64,
+        encapsulation: ['ethernet', 'vlan-tag'],
+        payload: { kind: 'dhcp', dhcpType: 'discover' },
+        hops: [],
+      },
+      arrivedFrom: 'H1',
+    });
+    expect(
+      result.hops.some((hop) => hop.step === 'dhcp-server'),
+    ).toBe(true);
+    // Egress rule for the native VLAN: untagged on the wire. An untagged
+    // delivery carries vlan null (the model's untagged representation).
+    expect(result.deliveredFrame?.vlan).toBeNull();
+    expect(result.deliveredFrame?.encapsulation).toEqual(['ethernet']);
+  });
+
   it('does not answer when the classified VLAN is not the server identity VLAN - flood only', () => {
     const topology = bridgeEmbeddedServerTopology();
     const sw = topology.devices.find((item) => item.id === 'SW1');
