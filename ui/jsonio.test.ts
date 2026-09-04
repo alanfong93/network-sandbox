@@ -110,6 +110,49 @@ describe('sandbox JSON import/export (#57 envelope)', () => {
       gateway: '192.168.10.1',
       resolver: '192.168.10.1',
     };
+    // Both VLANs are covered by routing ifaces - every scope answers
+    // through decideDhcp. The lan iface carries VLAN 10 (the preset's
+    // default pvid is 1, so pin it), the wan iface carries VLAN 20.
+    const lan = rt.ifaces.find((iface) => iface.id === 'lan');
+    if (lan) {
+      lan.vlan = 10;
+      lan.ip = '192.168.10.1';
+    }
+    const wan = rt.ifaces.find((iface) => iface.id === 'wan');
+    if (wan) {
+      wan.vlan = 20;
+      wan.ip = '192.168.20.1';
+    }
+    rtr.functions = [
+      ...rtr.functions,
+      {
+        kind: 'dhcp-server' as const,
+        id: 'dhcp',
+        scopes: [scope10, { ...scope10, vlan: 20, poolStart: '192.168.20.100', poolEnd: '192.168.20.199', gateway: '192.168.20.1' }],
+      },
+    ];
+    expect(divergentScopeWarning(importSandbox(exportSandbox(state.topology)))).toBeNull();
+  });
+
+  it('import warns when a routing chassis scope VLAN has no routing iface - decideDhcp cannot reach it (#86)', () => {
+    // Presence of a routing function is not coverage: decideDhcp's matchScope
+    // finds a scope via scope.vlan === iface.vlan (or an iface-IP subnet
+    // match). A scope on a VLAN no routing iface serves is stranded exactly
+    // like the standalone case, so the import must warn.
+    let state = initialState;
+    state = addPreset(state, 'router');
+    const rtr = state.topology.devices[0]!;
+    const rt = rtr.functions.find((fn) => fn.kind === 'routing');
+    if (rt?.kind !== 'routing') throw new Error('expected routing');
+    const scope10 = {
+      vlan: 10,
+      poolStart: '192.168.10.100',
+      poolEnd: '192.168.10.199',
+      gateway: '192.168.10.1',
+      resolver: '192.168.10.1',
+    };
+    // Only the lan iface serves VLAN 10; the wan iface keeps VLAN 500 -
+    // nothing routes VLAN 20.
     rtr.functions = [
       ...rtr.functions,
       {
@@ -118,6 +161,9 @@ describe('sandbox JSON import/export (#57 envelope)', () => {
         scopes: [scope10, { ...scope10, vlan: 20 }],
       },
     ];
-    expect(divergentScopeWarning(importSandbox(exportSandbox(state.topology)))).toBeNull();
+    const warning = divergentScopeWarning(importSandbox(exportSandbox(state.topology)));
+    expect(warning).toBe(
+      'DHCP server router-1 has scopes on VLANs 10, 20 - a standalone server answers on one VLAN only (chassis.vlan); the other scopes cannot answer.',
+    );
   });
 });

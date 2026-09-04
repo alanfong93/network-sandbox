@@ -1,4 +1,4 @@
-import { fromJson, toJson } from '../src/index';
+import { fromJson, inSubnet, toJson } from '../src/index';
 import type { Topology } from '../src/index';
 
 /** The sandbox envelope from #57 is the format of record (ADR 0015). */
@@ -19,22 +19,38 @@ export function importSandbox(text: string): Topology {
  * topology is legal, so import warns rather than rejects (#86) - and only
  * on import; there is no runtime nag.
  *
- * Standalone only: a dhcp-server sibling on a routing chassis is served by
- * the routing path's decideDhcp (src/walk.ts checks routing before this
- * fallback), where every scope can answer through its own iface - warning
- * there would be a false positive.
+ * A scope that some routing iface actually serves is NOT stranded: a
+ * routing chassis runs decideDhcp (src/walk.ts checks routing before the
+ * standalone fallback), whose matchScope finds the scope through
+ * scope.vlan === iface.vlan or an iface-IP subnet match. Presence of a
+ * routing function alone is not coverage - a scope VLAN no routing iface
+ * serves strands exactly like the standalone case.
  */
 export function divergentScopeWarning(topology: Topology): string | null {
   for (const chassis of topology.devices) {
-    // Standalone only: a routing chassis runs its own decideDhcp branch
-    // (src/walk.ts checks routing before the standalone fallback), where
-    // every scope answers through its routing iface.
-    const isRouting = chassis.functions.some((fn) => fn.kind === 'routing');
-    if (isRouting) continue;
     const server = chassis.functions.find((fn) => fn.kind === 'dhcp-server');
     if (server?.kind !== 'dhcp-server') continue;
     const vlans = [...new Set(server.scopes.map((scope) => scope.vlan))];
     if (vlans.length < 2) continue;
+    const covered = new Set(
+      chassis.functions.flatMap((fn) => {
+        if (fn.kind !== 'routing') return [];
+        return fn.ifaces.flatMap((iface) => {
+          const served: number[] = [];
+          if (iface.vlan !== undefined) served.push(iface.vlan);
+          for (const scope of server.scopes) {
+            if (
+              inSubnet(iface.ip, scope.gateway, 24) ||
+              inSubnet(iface.ip, scope.poolStart, 24)
+            ) {
+              served.push(scope.vlan);
+            }
+          }
+          return served;
+        });
+      }),
+    );
+    if (vlans.every((vlan) => covered.has(vlan))) continue;
     const named = vlans.sort((a, b) => a - b).join(', ');
     return (
       `DHCP server ${chassis.id} has scopes on VLANs ${named} - ` +
