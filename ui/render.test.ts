@@ -175,6 +175,68 @@ describe('inspector', () => {
     expect(html).toMatch(/data-action="pvid"/);
   });
 
+  it('unmanaged-switch ports render zero VLAN controls - the bridge is VLAN-blind (ADR 0007, #67)', () => {
+    let state = addPreset(initialState, 'unmanaged-switch');
+    const usw = state.topology.devices[0]!.id;
+    const html = renderInspector(select(state, usw));
+    // One flat broadcast domain: no mode, no PVID, no untagged, no tagged.
+    // Alan's call: hide, not disable.
+    expect(html).not.toMatch(/data-action="mode"/);
+    expect(html).not.toMatch(/PVID \(ingress\)/);
+    expect(html).not.toMatch(/data-action="untagged"/);
+    expect(html).not.toMatch(/data-action="tagged"/);
+    // No port fieldsets at all - there is nothing to configure.
+    expect(html).not.toMatch(/<fieldset class="port">/);
+  });
+
+  it('the unmanaged chassis renders the one-broadcast-domain capability note once, with the port count (#67)', () => {
+    let state = addPreset(initialState, 'unmanaged-switch');
+    const usw = state.topology.devices[0]!.id;
+    const html = renderInspector(select(state, usw));
+    expect(html).toMatch(
+      /This switch has no VLAN awareness - all 4 ports are one broadcast domain/,
+    );
+    expect(html).toMatch(/No configurable per-port VLAN membership/);
+    // Once per chassis, not once per port.
+    const occurrences = html.match(/no VLAN awareness/g)?.length ?? 0;
+    expect(occurrences).toBe(1);
+  });
+
+  it('detection is the owning function vlanAware flag, never the preset id (#67)', () => {
+    // A vlan-aware chassis that happens to carry the unmanaged preset id
+    // keeps its controls (function is the source of truth, ADR 0013).
+    let state = addPreset(initialState, 'switch');
+    const sw = state.topology.devices[0]!.id;
+    const chassis = state.topology.devices.find((d) => d.id === sw)!;
+    chassis.preset = 'unmanaged-switch';
+    const mislabeled = renderInspector(select(state, sw));
+    expect(mislabeled).toMatch(/data-action="pvid"/);
+    // And the reverse: a chassis with no preset id but a VLAN-blind bridge
+    // gets the note and no controls.
+    state = addPreset(state, 'unmanaged-switch');
+    const usw = state.topology.devices[1]!.id;
+    const bare = state.topology.devices.find((d) => d.id === usw)!;
+    delete bare.preset;
+    const stripped = renderInspector(select(state, usw));
+    expect(stripped).not.toMatch(/data-action="pvid"/);
+    expect(stripped).toMatch(/no VLAN awareness/);
+  });
+
+  it('managed switch and AP bridge ports keep their VLAN controls (#67 regression)', () => {
+    let state = addPreset(initialState, 'switch');
+    const sw = state.topology.devices[0]!.id;
+    const managedHtml = renderInspector(select(state, sw));
+    expect(managedHtml).toMatch(/data-action="mode"/);
+    expect(managedHtml).toMatch(/PVID \(ingress\)/);
+    expect(managedHtml).toMatch(/data-action="untagged"/);
+    expect(managedHtml).toMatch(/data-action="tagged"/);
+    state = addPreset(state, 'access-point');
+    const ap = state.topology.devices[1]!.id;
+    const apHtml = renderInspector(select(state, ap));
+    expect(apHtml).toMatch(/data-action="pvid"/);
+    expect(apHtml).toMatch(/data-action="untagged"/);
+  });
+
   it('a two-bridge chassis suppresses the SVI controls when the SVI port sits only in the second bridge (#87)', () => {
     // Import-only shape (#87): a chassis whose routing function is SVI-
     // attached via a SECOND bridging function. The pre-fix predicate read

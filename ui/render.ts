@@ -32,6 +32,19 @@ function renderPortControls(state: EditorState, deviceId: string, portId: string
   const chassis = state.topology.devices.find((d) => d.id === deviceId);
   if (!chassis) return '';
   const member = bridgeMemberOf(chassis, portId);
+  // A VLAN-blind bridge reads none of the per-port VLAN membership config
+  // (PVID, membership, egress untagged set - src/bridge.ts vacuous-membership
+  // path), so the controls would be a false affordance: edits that change
+  // nothing. Alan's call: HIDE, not disable (#67, ADR 0007). Detection is
+  // the owning function's vlanAware flag, never the preset id (ADR 0013).
+  if (member) {
+    const owningBridge = chassis.functions.find(
+      (fn) => fn.kind === 'bridging' && fn.members.some((m) => m.port === portId),
+    );
+    if (owningBridge?.kind === 'bridging' && !owningBridge.vlanAware) {
+      return '';
+    }
+  }
   // An SVI port is an rt-owned port that is a bridging member AND carries a
   // matching routing iface - the #71 composition has two halves: the
   // routing iface's vlan and the member's carried VLANs. The member's
@@ -173,6 +186,20 @@ export function renderInspector(state: EditorState): string {
       `<label>STP priority ` +
         `<input type="number" step="4096" min="0" max="61440" data-action="stp-priority" ` +
         `value="${stp.priority}"></label>`,
+    );
+  }
+  // One note per VLAN-blind chassis, not per port: it states a device-wide
+  // capability, not a per-port setting. A drop is an outcome, and this
+  // device is the lesson of row 5 (#67, ADR 0007).
+  const vlanBlindBridge = chassis.functions.find(
+    (fn) => fn.kind === 'bridging' && !fn.vlanAware,
+  );
+  if (vlanBlindBridge?.kind === 'bridging') {
+    const portCount = chassis.ports.length;
+    parts.push(
+      `<p class="hint">This switch has no VLAN awareness - all ${portCount} ` +
+        `ports are one broadcast domain. No configurable per-port VLAN ` +
+        `membership (ADR 0007).</p>`,
     );
   }
   const dhcpServer = chassis.functions.find(
