@@ -330,6 +330,51 @@ function execute(
       });
       if (local) return local;
     }
+    // Bridge-embedded DHCP server (issue #79): after ingress classification
+    // has run — the same seam as sviDecision and chassisTakesLocal — a
+    // co-resident dhcp-server function answers a same-VLAN DISCOVER. The
+    // predicate stays standaloneDhcpDecision's own narrow conditions
+    // (classified VLAN === chassis.vlan, matching scope, own identity), so
+    // the answer never steals frames the server would not take. The flood
+    // is NOT suppressed: a DISCOVER is broadcast, so the chassis answers
+    // while the bridge still forwards it to every other member port.
+    const standaloneAnswer = standaloneDhcpDecision({
+      device: job.device,
+      chassis,
+      inPort: job.inPort,
+      frame: { ...job.frame, vlan },
+    });
+    if (standaloneAnswer.action === 'respond') {
+      // The OFFER egresses the ARRIVAL port, so it must obey that port's
+      // egress-tagging rule - not keep the encapsulation the DISCOVER
+      // arrived with. A tagged DISCOVER on a native/untagged VLAN egresses
+      // untagged here, exactly as bridgeFrame's own egress would tag it.
+      const egressMember = fn.members.find(
+        (member) => member.port === job.inPort,
+      );
+      const outVlan =
+        egressMember === undefined || vlan === null
+          ? null
+          : egressMember.untaggedVlans.has(vlan)
+            ? null
+            : vlan;
+      const transmissions = standaloneAnswer.transmissions.map((tx) => {
+        const without: Frame['encapsulation'] = [];
+        for (const layer of tx.frame.encapsulation) {
+          if (layer !== 'vlan-tag') without.push(layer);
+        }
+        const encapsulation: Frame['encapsulation'] = [...without];
+        if (outVlan !== null) {
+          const at = without.indexOf('ethernet');
+          encapsulation.splice(at === -1 ? encapsulation.length : at + 1, 0, 'vlan-tag');
+        }
+        return { outPort: tx.outPort, frame: { ...tx.frame, vlan: outVlan, encapsulation } };
+      });
+      return {
+        hops: [result.hop, ...standaloneAnswer.hops],
+        transmissions: [...result.transmissions, ...transmissions],
+      };
+    }
     return { hops: [result.hop], transmissions: result.transmissions };
   }
   if (fn?.kind === 'wireless') {
