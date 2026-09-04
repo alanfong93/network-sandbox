@@ -352,9 +352,15 @@ describe('inspector', () => {
     const shadow = bridges[1]!.members.find((m) => m.port === '1')!;
     expect(first.pvid).toBe(42);
     expect(shadow.pvid).toBe(99);
+    // Render-side identity: the DOM shows the FIRST bridge's member
+    // value, never the shadow bridge's.
+    const html = renderInspector(select(state, sw));
+    expect(html).toMatch(/data-action="pvid"[^>]*value="42"/);
+    expect(html).not.toMatch(/data-action="pvid"[^>]*value="99"/);
   });
 
-  it('a two-bridge chassis suppresses the SVI controls when the SVI port sits only in the second bridge (#87)', () => {    // Import-only shape (#87): a chassis whose routing function is SVI-
+  it('a two-bridge chassis suppresses the SVI controls when the SVI port sits only in the second bridge (#87)', () => {
+    // Import-only shape (#87): a chassis whose routing function is SVI-
     // attached via a SECOND bridging function. The pre-fix predicate read
     // only the first bridging function (functions.find shape), so this
     // topology rendered the generic iface-vlan control again and reopened
