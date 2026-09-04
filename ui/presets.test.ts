@@ -167,6 +167,37 @@ describe('presets', () => {
     }
   });
 
+  it('dhcp-server chassis IP skips its own pool and the broadcast at every seq within the /24 static range (#92)', () => {
+    const build = (seq: number) =>
+      PRESETS.find((p) => p.id === 'dhcp-server')?.build(`srv-${seq}`, seq)
+        ?.ip;
+    // The first two placements keep the shipped .2/.3 (#85).
+    expect(build(1)).toBe('192.168.10.2');
+    expect(build(2)).toBe('192.168.10.3');
+    // The pool jump: seq 98 is the last low-band address (.2-.99), seq 99
+    // jumps over the pool to .200. The old derivation claimed .100 - the
+    // bottom of the server's own pool.
+    expect(build(98)).toBe('192.168.10.99');
+    expect(build(99)).toBe('192.168.10.200');
+    expect(build(100)).toBe('192.168.10.201');
+    // The high band ends at .254 (the /24 broadcast is .255): seq 153 is
+    // the last valid placement - the static range holds 153 servers
+    // (98 low + 55 high). The old derivation was in-pool here.
+    expect(build(153)).toBe('192.168.10.254');
+    // Injective across the whole capacity, and never gateway, pool, or
+    // broadcast for any seq the static range can serve.
+    const ips = Array.from({ length: 153 }, (_, i) => build(i + 1)!);
+    expect(new Set(ips).size).toBe(153);
+    for (const ip of ips) {
+      const host = Number(ip.split('.')[3]);
+      expect(host).not.toBe(1);
+      expect(host).not.toBe(255);
+      expect((host >= 2 && host <= 99) || (host >= 200 && host <= 254)).toBe(
+        true,
+      );
+    }
+  });
+
   it('for any placement sequence, every chassis MAC and routing-iface MAC is pairwise distinct (#85)', () => {
     // The property is the contract, not any particular formula: place a
     // generated sequence of presets (any order, any repeats - placements

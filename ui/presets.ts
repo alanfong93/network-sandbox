@@ -328,15 +328,27 @@ export const PRESETS: PresetDef[] = [
           // addressing on the service VLAN. The IP derives from seq so
           // two placed servers never share one address (.2 was the
           // every-placement constant) and stays clear of the pool and
-          // gateway (#85).
+          // gateway (#85) - and of the pool and broadcast at every seq
+          // within the /24 static range (#92). The range holds 153
+          // servers (98 low + 55 high); beyond it the address is invalid
+          // exactly as before - the done-when scopes to within capacity.
           mac: mac(seq),
-          ip: `192.168.10.${seq + 1}`,
+          ip: dhcpServerIp(seq),
           prefix: 24,
           vlan: 10,
         },
       ),
   },
 ];
+
+/** Static host bands of the default /24 scope: .2-.99 and .200-.254. */
+function dhcpServerIp(seq: number): string {
+  const LOW_MAX = 99; // .2-.99 serves seq 1-98 (shipped .2/.3 stay).
+  const HIGH_MIN = 200; // .200-.254 serves seq 99-153 (.255 broadcast).
+  const host =
+    seq + 1 <= LOW_MAX ? seq + 1 : HIGH_MIN + (seq - LOW_MAX);
+  return `192.168.10.${host}`;
+}
 
 export function presetById(id: string): PresetDef | undefined {
   return PRESETS.find((preset) => preset.id === id);
