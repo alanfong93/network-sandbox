@@ -138,6 +138,29 @@ describe('editor state', () => {
     expect([...member.untaggedVlans]).toEqual([1]);
   });
 
+  it('setPvid reaches a port living only in a second bridging function (#89)', () => {
+    let state = initialState;
+    const placedSw = placed(state, 'switch');
+    state = placedSw.state;
+    const [sw] = placedSw.ids;
+    const chassis = state.topology.devices.find((d) => d.id === sw)!;
+    const br = chassis.functions.find((fn) => fn.kind === 'bridging')!;
+    if (br.kind !== 'bridging') throw new Error('expected bridging');
+    const secondBridge = {
+      ...br,
+      id: 'br2',
+      members: br.members.filter((m) => m.port === '3'),
+    };
+    br.members = br.members.filter((m) => m.port !== '3');
+    chassis.functions = [...chassis.functions, secondBridge];
+    state = setPvid(state, sw!, '3', 42);
+    // The update is immutable - re-read the chassis from the NEW state.
+    const updated = state.topology.devices.find((d) => d.id === sw)!;
+    const br2 = updated.functions.find((fn) => fn.id === 'br2')!;
+    if (br2.kind !== 'bridging') throw new Error('expected bridging');
+    expect(br2.members.find((m) => m.port === '3')!.pvid).toBe(42);
+  });
+
   it('setUntaggedVlans writes egress only — pvid is untouched (ADR 0008)', () => {
     let state = initialState;
     const placedSw = placed(state, 'switch');

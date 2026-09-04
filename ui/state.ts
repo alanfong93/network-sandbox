@@ -33,8 +33,18 @@ function deviceOf(
   return topology.devices.find((device) => device.id === id);
 }
 
-function bridgeOf(chassis: Chassis) {
-  const fn = chassis.functions.find((item) => item.kind === 'bridging');
+/**
+ * The bridging function whose members include portId. First match in
+ * functions[] order is canonical for member identity when an imported
+ * port sits in two bridges (ADR 0028): the search covers EVERY bridging
+ * function, matching the engine's own sviBridgeMember - palette presets
+ * carry one bridge, but json import round-trips many (#89).
+ */
+export function owningBridgeOf(chassis: Chassis, portId: string) {
+  const fn = chassis.functions.find(
+    (item) =>
+      item.kind === 'bridging' && item.members.some((m) => m.port === portId),
+  );
   return fn?.kind === 'bridging' ? fn : undefined;
 }
 
@@ -42,7 +52,9 @@ export function bridgeMemberOf(
   chassis: Chassis,
   portId: string,
 ): BridgePort | undefined {
-  return bridgeOf(chassis)?.members.find((member) => member.port === portId);
+  return owningBridgeOf(chassis, portId)?.members.find(
+    (member) => member.port === portId,
+  );
 }
 
 function isWirelessPort(chassis: Chassis, portId: string): boolean {
@@ -104,7 +116,9 @@ function withMember(
   mutate: (member: BridgePort) => BridgePort,
 ): EditorState {
   return withChassis(state, deviceId, (chassis) => {
-    const bridge = bridgeOf(chassis);
+    // Port-scoped, not first-bridge: edits land in the bridge that
+    // actually carries the port (ADR 0028).
+    const bridge = owningBridgeOf(chassis, portId);
     if (!bridge) return chassis;
     const members = bridge.members.map((member) =>
       member.port === portId ? mutate(member) : member,
