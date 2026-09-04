@@ -357,6 +357,24 @@ describe('walk observations flow through runFlow (#63)', () => {
     expect(ranks).toContain(0);
     expect(ranks).toContain(1);
     expect(ranks).toEqual([...ranks].sort((a, b) => a - b));
+    // Exact sequence, not just phase grouping: walk-internal order is
+    // part of the contract (#63 review cycle 1). send() crosses the
+    // mismatch on three sub-walks per direction (ARP request, ARP reply,
+    // ICMP) and note() dedups within a walk, not across them - six
+    // entries, deterministic for this fixture.
+    expect(
+      result.observations.map((item) => [
+        item.phase,
+        item.observation.observation,
+      ]),
+    ).toEqual([
+      ['request', 'vlan-leak'],
+      ['request', 'vlan-leak'],
+      ['request', 'vlan-leak'],
+      ['reply', 'vlan-leak'],
+      ['reply', 'vlan-leak'],
+      ['reply', 'vlan-leak'],
+    ]);
   });
 
   it('the reply walk emits the mirrored leak observation, phased reply (#63)', () => {
