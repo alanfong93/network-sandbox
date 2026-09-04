@@ -129,6 +129,51 @@ describe('inspector', () => {
     expect(html).toMatch(/data-action="pvid"/);
   });
 
+  it('a two-bridge chassis suppresses the SVI controls when the SVI port sits only in the second bridge (#87)', () => {
+    // Import-only shape (#87): a chassis whose routing function is SVI-
+    // attached via a SECOND bridging function. The pre-fix predicate read
+    // only the first bridging function (functions.find shape), so this
+    // topology rendered the generic iface-vlan control again and reopened
+    // the #83 desync path. Not reachable from the shipped palette - every
+    // preset carries at most one bridging function - so the chassis is
+    // mutated directly, like the cycle-3 test above.
+    let state = addPreset(initialState, 'l3-switch');
+    const l3s = state.topology.devices[0]!.id;
+    const chassis = state.topology.devices.find((d) => d.id === l3s)!;
+    // Second bridge carrying ONLY the SVI ports as members: svi10/svi20 are
+    // members of the second bridging function, never of the first.
+    const br = chassis.functions.find((fn) => fn.kind === 'bridging');
+    if (br?.kind !== 'bridging') throw new Error('expected bridging');
+    const secondBridge = {
+      ...br,
+      id: 'br2',
+      members: br.members.filter((m) => m.port.startsWith('svi')),
+    };
+    // First bridge keeps every member EXCEPT the SVI ports.
+    br.members = br.members.filter((m) => !m.port.startsWith('svi'));
+    chassis.functions = [...chassis.functions, secondBridge];
+    // Both internal edges exist, so walk.ts sviBridgeMember finds the
+    // second bridge - matching the engine-side semantics the UI mirrors.
+    chassis.internal = [
+      ...chassis.internal,
+      { from: 'rt', to: 'br2' },
+    ];
+    const html = renderInspector(select(state, l3s));
+    // Inspector half: no generic iface-vlan control on either SVI.
+    expect(html).not.toMatch(/data-action="iface-vlan"[^>]*data-iface="svi10"/);
+    expect(html).not.toMatch(/data-action="iface-vlan"[^>]*data-iface="svi20"/);
+    expect(html).not.toMatch(/VLAN \(svi10\)/);
+    expect(html).not.toMatch(/VLAN \(svi20\)/);
+    // Port-controls half: no PVID/untagged/tagged fieldset on either SVI
+    // port - the access ports keep theirs.
+    for (const svi of ['svi10', 'svi20']) {
+      const fieldset = new RegExp(`<fieldset class="port"><legend>Port ${svi}</legend>`);
+      expect(html).not.toMatch(fieldset);
+    }
+    expect(html).toMatch(/<fieldset class="port"><legend>Port 1<\/legend>/);
+    expect(html).toMatch(/data-action="pvid"/);
+  });
+
   it('a placed L3 switch routes between two cabled hosts (issue #73 done-when)', () => {
     let state = initialState;
     state = addPreset(state, 'l3-switch');
