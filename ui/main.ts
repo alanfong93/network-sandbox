@@ -8,6 +8,7 @@ import {
   completeLink,
   initialState,
   select,
+  setDhcpScope,
   setHostAddress,
   setPortMode,
   setPvid,
@@ -262,6 +263,21 @@ function onChange(event: Event): void {
           iface,
           raw === '' ? undefined : Number(raw),
         );
+      }
+      break;
+    }
+    case 'scope-field': {
+      const scope = input.dataset.scope;
+      const field = input.dataset.field;
+      if (scope !== undefined && field) {
+        const index = Number(scope);
+        const patch: Partial<Record<string, number | string>> = {};
+        if (field === 'vlan') {
+          patch.vlan = Number(input.value);
+        } else {
+          patch[field] = input.value;
+        }
+        state = setDhcpScope(state, device, index, patch);
       }
       break;
     }

@@ -100,4 +100,59 @@ describe('presets', () => {
     expect(isp && isp.kind === 'isp-handoff' ? isp.mode : null).toBe('pppoe');
     expect(isp && isp.kind === 'isp-handoff' ? isp.vlanTag : null).toBe(500);
   });
+
+  it('l3-switch writes bridging + stp + routing with SVI-shaped ifaces (#71 composition)', () => {
+    const chassis = PRESETS.find((p) => p.id === 'l3-switch')?.build('l3s1', 1);
+    expect(chassis).toBeDefined();
+    const bridge = chassis?.functions.find((fn) => fn.kind === 'bridging');
+    expect(bridge && bridge.kind === 'bridging' ? bridge.vlanAware : null).toBe(
+      true,
+    );
+    expect(chassis?.functions.some((fn) => fn.kind === 'stp')).toBe(true);
+    const routing = chassis?.functions.find((fn) => fn.kind === 'routing');
+    expect(routing).toBeDefined();
+    if (routing?.kind !== 'routing') return;
+    // Every routing iface is an SVI: an rt-owned port that is also a bridging
+    // member of its VLAN (#71's composition shape).
+    for (const iface of routing.ifaces) {
+      expect(chassis?.ports.some((p) => p.id === iface.id && p.ownedBy === 'rt'))
+        .toBe(true);
+      expect(
+        bridge &&
+          bridge.kind === 'bridging' &&
+          bridge.members.some((m) => m.port === iface.id),
+      ).toBe(true);
+    }
+    // The rt->br InternalEdge carries routed egress back into the bridge.
+    expect(
+      chassis?.internal.some((edge) => edge.from === 'rt' && edge.to === 'br'),
+    ).toBe(true);
+  });
+
+  it('dhcp-server writes a host-like chassis with one default scope', () => {
+    const chassis = PRESETS.find((p) => p.id === 'dhcp-server')?.build(
+      'srv1',
+      1,
+    );
+    expect(chassis).toBeDefined();
+    // Host-like addressing: its own identity answers the OFFER (#72).
+    expect(chassis?.mac).toBeDefined();
+    expect(chassis?.ip).toBeDefined();
+    expect(chassis?.prefix).toBeDefined();
+    expect(chassis?.vlan).toBe(10);
+    const server = chassis?.functions.find((fn) => fn.kind === 'dhcp-server');
+    expect(server && server.kind === 'dhcp-server' ? server.scopes : []).toEqual(
+      [
+        expect.objectContaining({
+          vlan: 10,
+          poolStart: '192.168.10.100',
+          poolEnd: '192.168.10.199',
+          gateway: '192.168.10.1',
+          resolver: '192.168.10.1',
+        }),
+      ],
+    );
+    // The field is resolver, never dns (CONTEXT).
+    expect(JSON.stringify(chassis)).not.toMatch(/"dns"/i);
+  });
 });

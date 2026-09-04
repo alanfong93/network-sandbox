@@ -134,9 +134,22 @@ computed map lives on the run context; the topology is not mutated.
 The UI is a separate entry under `ui/` that imports the engine and never the
 other way round (ADR 0016, ADR 0027). Behaviour lives in pure, unit-tested
 modules; `main.ts` is the only DOM-glue module. Presets write functions, not a
-device kind (ADR 0013); the inspector keeps PVID and `untaggedVlans` as separate
+device kind (ADR 0013): the palette includes the managed switch, the
+unmanaged switch, the router (routing+nat), the L3 switch (bridging+stp+routing
+with SVI-shaped rt-owned bridging members — the #71 composition), the
+standalone DHCP server (host-like addressing plus a `dhcp-server` scope — the
+#72 composition, with scope-editing controls), the AP and the modem; the
+inspector keeps PVID and `untaggedVlans` as separate
 controls (ADR 0008); Start link is per free port (router `wan` can be first);
-router WAN VLAN is `RouterIface.vlan`, not PVID; the modem inspector names the
+router WAN VLAN is `RouterIface.vlan`, not PVID; SVI-shaped ifaces (an rt-owned
+port that is also a bridging member) render no independent VLAN control on
+either half — neither the sub-interface VLAN input nor the bridge-member
+PVID/tagged/untagged inputs — because the SVI is one mechanism and either edit
+alone would desynchronise `iface.vlan` from the member's carried VLANs (routed
+egress is gated by the member's VLANs at egress-membership); editing a
+dhcp-server scope's vlan moves the chassis addressing VLAN with it, because
+the engine's standalone answer gates on `chassis.vlan` and a drifted scope
+could never answer; the modem inspector names the
 ISP check (`mode` + required VLAN); the trace panel renders the engine's own sentences — hops
 from the walk, observations and the ADR 0011 warning through `format()` — plus
 the cold-trace notice (ADR 0010) and the no-timers notice. There is no canvas

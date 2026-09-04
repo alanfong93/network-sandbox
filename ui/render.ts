@@ -32,6 +32,34 @@ function renderPortControls(state: EditorState, deviceId: string, portId: string
   const chassis = state.topology.devices.find((d) => d.id === deviceId);
   if (!chassis) return '';
   const member = bridgeMemberOf(chassis, portId);
+  // An SVI port is an rt-owned port that is a bridging member AND carries a
+  // matching routing iface - the #71 composition has two halves: the
+  // routing iface's vlan and the member's carried VLANs. The member's
+  // PVID/tagged/untagged controls would edit the bridge half alone and
+  // desync it from the iface half (routed egress is gated by the member's
+  // carried VLANs), so SVI ports render no bridge-member controls (#83).
+  // The iface-id match mirrors the engine's own sviBridgeMember condition:
+  // rt-owned + bridging member WITHOUT a matching iface is not an SVI, and
+  // its member VLANs stay live L2 config (cycle 3). Every bridging function
+  // is checked - a port that is a member of any of them counts, not just
+  // the first (#87).
+  if (member) {
+    const port = chassis.ports.find((item) => item.id === portId);
+    const ownedByRouting = chassis.functions.some(
+      (fn) =>
+        fn.kind === 'routing' &&
+        port?.ownedBy === fn.id &&
+        fn.ifaces.some((iface) => iface.id === portId),
+    );
+    const sviMember = chassis.functions.some(
+      (fn) =>
+        fn.kind === 'bridging' &&
+        fn.members.some((m) => m.port === portId),
+    );
+    if (ownedByRouting && sviMember) {
+      return '';
+    }
+  }
   const rows: string[] = [];
   if (member) {
     rows.push(
@@ -92,6 +120,22 @@ export function renderInspector(state: EditorState): string {
   const routing = chassis.functions.find((fn) => fn.kind === 'routing');
   if (routing && routing.kind === 'routing') {
     for (const iface of routing.ifaces) {
+      // The SVI composition (issue #71) is one mechanism: an rt-owned port
+      // that is also a bridging member of its VLAN. The generic
+      // sub-interface VLAN input would move iface.vlan alone and leave the
+      // bridging member behind, silently breaking the composition (#83),
+      // so SVI-shaped ifaces render no independent control. Every bridging
+      // function is checked, not just the first (#87).
+      const port = chassis.ports.find((item) => item.id === iface.id);
+      const isSvi =
+        port !== undefined &&
+        port.ownedBy === routing.id &&
+        chassis.functions.some(
+          (fn) =>
+            fn.kind === 'bridging' &&
+            fn.members.some((member) => member.port === iface.id),
+        );
+      if (isSvi) continue;
       const label = iface.id === 'wan' ? 'WAN VLAN' : `VLAN (${iface.id})`;
       parts.push(
         `<label>${esc(label)} ` +
@@ -107,6 +151,31 @@ export function renderInspector(state: EditorState): string {
     parts.push(
       `<p class="isp-check">ISP check: ${esc(mode)}, required ${esc(vlan)}</p>`,
     );
+  }
+  const dhcpServer = chassis.functions.find(
+    (fn) => fn.kind === 'dhcp-server',
+  );
+  if (dhcpServer && dhcpServer.kind === 'dhcp-server') {
+    dhcpServer.scopes.forEach((scope, index) => {
+      const fields: [keyof typeof scope, 'number' | 'text'][] = [
+        ['vlan', 'number'],
+        ['poolStart', 'text'],
+        ['poolEnd', 'text'],
+        ['gateway', 'text'],
+        ['resolver', 'text'],
+      ];
+      const rows = fields
+        .map(
+          ([field, type]) =>
+            `<label>${esc(field)} ` +
+            `<input type="${type}" data-action="scope-field" data-scope="${index}" ` +
+            `data-field="${esc(field)}" value="${esc(String(scope[field]))}"></label>`,
+        )
+        .join('\n');
+      parts.push(
+        `<fieldset class="dhcp-scope"><legend>DHCP scope ${index + 1}</legend>${rows}</fieldset>`,
+      );
+    });
   }
   for (const port of chassis.ports) {
     parts.push(renderPortControls(state, chassis.id, port.id));
