@@ -152,6 +152,21 @@ describe('editor state', () => {
     state = setIspHandoff(state, modem, { mode: 'static' });
     expect(isp(state).mode).toBe('static');
   });
+
+  it('setIspHandoff rejects an invalid mode and preserves state (#68 review)', () => {
+    let state = addPreset(initialState, 'modem');
+    const modem = state.topology.devices[0]!.id;
+    state = setIspHandoff(state, modem, {
+      mode: 'nope' as 'pppoe',
+    });
+    expect(state.notice).toMatch(/invalid/i);
+    const chassis = state.topology.devices.find((d) => d.id === modem)!;
+    const fn = chassis.functions.find((f) => f.kind === 'isp-handoff')!;
+    if (fn.kind !== 'isp-handoff') throw new Error('expected isp-handoff');
+    // Rejected patch: mode stays the shipped pppoe.
+    expect(fn.mode).toBe('pppoe');
+    expect(fn.vlanTag).toBe(500);
+  });
   it('setPvid writes ingress only — untaggedVlans is untouched (ADR 0008)', () => {
     let state = initialState;
     const placedSw = placed(state, 'switch');

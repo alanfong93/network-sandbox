@@ -45,6 +45,16 @@ export function setIspHandoff(
   deviceId: DeviceId,
   patch: { mode?: 'pppoe' | 'dhcp' | 'static'; vlanTag?: VlanId },
 ): EditorState {
+  // Runtime guard, not just the type: the setter is an exported API and
+  // the onChange call site asserts its input (#68 review).
+  const modeValid =
+    patch.mode === undefined ||
+    patch.mode === 'pppoe' ||
+    patch.mode === 'dhcp' ||
+    patch.mode === 'static';
+  if (!modeValid) {
+    return { ...state, notice: 'ISP mode invalid' };
+  }
   const tagValid =
     patch.vlanTag === undefined ||
     (Number.isInteger(patch.vlanTag) &&
