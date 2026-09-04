@@ -1,5 +1,5 @@
 import type { DeviceId } from '../src/index';
-import { exportSandbox, importSandbox } from './jsonio';
+import { divergentScopeWarning, exportSandbox, importSandbox } from './jsonio';
 import { PRESETS } from './presets';
 import { renderDeviceList, renderInspector, renderTrace } from './render';
 import {
@@ -153,7 +153,17 @@ function maxSuffix(topology: EditorState['topology']): number {
 async function importJson(file: File): Promise<void> {
   try {
     const topology = importSandbox(await file.text());
-    state = { ...initialState, topology, seq: maxSuffix(topology) };
+    // Import-only limitation, named where the user meets it (#86): the
+    // engine's standalone DHCP model is one VLAN (src/dhcp.ts), so a
+    // multi-scope chassis answers on chassis.vlan only. Warn, never
+    // reject - the topology is legal.
+    const warning = divergentScopeWarning(topology);
+    state = {
+      ...initialState,
+      topology,
+      seq: maxSuffix(topology),
+      notice: warning ?? null,
+    };
     lastTraceRender = null;
     sendFrom = null;
     render();
