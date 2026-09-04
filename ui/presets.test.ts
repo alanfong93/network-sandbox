@@ -200,6 +200,31 @@ describe('presets', () => {
     expect(colliding, `duplicate MACs: ${[...new Set(colliding)].join(', ')}`).toEqual([]);
   });
 
+  it('every MAC the derivation can produce is a valid EUI-48 and pairwise distinct, past the old single-byte wrap (#85)', () => {
+    // The single-byte form (02:00:00:00:00:xx) stopped being a valid EUI-48
+    // at seq 64 - the value wrapped into a 3-hex-digit last field. The
+    // contract covers every slot the derivation can hand out, so this
+    // sweeps the raw namespace far past that boundary (1024 seqs x 4
+    // suffixes), asserting both the six-octet shape and injectivity.
+    const seen = new Set<string>();
+    const colliding: string[] = [];
+    for (let seq = 1; seq <= 1024; seq++) {
+      for (const mac of [
+        ...presetMac(seq, 0),
+        ...presetMac(seq, 1),
+        ...presetMac(seq, 2),
+        ...presetMac(seq, 3),
+      ]) {
+        if (!/^([0-9a-f]{2}:){5}[0-9a-f]{2}$/.test(mac)) {
+          throw new Error(`invalid EUI-48 at seq ${seq}: ${mac}`);
+        }
+        if (seen.has(mac)) colliding.push(mac);
+        seen.add(mac);
+      }
+    }
+    expect(colliding, `duplicate MACs: ${[...new Set(colliding)].join(', ')}`).toEqual([]);
+  });
+
   it('the place-L3-switch-then-host workflow has no MAC self-collision (#85, the traced failure)', () => {
     // The exact workflow #85 traced: L3 switch at seq 1, then the host to
     // cable at seq 2. The old derivation made svi20's iface MAC equal the
@@ -249,4 +274,17 @@ function collectStpBaseMacs(chassis: { functions: unknown[] }): string[] {
     }
   }
   return macs;
+}
+
+/**
+ * Reaches the derivation's raw namespace directly: the presets only ask
+ * for suffixes 0-2 today, but the band reserves 0-3 and the contract
+ * covers every slot the formula can hand out.
+ */
+function presetMac(seq: number, suffix: number): string[] {
+  const n = seq * 4 + suffix;
+  const hex = (value: number): string => value.toString(16).padStart(2, '0');
+  return [
+    `02:${hex((n >> 24) & 0xff)}:${hex((n >> 16) & 0xff)}:${hex((n >> 8) & 0xff)}:${hex(n & 0xff)}:00`,
+  ];
 }

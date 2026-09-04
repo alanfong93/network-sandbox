@@ -10,12 +10,20 @@ export interface PresetDef {
 /**
  * Identity MACs are a flat namespace across the whole topology: a chassis
  * at seq N and an iface at seq M, suffix S must never collide, in any
- * placement order. Bands of four per seq keep chassis identity (suffix 0)
- * and ifaces (suffixes 1-3) disjoint across every seq (#85) - the
+ * placement order. The identity integer is banded (seq*4 + suffix: chassis
+ * identity at suffix 0, ifaces at 1-3) and spread across the last three
+ * octets so it stays a valid EUI-48 for every seq the UI can produce - the
+ * single-byte form wrapped into 3-hex-digit fields at seq 64 (#85). The
  * property test in presets.test.ts is the contract, not this formula.
  */
 function mac(seq: number, suffix = 0): string {
-  return `02:00:00:00:00:${(seq * 4 + suffix).toString(16).padStart(2, '0')}`;
+  const n = seq * 4 + suffix;
+  const o0 = n & 0xff;
+  const o1 = (n >> 8) & 0xff;
+  const o2 = (n >> 16) & 0xff;
+  const o3 = (n >> 24) & 0xff;
+  const hex = (value: number): string => value.toString(16).padStart(2, '0');
+  return `02:${hex(o3)}:${hex(o2)}:${hex(o1)}:${hex(o0)}:00`;
 }
 
 function port(id: string, ownedBy: string): Chassis['ports'][number] {
