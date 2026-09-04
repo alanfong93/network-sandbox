@@ -291,6 +291,64 @@ export function setPortMode(
   }));
 }
 
+/**
+ * STP bridge priority lives on the stp function, not the chassis or the
+ * port. A chassis with no stp function stays bare (#67) - the setter is a
+ * no-op there, never inventing a function.
+ */
+export function setStpPriority(
+  state: EditorState,
+  deviceId: DeviceId,
+  priority: number,
+): EditorState {
+  // 802.1D bridge priority: 0..61440 in steps of 4096 (the priority field
+  // occupies the top 4 bits of the bridge id). 0 is legal - it is the
+  // value that guarantees root - and non-multiples are not bridge ids.
+  const valid =
+    Number.isInteger(priority) &&
+    priority >= 0 &&
+    priority <= 61440 &&
+    priority % 4096 === 0;
+  if (!valid) {
+    return {
+      ...state,
+      notice: 'STP priority must be 0..61440 in steps of 4096',
+    };
+  }
+  return withChassis(state, deviceId, (chassis) => ({
+    ...chassis,
+    functions: chassis.functions.map((fn) =>
+      fn.kind === 'stp' ? { ...fn, priority } : fn,
+    ),
+  }));
+}
+
+/** The per-port admission rule bridge.ts enforces at ingress. */
+export function setPortAcceptable(
+  state: EditorState,
+  deviceId: DeviceId,
+  portId: string,
+  acceptableFrameTypes: 'all' | 'tagged-only' | 'untagged-only',
+): EditorState {
+  return withMember(state, deviceId, portId, (member) => ({
+    ...member,
+    acceptableFrameTypes,
+  }));
+}
+
+/** The 802.1Q ingress-filtering flag on the bridge port. */
+export function setPortIngressFiltering(
+  state: EditorState,
+  deviceId: DeviceId,
+  portId: string,
+  ingressFiltering: boolean,
+): EditorState {
+  return withMember(state, deviceId, portId, (member) => ({
+    ...member,
+    ingressFiltering,
+  }));
+}
+
 export function setHostAddress(
   state: EditorState,
   deviceId: DeviceId,

@@ -10,9 +10,12 @@ import {
   select,
   setDhcpScope,
   setHostAddress,
+  setPortAcceptable,
+  setPortIngressFiltering,
   setPortMode,
   setPvid,
   setRouterIfaceVlan,
+  setStpPriority,
   setTaggedVlans,
   setUntaggedVlans,
   startLink,
@@ -258,6 +261,35 @@ function onChange(event: Event): void {
         state = setPortMode(state, device, port, input.value as 'access' | 'trunk');
       }
       break;
+    case 'acceptable':
+      if (port) {
+        state = setPortAcceptable(
+          state,
+          device,
+          port,
+          input.value as 'all' | 'tagged-only' | 'untagged-only',
+        );
+      }
+      break;
+    case 'ingress-filtering':
+      if (port) {
+        state = setPortIngressFiltering(
+          state,
+          device,
+          port,
+          (input as HTMLInputElement).checked,
+        );
+      }
+      break;
+    case 'stp-priority': {
+      // A cleared number input reports '' and Number('') is 0 - without
+      // this guard, blanking the field would silently commit priority 0,
+      // the root-guaranteeing value (#95 review). Treat blank as no-op.
+      const raw = input.value.trim();
+      if (raw === '') break;
+      state = setStpPriority(state, device, Number(raw));
+      break;
+    }
     case 'pvid':
       if (port) state = setPvid(state, device, port, Number(input.value));
       break;
