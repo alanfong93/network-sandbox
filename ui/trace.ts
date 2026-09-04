@@ -9,12 +9,19 @@ import type { DeviceId, Flow, Topology } from '../src/index';
 
 /**
  * The cold-cache precondition is user-visible, not an implementation footnote
- * (ADR 0010): the ARP exchange at the top of every trace is correct here.
+ * (ADR 0010): the ARP exchange at the top of every ICMP trace is correct here.
+ * A DHCP DISCOVER has no ARP leg (broadcast, needsArp false), so its notice
+ * names what actually runs cold instead - the FDB every flood consults.
  */
 export const COLD_TRACE_NOTICE =
   'Every trace starts cold: the ARP exchange below runs fresh on each send. ' +
   'There is no ARP cache and nothing carries between traces, so this is ' +
   'correct here, not a bug.';
+
+export const COLD_DISCOVER_NOTICE =
+  'Every trace starts cold: the MAC tables consulted by the flood below are ' +
+  'fresh on each send, so the broadcast reaches every member. Nothing ' +
+  'carries between traces - this is correct here, not a bug.';
 
 /** SPEC: timers are not modelled — the limit belongs in the UI, not just in the spec. */
 export const NO_TIMERS_NOTICE =
@@ -49,14 +56,19 @@ export function runTrace(
   const warnings = ctx.warnings.map((warning) =>
     format(warningAsFormatInput(warning)),
   );
-  const discover = 'kind' in args && args.kind === 'dhcp-discover';
-  const result = runFlow(ctx, {
-    from: args.from,
-    dstIp: discover ? '255.255.255.255' : (args as { dstIp: string }).dstIp,
-    payload: discover
-      ? { kind: 'dhcp', dhcpType: 'discover' }
-      : { kind: 'icmp' },
-  });
+  const icmpArgs = 'dstIp' in args ? args : undefined;
+  const result =
+    icmpArgs === undefined
+      ? runFlow(ctx, {
+          from: args.from,
+          dstIp: '255.255.255.255',
+          payload: { kind: 'dhcp', dhcpType: 'discover' },
+        })
+      : runFlow(ctx, {
+          from: icmpArgs.from,
+          dstIp: icmpArgs.dstIp,
+          payload: { kind: 'icmp' },
+        });
   const flowNotes = result.observations.map((observation) =>
     format(flowObservationAsFormatInput(observation)),
   );
@@ -65,7 +77,10 @@ export function runTrace(
     request: result.flow.request.hops.map((hop) => hop.reason),
     reply: result.flow.reply?.hops.map((hop) => hop.reason) ?? [],
     flowNotes,
-    notices: [COLD_TRACE_NOTICE, NO_TIMERS_NOTICE],
+    notices: [
+      icmpArgs === undefined ? COLD_DISCOVER_NOTICE : COLD_TRACE_NOTICE,
+      NO_TIMERS_NOTICE,
+    ],
     outcome: result.flow.outcome,
   };
 }

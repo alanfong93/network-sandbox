@@ -101,6 +101,12 @@ describe('trace', () => {
     expect(trace.request.length).toBeGreaterThan(0);
     expect(trace.request.some((line) => line.match(/flood/i))).toBe(true);
     expect(trace.request.some((line) => line.match(/offer/i))).toBe(false);
+    // No ARP leg: a DISCOVER is broadcast (needsArp false, src/send.ts).
+    expect(trace.request.some((line) => line.match(/arp/i))).toBe(false);
+    // The DISCOVER-specific cold notice names MAC tables, not the ARP
+    // exchange that does not run here (ADR 0010 honesty).
+    expect(trace.notices.join('\n')).toMatch(/mac tables/i);
+    expect(trace.notices.join('\n')).not.toMatch(/arp exchange below/i);
     // Request-only trace: a DISCOVER is broadcast, there is no ICMP reply
     // leg to render (flow.ts early-returns for non-ICMP payloads).
     expect(trace.reply).toEqual([]);
@@ -133,16 +139,21 @@ describe('trace', () => {
     state = setUntaggedVlans(state, sw!, '4', [10]);
     const trace = runTrace(state.topology, { from: h1!, kind: 'dhcp-discover' });
     // Row 11's hop truth before #63: both servers forward an answer back
-    // (the OFFER), each as a dhcp-server hop naming the server chassis.
+    // (the OFFER), each as a dhcp-server hop naming the server chassis -
+    // exactly two deliveries, one per server, never a duplicated single
+    // delivery or an unrelated request-leg match.
     const serverLines = trace.request.filter((line) =>
       line.match(/dhcp-server/),
     );
-    expect(serverLines.length).toBeGreaterThanOrEqual(2);
-    expect(trace.request.some((line) => line.includes(srv1!))).toBe(true);
-    expect(trace.request.some((line) => line.includes(srv2!))).toBe(true);
-    // The OFFERs come back to the discovering host.
+    expect(serverLines.length).toBe(2);
+    expect(
+      trace.request.filter((line) => line.includes(srv1!)).length,
+    ).toBe(1);
+    expect(
+      trace.request.filter((line) => line.includes(srv2!)).length,
+    ).toBe(1);
     expect(
       trace.request.filter((line) => line.match(/delivered at host-1/)).length,
-    ).toBeGreaterThanOrEqual(2);
+    ).toBe(2);
   });
 });
