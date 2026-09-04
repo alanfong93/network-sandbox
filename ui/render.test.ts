@@ -230,10 +230,12 @@ describe('inspector', () => {
     chassis.functions = [...chassis.functions, secondBridge];
     const html = renderInspector(select(state, usw));
     // Two notes, one per VLAN-blind bridge, each with its own count.
+    // The trailing period anchors the match: "domains" or any suffix after
+    // "domain" must not satisfy the assertion (review cycle 2).
     const occurrences = html.match(/no VLAN awareness/g)?.length ?? 0;
     expect(occurrences).toBe(2);
-    expect(html).toMatch(/all 3 ports are one broadcast domain/);
-    expect(html).toMatch(/all 1 ports are one broadcast domain/);
+    expect(html).toMatch(/all 3 ports are one broadcast domain\./);
+    expect(html).toMatch(/all 1 ports are one broadcast domain\./);
   });
 
   it('a VLAN-blind bridge with zero members renders no capability note (#97)', () => {
