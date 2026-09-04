@@ -201,19 +201,16 @@ export function renderInspector(state: EditorState): string {
         `value="${stp.priority}"></label>`,
     );
   }
-  // One note per VLAN-blind chassis, not per port: it states a device-wide
-  // capability, not a per-port setting. A drop is an outcome, and this
-  // device is the lesson of row 5 (#67, ADR 0007).
-  const vlanBlindBridge = chassis.functions.find(
-    (fn) => fn.kind === 'bridging' && !fn.vlanAware,
-  );
-  if (vlanBlindBridge?.kind === 'bridging') {
-    // The count is the bridge's members - the actual broadcast domain -
-    // not the chassis's whole port list (#96 review cycle 1). For the
-    // standard unmanaged preset those are the same 4 ports.
-    const portCount = vlanBlindBridge.members.length;
+  // One note per VLAN-blind bridge, not per port or per chassis: each
+  // bridge states its own member count - the broadcast domain it actually
+  // forms (#97). A zero-member VLAN-blind bridge renders no note: "all 0
+  // ports are one broadcast domain" states nothing. A drop is an outcome,
+  // and this device is the lesson of row 5 (#67, ADR 0007).
+  for (const fn of chassis.functions) {
+    if (fn.kind !== 'bridging' || fn.vlanAware) continue;
+    if (fn.members.length === 0) continue;
     parts.push(
-      `<p class="hint">This switch has no VLAN awareness - all ${portCount} ` +
+      `<p class="hint">This switch has no VLAN awareness - all ${fn.members.length} ` +
         `ports are one broadcast domain. No configurable per-port VLAN ` +
         `membership (ADR 0007).</p>`,
     );

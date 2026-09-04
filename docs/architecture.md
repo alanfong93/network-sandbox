@@ -163,9 +163,10 @@ Acceptable frame types admission rule — the one admission control the engine
 enforces even on a VLAN-blind bridge — and a VLAN-aware member port adds the
 Ingress filtering flag, because one control edits one 802.1Q mechanism
 (ADR 0008). A VLAN-blind bridge hides its inert membership controls (mode,
-PVID, untagged, tagged) and states the capability in one note per chassis;
-the owning function's `vlanAware` flag decides, never the preset id
-(ADR 0007, ADR 0013). There is no canvas
+PVID, untagged, tagged), and each VLAN-blind bridging function states the
+capability in one note carrying its own member count - an empty bridge
+states nothing; the owning function's `vlanAware` flag decides, never the
+preset id (ADR 0007, ADR 0013). There is no canvas
 and no layout state: the Topology JSON is the file, and `ui/jsonio.ts` hands it
 to the same `toJson` / `fromJson` envelope as everything else.
 
