@@ -92,4 +92,32 @@ describe('sandbox JSON import/export (#57 envelope)', () => {
     server.scopes = [first, { ...first }];
     expect(divergentScopeWarning(importSandbox(exportSandbox(state.topology)))).toBeNull();
   });
+
+  it('import stays silent for divergent scopes on a routing chassis - decideDhcp serves every scope (#86)', () => {
+    // A dhcp-server sibling on a routing chassis never runs
+    // standaloneDhcpDecision (src/walk.ts checks routing before the
+    // fallback); decideDhcp matches scopes per routing iface, so divergent
+    // scopes there are legal, not stranded.
+    let state = initialState;
+    state = addPreset(state, 'router');
+    const rtr = state.topology.devices[0]!;
+    const rt = rtr.functions.find((fn) => fn.kind === 'routing');
+    if (rt?.kind !== 'routing') throw new Error('expected routing');
+    const scope10 = {
+      vlan: 10,
+      poolStart: '192.168.10.100',
+      poolEnd: '192.168.10.199',
+      gateway: '192.168.10.1',
+      resolver: '192.168.10.1',
+    };
+    rtr.functions = [
+      ...rtr.functions,
+      {
+        kind: 'dhcp-server' as const,
+        id: 'dhcp',
+        scopes: [scope10, { ...scope10, vlan: 20 }],
+      },
+    ];
+    expect(divergentScopeWarning(importSandbox(exportSandbox(state.topology)))).toBeNull();
+  });
 });

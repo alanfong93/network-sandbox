@@ -18,9 +18,19 @@ export function importSandbox(text: string): Topology {
  * run, degraded: only the scope matching chassis.vlan can answer. The
  * topology is legal, so import warns rather than rejects (#86) - and only
  * on import; there is no runtime nag.
+ *
+ * Standalone only: a dhcp-server sibling on a routing chassis is served by
+ * the routing path's decideDhcp (src/walk.ts checks routing before this
+ * fallback), where every scope can answer through its own iface - warning
+ * there would be a false positive.
  */
 export function divergentScopeWarning(topology: Topology): string | null {
   for (const chassis of topology.devices) {
+    // Standalone only: a routing chassis runs its own decideDhcp branch
+    // (src/walk.ts checks routing before the standalone fallback), where
+    // every scope answers through its routing iface.
+    const isRouting = chassis.functions.some((fn) => fn.kind === 'routing');
+    if (isRouting) continue;
     const server = chassis.functions.find((fn) => fn.kind === 'dhcp-server');
     if (server?.kind !== 'dhcp-server') continue;
     const vlans = [...new Set(server.scopes.map((scope) => scope.vlan))];
