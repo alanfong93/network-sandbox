@@ -7,8 +7,23 @@ export interface PresetDef {
   build: (id: DeviceId, seq: number) => Chassis;
 }
 
+/**
+ * Identity MACs are a flat namespace across the whole topology: a chassis
+ * at seq N and an iface at seq M, suffix S must never collide, in any
+ * placement order. The identity integer is banded (seq*4 + suffix: chassis
+ * identity at suffix 0, ifaces at 1-3) and spread across the last three
+ * octets so it stays a valid EUI-48 for every seq the UI can produce - the
+ * single-byte form wrapped into 3-hex-digit fields at seq 64 (#85). The
+ * property test in presets.test.ts is the contract, not this formula.
+ */
 function mac(seq: number, suffix = 0): string {
-  return `02:00:00:00:00:${(seq * 2 + suffix).toString(16).padStart(2, '0')}`;
+  const n = seq * 4 + suffix;
+  const o0 = n & 0xff;
+  const o1 = (n >> 8) & 0xff;
+  const o2 = (n >> 16) & 0xff;
+  const o3 = (n >> 24) & 0xff;
+  const hex = (value: number): string => value.toString(16).padStart(2, '0');
+  return `02:${hex(o3)}:${hex(o2)}:${hex(o1)}:${hex(o0)}:00`;
 }
 
 function port(id: string, ownedBy: string): Chassis['ports'][number] {
@@ -310,9 +325,12 @@ export const PRESETS: PresetDef[] = [
         ],
         {
           // The server answers from its own identity (#72): host-like
-          // addressing on the service VLAN.
+          // addressing on the service VLAN. The IP derives from seq so
+          // two placed servers never share one address (.2 was the
+          // every-placement constant) and stays clear of the pool and
+          // gateway (#85).
           mac: mac(seq),
-          ip: '192.168.10.2',
+          ip: `192.168.10.${seq + 1}`,
           prefix: 24,
           vlan: 10,
         },
