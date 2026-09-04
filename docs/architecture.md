@@ -150,7 +150,11 @@ egress is gated by the member's VLANs at egress-membership); editing a
 dhcp-server scope's vlan moves the chassis addressing VLAN with it, because
 the engine's standalone answer gates on `chassis.vlan` and a drifted scope
 could never answer; the modem inspector names the
-ISP check (`mode` + required VLAN); the trace panel renders the engine's own sentences — hops
+ISP check (`mode` + required VLAN); the trace panel offers two send types —
+ICMP echo to a destination IP, or DHCP DISCOVER, a broadcast that hides the
+destination input and renders request hops only (the flood path and the
+OFFERs; the observation sentences arrive with #63) — and renders the engine's
+own sentences — hops
 from the walk, observations and the ADR 0011 warning through `format()` — plus
 the cold-trace notice (ADR 0010) and the no-timers notice. There is no canvas
 and no layout state: the Topology JSON is the file, and `ui/jsonio.ts` hands it
