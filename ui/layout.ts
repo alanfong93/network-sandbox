@@ -3,8 +3,8 @@ import type { DeviceId, Topology } from '../src/index';
 export type Layout = Record<DeviceId, { x: number; y: number }>;
 
 const COLS = 4;
-const GX = 160;
-const GY = 120;
+const GX = 200;
+const GY = 160;
 
 export function pruneLayout(raw: unknown, topology: Topology): Layout {
   if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return {};

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { addPreset, completeLink, initialState, setPvid, startLink } from './state';
 import { runTrace } from './trace';
-import { allHops, floodGroup, stepIndex, tokenPoint } from './replay';
+import { allHops, floodGroup, stepIndex, tokenMarks, tokenPoint } from './replay';
 import type { Hop } from '../src/index';
 
 function threeBoxLine() {
@@ -105,6 +105,17 @@ describe('flood concurrent tokens (#108)', () => {
     const fwd = hops.findIndex((hop) => hop.action === 'forwarded' || hop.action === 'delivered');
     expect(fwd).toBeGreaterThanOrEqual(0);
     expect(floodGroup(hops, fwd)).toHaveLength(1);
+  });
+
+  it('tokenMarks carry a from-point so the packet can ride the previous hop', () => {
+    const { state, h1, lastIp } = threeBoxLine();
+    const hops = allHops(runTrace(state.topology, { from: h1, dstIp: lastIp }));
+    expect(hops.length).toBeGreaterThan(1);
+    const marks = tokenMarks(hops, 1, state.topology, null);
+    expect(marks.length).toBeGreaterThan(0);
+    const prev = tokenPoint(hops[0]!, state.topology, null);
+    expect(marks[0]!.from).toEqual({ x: prev!.x, y: prev!.y });
+    expect(marks.length).toBeLessThanOrEqual(hops.length);
   });
 
   it('consecutive flooded hops on one device draw one token per recorded hop, not more', () => {

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { addPreset, completeLink, initialState, select, startLink } from './state';
 import { autoPlace } from './layout';
-import { renderCanvas } from './canvas';
+import { handlePoint, renderCanvas } from './canvas';
 
 describe('SVG canvas view (#105)', () => {
   it('lists every device as a labelled box with data-device', () => {
@@ -114,6 +114,28 @@ describe('SVG canvas view (#105)', () => {
     const state = addPreset(initialState, 'host');
     const svg = renderCanvas(state, null, { x: 10, y: 20, w: 30, h: 40 });
     expect(svg).toContain('viewBox="10 20 30 40"');
+  });
+
+  it('rides the cable when a from-point is given', () => {
+    const state = addPreset(initialState, 'host');
+    const svg = renderCanvas(state, { x: 40, y: 50, from: { x: 10, y: 20 }, action: 'forwarded' });
+    expect(svg).toMatch(/class="token forwarded"/);
+    expect(svg).toContain('from="10"');
+    expect(svg).toContain('to="40"');
+  });
+
+  it('a live wired hop is not classed wireless', () => {
+    let state = initialState;
+    state = addPreset(state, 'host');
+    state = addPreset(state, 'host');
+    const [a, b] = state.topology.devices.map((d) => d.id);
+    state = startLink(state, a!, '1');
+    state = completeLink(state, b!, '1');
+    const from = handlePoint(state.topology, state.layout, a!, '1')!;
+    const to = handlePoint(state.topology, state.layout, b!, '1')!;
+    const svg = renderCanvas(state, { ...to, from, action: 'forwarded' });
+    expect(svg).toMatch(/class="[^"]*wired[^"]*live/);
+    expect(svg).not.toMatch(/class="[^"]*wireless[^"]*live/);
   });
 
   it('does not emit drag, drop, or hop-token markup', () => {
