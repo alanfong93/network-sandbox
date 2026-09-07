@@ -1,4 +1,5 @@
 import type { DeviceId, Topology } from '../src/index';
+import { viewBoxAttr, type Camera } from './camera';
 import { autoPlace, type Layout } from './layout';
 
 const BOX_W = 120;
@@ -46,6 +47,21 @@ function portPoint(
   };
 }
 
+export function contentSize(state: {
+  topology: Topology;
+  layout: Layout | null;
+}): { maxX: number; maxY: number } {
+  const layout = layoutForDisplay(state.topology, state.layout);
+  let maxX = 160;
+  let maxY = 120;
+  for (const device of state.topology.devices) {
+    const origin = layout[device.id] ?? { x: 0, y: 0 };
+    maxX = Math.max(maxX, origin.x + BOX_W + 16);
+    maxY = Math.max(maxY, origin.y + BOX_H + 24);
+  }
+  return { maxX, maxY };
+}
+
 export function renderCanvas(
   state: {
     topology: Topology;
@@ -54,6 +70,7 @@ export function renderCanvas(
     pendingLink?: { device: DeviceId; port: string } | null;
   },
   token?: { x: number; y: number } | readonly { x: number; y: number }[] | null,
+  camera?: Camera | null,
 ): string {
   const layout = layoutForDisplay(state.topology, state.layout);
   const devices = state.topology.devices
@@ -113,13 +130,7 @@ export function renderCanvas(
     })
     .join('');
 
-  let maxX = 160;
-  let maxY = 120;
-  for (const device of state.topology.devices) {
-    const origin = layout[device.id] ?? { x: 0, y: 0 };
-    maxX = Math.max(maxX, origin.x + BOX_W + 16);
-    maxY = Math.max(maxY, origin.y + BOX_H + 24);
-  }
+  const { maxX, maxY } = contentSize(state);
   const tokens = token == null ? [] : Array.isArray(token) ? token : [token];
   const marker = tokens
     .map(
@@ -127,8 +138,9 @@ export function renderCanvas(
         `<circle class="token" cx="${item.x}" cy="${item.y}" r="6" />`,
     )
     .join('');
+  const box = camera ?? { x: 0, y: 0, w: maxX, h: maxY };
   return (
-    `<svg class="canvas-svg" viewBox="0 0 ${maxX} ${maxY}" ` +
+    `<svg class="canvas-svg" viewBox="${viewBoxAttr(box)}" ` +
     `xmlns="http://www.w3.org/2000/svg">${links}${devices}${marker}</svg>`
   );
 }
