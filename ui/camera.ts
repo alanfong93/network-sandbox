@@ -30,3 +30,15 @@ export function zoomAt(
 export function viewBoxAttr(camera: Camera): string {
   return `${camera.x} ${camera.y} ${camera.w} ${camera.h}`;
 }
+
+export function screenDeltaToWorld(
+  camera: Camera,
+  dx: number,
+  dy: number,
+  cssW: number,
+  cssH: number,
+): { x: number; y: number } {
+  const scale = Math.min(cssW / camera.w, cssH / camera.h);
+  const safe = Math.max(scale, 1e-6);
+  return { x: dx / safe, y: dy / safe };
+}

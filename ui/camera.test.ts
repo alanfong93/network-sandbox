@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { addPreset, initialState } from './state';
 import { exportSandbox } from './jsonio';
-import { fitContent, panCamera, viewBoxAttr, zoomAt } from './camera';
+import { fitContent, panCamera, screenDeltaToWorld, viewBoxAttr, zoomAt } from './camera';
 
 describe('canvas camera (#116)', () => {
   it('zoom toward a world point keeps that point stable', () => {
@@ -36,5 +36,14 @@ describe('canvas camera (#116)', () => {
 
   it('viewBoxAttr serialises world units', () => {
     expect(viewBoxAttr({ x: 1, y: 2, w: 3, h: 4 })).toBe('1 2 3 4');
+  });
+
+  it('screenDeltaToWorld uses uniform meet scale when aspect differs', () => {
+    const camera = { x: 0, y: 0, w: 200, h: 100 };
+    const same = screenDeltaToWorld(camera, 20, 10, 200, 100);
+    expect(same).toEqual({ x: 20, y: 10 });
+    const letterbox = screenDeltaToWorld(camera, 20, 0, 400, 400);
+    expect(letterbox.x).toBeCloseTo(10);
+    expect(letterbox.y).toBe(0);
   });
 });

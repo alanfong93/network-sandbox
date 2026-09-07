@@ -1,7 +1,7 @@
 import type { DeviceId } from '../src/index';
 import { divergentScopeWarning, exportSandbox, importSandbox } from './jsonio';
 import { PRESETS } from './presets';
-import { fitContent, panCamera, zoomAt, type Camera } from './camera';
+import { fitContent, panCamera, screenDeltaToWorld, zoomAt, type Camera } from './camera';
 import { contentSize, renderCanvas } from './canvas';
 import { renderDeviceList, renderInspector, renderTrace } from './render';
 import { autoPlace } from './layout';
@@ -597,13 +597,14 @@ document.addEventListener('pointerdown', (event) => {
 document.addEventListener('pointermove', (event) => {
   if (panView && camera) {
     const svg = panView.svg;
-    const worldDx =
-      ((event.clientX - panView.clientX) * panView.origin.w) /
-      Math.max(1, svg.clientWidth);
-    const worldDy =
-      ((event.clientY - panView.clientY) * panView.origin.h) /
-      Math.max(1, svg.clientHeight);
-    camera = panCamera(panView.origin, worldDx, worldDy);
+    const delta = screenDeltaToWorld(
+      panView.origin,
+      event.clientX - panView.clientX,
+      event.clientY - panView.clientY,
+      Math.max(1, svg.clientWidth),
+      Math.max(1, svg.clientHeight),
+    );
+    camera = panCamera(panView.origin, delta.x, delta.y);
     render();
     const next = document.querySelector('svg.canvas-svg');
     if (next instanceof SVGSVGElement) panView.svg = next;
