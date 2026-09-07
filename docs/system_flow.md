@@ -100,15 +100,22 @@ direction died. It is not a pass/fail field.
 
 ## UI loop
 
-The browser UI runs the same engine, driven by clicks. The loop is: place a
-preset box, link two free ports, edit in the inspector, send, read sentences,
-export. The topology never leaves the tab except as the sandbox JSON file.
+The browser UI runs the same engine, driven by clicks. The shipped loop is:
+place a preset box, link two free ports, edit in the inspector, send, read
+sentences, export. Under ADR 0029 a later canvas is also the builder and
+hop-replay surface: drop a box, click two ports to link, drag to place.
+Send still produces `Hop[]`; replay consumes those completed hops — it is
+not a clock (ADR 0003) and not a verdict (ADR 0002). The canvas is not
+shipped. The topology never leaves the tab except as the sandbox JSON file
+(optional `layout` sidecar).
 
 ```mermaid
 flowchart TD
-    PA[Click a palette box] --> AP[addPreset writes a chassis<br>plus functions]
-    AP --> SE{Link pending?}
+    PA[Click a palette box<br>or drop on canvas] --> AP[addPreset writes a chassis<br>plus functions]
+    AP --> DR[Drag places the box<br>layout sidecar only]
+    DR --> SE{Link pending?}
     SE -->|yes| CL[completeLink joins<br>an explicit free port]
+    SE -->|click two ports| CL
     SE -->|no| SL[select the device]
     SL --> ST[Start link on a chosen<br>free port]
     ST --> SE
@@ -116,10 +123,13 @@ flowchart TD
     IN --> SE
     SE --> SD[Send: createRunContext<br>runFlow on the topology]
     SD --> HO[Hops, STP warning,<br>cold-trace notice]
-    HO --> SE
-    SD --> EX[Export sandbox JSON<br>or import one]
+    HO --> RP[Hop replay on canvas<br>consumes completed Hop]
+    RP --> SE
+    SD --> EX[Export sandbox JSON<br>layout sidecar optional]
     EX --> SE
     style SD fill:#d7f5d7,color:#000
     style HO fill:#d7f5d7,color:#000
     style EX fill:#d7f5d7,color:#000
+    style RP fill:#fff3cd,color:#000
+    style DR fill:#fff3cd,color:#000
 ```

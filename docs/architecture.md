@@ -3,7 +3,8 @@
 Headless TypeScript engine. Nothing here talks to a server. Persistence is a
 JSON file the user keeps — there is no database. The in-memory Topology is
 that file: `toJson` / `fromJson` round-trip it through the version-1 sandbox
-envelope `{format, version, topology}`.
+envelope `{format, version, topology}`. An optional `layout` sibling
+(device id → `{x,y}`) is UI-owned; the engine never reads it (ADR 0029).
 
 This slice is the floor, the run context, one pass through a bridging
 function, the topology walk that follows links, L3: hosts, ARP, routing
@@ -79,7 +80,7 @@ flowchart LR
 | Module | Holds |
 |---|---|
 | `src/model.ts` | Topology, chassis, functions, frames, hops, flows. `nativeVlanOf` derives native VLAN from `untaggedVlans` — the field is not stored. Chassis `vlan` is the VLAN host addressing answers on. `Link.up` is omitted-is-up: down is a link property, not a device role (ADR 0020). |
-| `src/json.ts` | Version-1 sandbox envelope `{format, version, topology}`. `taggedVlans` / `untaggedVlans` encode as number arrays. `fdb` and `stp.state` are omitted on write and empty Maps on parse. Unknown `fn.kind` and unsupported versions fail by name (`UnknownFunctionKindError`, `UnsupportedSandboxVersionError`). No AJV, no `$set` markers (ADR 0026). |
+| `src/json.ts` | Version-1 sandbox envelope `{format, version, topology}`. `taggedVlans` / `untaggedVlans` encode as number arrays. `fdb` and `stp.state` are omitted on write and empty Maps on parse. Extra envelope keys (a later `layout` sidecar) are ignored on parse, so they never become Topology (ADR 0029). Unknown `fn.kind` and unsupported versions fail by name (`UnknownFunctionKindError`, `UnsupportedSandboxVersionError`). No AJV, no `$set` markers (ADR 0026). |
 | `src/reasons.ts` | `PIPELINE_STEPS`, `OUTCOMES`, `ReasonCode` as their product. |
 | `src/defaults.ts` | Every tunable the engine will read, including encapsulation overheads. Named `ieee-defaults` v1 (ADR 0012). `unmanagedTag: 'pass'` is the built-in capability; a fixture profile may select `'strip'`. Usable MTU is computed, never stored. |
 | `src/format.ts` | Turns a structured hop, trace, flow or warning into a sentence. An `Estimate` (`kind: 'estimate'`, non-empty `assumptions`) is not a `FormatInput` and never passes through `format` — `formatEstimate` renders it, naming itself and listing its assumptions (ADR 0024). |
@@ -167,9 +168,13 @@ Ingress filtering flag, because one control edits one 802.1Q mechanism
 PVID, untagged, tagged), and each VLAN-blind bridging function states the
 capability in one note carrying its own member count - an empty bridge
 states nothing; the owning function's `vlanAware` flag decides, never the
-preset id (ADR 0007, ADR 0013). There is no canvas
-and no layout state: the Topology JSON is the file, and `ui/jsonio.ts` hands it
-to the same `toJson` / `fromJson` envelope as everything else.
+preset id (ADR 0007, ADR 0013). The shipped UI is the forms editor
+(#58). A later vanilla-SVG canvas is both the topology builder and the
+hop-replay surface (ADR 0029); it is not shipped. Layout is a sandbox-envelope
+sibling `{deviceId: {x,y}}`, never fields on Topology or Chassis. Missing
+layout is valid — the later UI auto-places. `ui/jsonio.ts` still hands
+topology to the same `toJson` / `fromJson` envelope; engine `fromJson`
+ignores extra keys, so layout never reaches the engine.
 
 ```mermaid
 flowchart LR
@@ -178,18 +183,23 @@ flowchart LR
     S --> T[trace.ts<br>createRunContext + runFlow]
     T --> R
     S --> J[jsonio.ts<br>toJson / fromJson]
+    S --> LY[layout sidecar<br>device id to x,y]
+    LY --> R
     R --> M[main.ts<br>DOM wiring]
-    T --> E[engine src/<br>format  runFlow  warnings]
+    T --> E[engine src/<br>topology only]
     J --> E
     P --> E
     style E fill:#d7f5d7,color:#000
     style M fill:#d7f5d7,color:#000
+    style LY fill:#fff3cd,color:#000
 ```
 
 ## Data model
 
 The in-memory graph is the file. `toJson` writes the version-1 envelope;
-`fromJson` parses it back. Canvas coordinates are not Topology. Runtime
+`fromJson` parses topology back. Canvas coordinates are not Topology —
+when present they live on the optional `layout` envelope sibling the UI
+owns (ADR 0029). Missing `layout` is valid. Runtime
 Maps (`fdb`, `stp.state`) are not persisted — `createRunContext` rebuilds
 them.
 
