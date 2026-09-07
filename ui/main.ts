@@ -1,6 +1,7 @@
 import type { DeviceId } from '../src/index';
 import { divergentScopeWarning, exportSandbox, importSandbox } from './jsonio';
 import { PRESETS } from './presets';
+import { renderCanvas } from './canvas';
 import { renderDeviceList, renderInspector, renderTrace } from './render';
 import {
   addPreset,
@@ -77,6 +78,8 @@ function render(): void {
       `or <button type="button" data-action="cancel-link">Cancel</button></p>`
     : '';
   devices.innerHTML =
+    '<h2>Canvas</h2>' +
+    renderCanvas(state) +
     '<h2>Devices</h2>' +
     linking +
     renderDeviceList(state) +

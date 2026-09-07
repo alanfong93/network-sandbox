@@ -38,6 +38,15 @@
       fieldset.port { margin: 0.5rem 0; }
       label { display: block; margin: 0.3rem 0; font-size: 0.85rem; }
       #json-view { width: 100%; min-height: 6rem; margin-top: 0.5rem; font-family: monospace; font-size: 0.8rem; }
+      .canvas-svg { width: 100%; min-height: 12rem; background: #f8f8f8; border-radius: 4px; }
+      .canvas-svg .box { fill: #fff; stroke: #333; }
+      .canvas-svg .device.selected .box { stroke: #06c; stroke-width: 2; }
+      .canvas-svg .port { fill: #06c; }
+      .canvas-svg .link.wired { stroke: #333; fill: none; }
+      .canvas-svg .link.wireless { stroke: #b58900; fill: none; stroke-dasharray: 6 4; }
+      .canvas-svg .link.down { opacity: 0.35; }
+      .canvas-svg .assumption { fill: #b58900; font-size: 10px; }
+      .canvas-svg text { font-size: 12px; fill: #000; }
       .hops li { font-family: monospace; font-size: 0.85rem; margin: 0.15rem 0; }
       @media (max-width: 60rem) {
         body { grid-template-columns: 1fr; }
@@ -46,7 +55,7 @@
     <script type="module" src="./main.ts"></script>
   </head>
   <body>
-    <h1>network-sandbox &mdash; 802.1Q sandbox (no canvas: the topology is the file)</h1>
+    <h1>network-sandbox &mdash; 802.1Q sandbox (the topology is the file)</h1>
     <aside id="palette"></aside>
     <section id="devices"></section>
     <section>
