@@ -369,16 +369,50 @@ trunk carries it like any other VLAN. Missing it from the trunk dies at
 
 ### Sandbox JSON
 
-The versioned envelope `{format, version, topology}` that is the format of
-record ([SPEC.md](docs/SPEC.md) §8 Q2,
+The versioned envelope `{format, version, topology, layout?}` that is the
+format of record ([SPEC.md](docs/SPEC.md) §8 Q2,
 [ADR 0015](docs/adr/0015-import-real-config-before-exporting-it.md),
-[ADR 0026](docs/adr/0026-sandbox-json-encodes-sets-omits-maps.md)).
-`toJson` / `fromJson` in the engine. VLAN Sets encode as number arrays.
-FDB and STP Maps are omitted on write and empty after parse. Unknown
-function kinds and unsupported versions fail by a named error.
+[ADR 0026](docs/adr/0026-sandbox-json-encodes-sets-omits-maps.md),
+[ADR 0029](docs/adr/0029-canvas-is-a-ui-view-and-editor.md)).
+`toJson` / `fromJson` in the engine round-trip `topology`. VLAN Sets encode
+as number arrays. FDB and STP Maps are omitted on write and empty after
+parse. Unknown function kinds and unsupported versions fail by a named
+error. `layout` is an optional UI sidecar; missing is valid. Version stays 1.
 
 - **Do not call it:** *vendor config*, *export* as if it were CLI to paste,
   a `$set`-tagged blob. Canvas `x,y` is not Topology.
+
+### Canvas
+
+The vanilla-SVG view of the topology that is both the **builder** (drop,
+port-click link, drag) and the **hop-replay** surface
+([ADR 0029](docs/adr/0029-canvas-is-a-ui-view-and-editor.md)). It is a UI of
+the file, not a second network. The shipped forms editor (#58) stays. The
+canvas is not shipped as of ADR 0029.
+
+- **Do not call it:** *screenshot-as-network*, *the network*, a *simulator
+  clock*. Drawing boxes does not make coordinates Topology.
+
+### Layout
+
+The optional sandbox-envelope sibling `layout`, keyed by device id to
+`{x,y}` ([ADR 0029](docs/adr/0029-canvas-is-a-ui-view-and-editor.md)). Missing
+is valid — the later UI auto-places. Never a field on `Topology` or
+`Chassis`. Version stays 1.
+
+- **Do not call it:** *localStorage map*, *coordinates on Topology*,
+  *screenshot*. A tab-only map cannot round-trip with the file.
+
+### Hop replay
+
+Playing the completed `Hop[]` from a send on the canvas. It consumes hops
+the walk already produced. It is not a clock
+([ADR 0003](docs/adr/0003-converged-state-no-timers.md)) and not a verdict
+([ADR 0002](docs/adr/0002-trace-not-verdict.md)). Flood multiplying-tokens
+is a later issue.
+
+- **Do not call it:** *timer*, *timed simulation*, *verdict*, *pass/fail
+  overlay*.
 
 ### Service
 
