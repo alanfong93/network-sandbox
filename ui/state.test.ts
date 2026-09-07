@@ -230,6 +230,24 @@ describe('editor state', () => {
     expect(state.topology.links).toHaveLength(0);
   });
 
+  it('removeDevice drops the layout entry and does not auto-fill holes (#104)', () => {
+    let state = initialState;
+    const placed2 = placed(state, 'host', 2);
+    state = placed2.state;
+    const [a, b] = placed2.ids;
+    state = {
+      ...state,
+      layout: { [a!]: { x: 1, y: 2 }, [b!]: { x: 3, y: 4 } },
+    };
+    state = removeDevice(state, a!);
+    expect(state.layout).toEqual({ [b!]: { x: 3, y: 4 } });
+  });
+
+  it('addPreset does not write autoPlace into layout (#104)', () => {
+    const state = addPreset(initialState, 'host');
+    expect(state.layout).toBeNull();
+  });
+
   it('first cable can be router wan to modem 1', () => {
     let state = initialState;
     state = addPreset(state, 'router');

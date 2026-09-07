@@ -1,14 +1,30 @@
 import { fromJson, inSubnet, toJson } from '../src/index';
 import type { Topology } from '../src/index';
+import { pruneLayout, type Layout } from './layout';
 
-/** The sandbox envelope from #57 is the format of record (ADR 0015). */
-export function exportSandbox(topology: Topology): string {
-  return JSON.stringify(toJson(topology), null, 2);
+export type SandboxFile = { topology: Topology; layout: Layout | null };
+
+/** The sandbox envelope from #57 is the format of record (ADR 0015, ADR 0029). */
+export function exportSandbox(topology: Topology, layout?: Layout | null): string {
+  const envelope: Record<string, unknown> = { ...toJson(topology) };
+  const pruned = layout ? pruneLayout(layout, topology) : {};
+  if (Object.keys(pruned).length >= 1) envelope.layout = pruned;
+  return JSON.stringify(envelope, null, 2);
 }
 
 /** Throws the engine's named errors on an unknown version or function kind. */
-export function importSandbox(text: string): Topology {
-  return fromJson(text);
+export function importSandbox(text: string): SandboxFile {
+  const value: unknown = JSON.parse(text);
+  const topology = fromJson(value);
+  const rec =
+    typeof value === 'object' && value !== null
+      ? (value as Record<string, unknown>)
+      : {};
+  const pruned = pruneLayout(rec.layout, topology);
+  return {
+    topology,
+    layout: Object.keys(pruned).length >= 1 ? pruned : null,
+  };
 }
 
 /**

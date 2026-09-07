@@ -34,7 +34,8 @@ describe('sandbox JSON import/export (#57 envelope)', () => {
   it('export then import round-trips the topology', () => {
     const topology = builtTopology();
     const imported = importSandbox(exportSandbox(topology));
-    expect(imported).toEqual(topology);
+    expect(imported.topology).toEqual(topology);
+    expect(imported.layout).toBeNull();
   });
 
   it('import rejects an unsupported version by name, not a bare SyntaxError', () => {
@@ -70,7 +71,7 @@ describe('sandbox JSON import/export (#57 envelope)', () => {
       first,
       { ...first, vlan: 20, poolStart: '192.168.20.100', poolEnd: '192.168.20.199', gateway: '192.168.20.1' },
     ];
-    const warning = divergentScopeWarning(importSandbox(exportSandbox(state.topology)));
+      const warning = divergentScopeWarning(importSandbox(exportSandbox(state.topology)).topology);
     expect(warning).toBe(
       'DHCP server dhcp-server-1 has scopes on VLANs 10, 20 - a standalone server answers on one VLAN only (chassis.vlan); the other scopes cannot answer.',
     );
@@ -79,7 +80,7 @@ describe('sandbox JSON import/export (#57 envelope)', () => {
   it('import stays silent for a single-scope standalone dhcp-server (#86)', () => {
     let state = initialState;
     state = addPreset(state, 'dhcp-server');
-    expect(divergentScopeWarning(importSandbox(exportSandbox(state.topology)))).toBeNull();
+    expect(divergentScopeWarning(importSandbox(exportSandbox(state.topology)).topology)).toBeNull();
   });
 
   it('import stays silent when every scope sits on the same VLAN (#86)', () => {
@@ -90,7 +91,7 @@ describe('sandbox JSON import/export (#57 envelope)', () => {
     if (server?.kind !== 'dhcp-server') throw new Error('expected dhcp-server');
     const first = server.scopes[0]!;
     server.scopes = [first, { ...first }];
-    expect(divergentScopeWarning(importSandbox(exportSandbox(state.topology)))).toBeNull();
+    expect(divergentScopeWarning(importSandbox(exportSandbox(state.topology)).topology)).toBeNull();
   });
 
   it('import stays silent for divergent scopes on a routing chassis - decideDhcp serves every scope (#86)', () => {
@@ -131,7 +132,7 @@ describe('sandbox JSON import/export (#57 envelope)', () => {
         scopes: [scope10, { ...scope10, vlan: 20, poolStart: '192.168.20.100', poolEnd: '192.168.20.199', gateway: '192.168.20.1' }],
       },
     ];
-    expect(divergentScopeWarning(importSandbox(exportSandbox(state.topology)))).toBeNull();
+    expect(divergentScopeWarning(importSandbox(exportSandbox(state.topology)).topology)).toBeNull();
   });
 
   it('a vlan-tagged iface whose IP sits in another scope subnet does not cover that scope (#86)', () => {
@@ -168,7 +169,7 @@ describe('sandbox JSON import/export (#57 envelope)', () => {
         scopes: [scope10, { ...scope10, vlan: 20 }],
       },
     ];
-    const warning = divergentScopeWarning(importSandbox(exportSandbox(state.topology)));
+      const warning = divergentScopeWarning(importSandbox(exportSandbox(state.topology)).topology);
     expect(warning).toBe(
       'DHCP server router-1 has scopes on VLANs 10, 20 - a standalone server answers on one VLAN only (chassis.vlan); the other scopes cannot answer.',
     );
@@ -201,7 +202,7 @@ describe('sandbox JSON import/export (#57 envelope)', () => {
         ],
       },
     ];
-    const warning = divergentScopeWarning(importSandbox(exportSandbox(state.topology)));
+      const warning = divergentScopeWarning(importSandbox(exportSandbox(state.topology)).topology);
     expect(warning).toBe(
       'DHCP server router-1 has scopes on VLANs 10, 20 - a standalone server answers on one VLAN only (chassis.vlan); the other scopes cannot answer.',
     );
@@ -234,9 +235,117 @@ describe('sandbox JSON import/export (#57 envelope)', () => {
         scopes: [scope10, { ...scope10, vlan: 20 }],
       },
     ];
-    const warning = divergentScopeWarning(importSandbox(exportSandbox(state.topology)));
+      const warning = divergentScopeWarning(importSandbox(exportSandbox(state.topology)).topology);
     expect(warning).toBe(
       'DHCP server router-1 has scopes on VLANs 10, 20 - a standalone server answers on one VLAN only (chassis.vlan); the other scopes cannot answer.',
     );
+  });
+});
+
+describe('layout envelope sibling (#104)', () => {
+  it('present layout round-trips; absent layout is null; extra ids dropped', () => {
+    const topology = builtTopology();
+    const [a, b] = topology.devices.map((d) => d.id);
+    const layout = {
+      [a!]: { x: 40, y: 80 },
+      [b!]: { x: 120, y: 80 },
+      ghost: { x: 1, y: 2 },
+    };
+    const imported = importSandbox(exportSandbox(topology, layout));
+    expect(imported.topology).toEqual(topology);
+    expect(imported.layout).toEqual({
+      [a!]: { x: 40, y: 80 },
+      [b!]: { x: 120, y: 80 },
+    });
+  });
+
+  it('omits the layout key when null or empty after prune', () => {
+    const topology = builtTopology();
+    const none = JSON.parse(exportSandbox(topology)) as Record<string, unknown>;
+    expect(none).not.toHaveProperty('layout');
+    const empty = JSON.parse(exportSandbox(topology, {})) as Record<string, unknown>;
+    expect(empty).not.toHaveProperty('layout');
+    const ghostOnly = JSON.parse(
+      exportSandbox(topology, { ghost: { x: 1, y: 2 } }),
+    ) as Record<string, unknown>;
+    expect(ghostOnly).not.toHaveProperty('layout');
+    expect(importSandbox(exportSandbox(topology)).layout).toBeNull();
+  });
+
+  it('does not auto-place missing ids into the file', () => {
+    const topology = builtTopology();
+    const [a] = topology.devices.map((d) => d.id);
+    const parsed = JSON.parse(
+      exportSandbox(topology, { [a!]: { x: 5, y: 6 } }),
+    ) as { layout: Record<string, unknown> };
+    expect(Object.keys(parsed.layout)).toEqual([a]);
+  });
+
+  it('a foreign envelope sibling still imports', () => {
+    const topology = builtTopology();
+    const envelope = JSON.parse(exportSandbox(topology)) as Record<string, unknown>;
+    envelope.notes = 'keep me';
+    envelope.layout = {
+      [topology.devices[0]!.id]: { x: 9, y: 10 },
+    };
+    const imported = importSandbox(JSON.stringify(envelope));
+    expect(imported.topology).toEqual(topology);
+    expect(imported.layout).toEqual({
+      [topology.devices[0]!.id]: { x: 9, y: 10 },
+    });
+  });
+
+  it('export never writes x/y onto a chassis (ADR 0026 tripwire)', () => {
+    const topology = builtTopology();
+    const [a] = topology.devices.map((d) => d.id);
+    const parsed = JSON.parse(
+      exportSandbox(topology, { [a!]: { x: 11, y: 12 } }),
+    ) as { topology: { devices: Record<string, unknown>[] } };
+    for (const chassis of parsed.topology.devices) {
+      expect(chassis).not.toHaveProperty('x');
+      expect(chassis).not.toHaveProperty('y');
+    }
+  });
+
+  it('does not strip ISP credentials when a layout sibling is present (#65)', () => {
+    let state = initialState;
+    state = addPreset(state, 'modem');
+    const topology = state.topology;
+    const id = topology.devices[0]!.id;
+    const imported = importSandbox(
+      exportSandbox(topology, { [id]: { x: 0, y: 0 } }),
+    );
+    const modem = imported.topology.devices[0]!;
+    const handoff = modem.functions.find((fn) => fn.kind === 'isp-handoff');
+    expect(handoff?.kind).toBe('isp-handoff');
+    if (handoff?.kind === 'isp-handoff') {
+      expect(handoff.mode).toBeDefined();
+    }
+  });
+
+  it('for generated layouts, export then import equals prune', () => {
+    for (let seed = 0; seed < 32; seed++) {
+      let state = initialState;
+      const count = 1 + (seed % 3);
+      for (let i = 0; i < count; i++) state = addPreset(state, 'host');
+      const topology = state.topology;
+      const raw: Record<string, { x: number; y: number }> = {};
+      for (const [i, device] of topology.devices.entries()) {
+        if ((seed + i) % 2 === 0) raw[device.id] = { x: seed * 10 + i, y: i * 7 };
+      }
+      raw[`ghost-${seed}`] = { x: 1, y: 2 };
+      const imported = importSandbox(exportSandbox(topology, raw));
+      expect(imported.topology, `seed ${seed}`).toEqual(topology);
+      const expectedKeys = topology.devices
+        .map((d) => d.id)
+        .filter((id) => raw[id] !== undefined);
+      if (expectedKeys.length === 0) {
+        expect(imported.layout, `seed ${seed}`).toBeNull();
+      } else {
+        expect(imported.layout, `seed ${seed}`).toEqual(
+          Object.fromEntries(expectedKeys.map((id) => [id, raw[id]!])),
+        );
+      }
+    }
   });
 });

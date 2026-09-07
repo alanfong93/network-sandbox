@@ -172,9 +172,10 @@ preset id (ADR 0007, ADR 0013). The shipped UI is the forms editor
 (#58). A later vanilla-SVG canvas is both the topology builder and the
 hop-replay surface (ADR 0029); it is not shipped. Layout is a sandbox-envelope
 sibling `{deviceId: {x,y}}`, never fields on Topology or Chassis. Missing
-layout is valid — the later UI auto-places. `ui/jsonio.ts` still hands
-topology to the same `toJson` / `fromJson` envelope; engine `fromJson`
-ignores extra keys, so layout never reaches the engine.
+layout is valid — the later UI auto-places. `ui/jsonio.ts` round-trips
+optional `layout` as an envelope sibling (`exportSandbox(topology, layout?)`,
+`importSandbox` returns `{topology, layout}`); engine `fromJson` still
+receives topology only and ignores extra keys.
 
 ```mermaid
 flowchart LR
@@ -182,8 +183,9 @@ flowchart LR
     S --> R[render.ts<br>HTML strings]
     S --> T[trace.ts<br>createRunContext + runFlow]
     T --> R
-    S --> J[jsonio.ts<br>toJson / fromJson]
+    S --> J[jsonio.ts<br>envelope sibling layout]
     S --> LY[layout sidecar<br>device id to x,y]
+    LY --> J
     LY --> R
     R --> M[main.ts<br>DOM wiring]
     T --> E[engine src/<br>topology only]
