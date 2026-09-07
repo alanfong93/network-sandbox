@@ -5,6 +5,8 @@ import {
   cancelLink,
   completeLink,
   initialState,
+  moveDevice,
+  placePreset,
   removeDevice,
   setDhcpScope,
   setIspHandoff,
@@ -246,6 +248,36 @@ describe('editor state', () => {
   it('addPreset does not write autoPlace into layout (#104)', () => {
     const state = addPreset(initialState, 'host');
     expect(state.layout).toBeNull();
+  });
+
+  it('placePreset writes chassis and a layout point (#106)', () => {
+    const state = placePreset(initialState, 'host', { x: 40, y: 80 });
+    const id = state.topology.devices[0]!.id;
+    expect(state.layout).toEqual({ [id]: { x: 40, y: 80 } });
+  });
+
+  it('moveDevice updates layout only (#106)', () => {
+    let state = placePreset(initialState, 'host', { x: 0, y: 0 });
+    const before = state.topology;
+    const id = state.topology.devices[0]!.id;
+    state = moveDevice(state, id, { x: 99, y: 7 });
+    expect(state.topology).toBe(before);
+    expect(state.layout).toEqual({ [id]: { x: 99, y: 7 } });
+  });
+
+  it('canvas port-port click uses the same link helpers as inspector Start-link (#106)', () => {
+    let canvas = initialState;
+    canvas = addPreset(canvas, 'host');
+    canvas = addPreset(canvas, 'host');
+    const [a, b] = canvas.topology.devices.map((d) => d.id);
+    canvas = startLink(canvas, a!, '1');
+    canvas = completeLink(canvas, b!, '1');
+    let inspector = initialState;
+    inspector = addPreset(inspector, 'host');
+    inspector = addPreset(inspector, 'host');
+    inspector = startLink(inspector, a!, '1');
+    inspector = completeLink(inspector, b!, '1');
+    expect(canvas.topology.links).toEqual(inspector.topology.links);
   });
 
   it('first cable can be router wan to modem 1', () => {
