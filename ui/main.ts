@@ -196,7 +196,12 @@ function send(event: Event): void {
     // A DISCOVER is broadcast (#82): no destination IP, request-only trace.
     lastTrace = runTrace(state.topology, { from, kind: 'dhcp-discover' });
   } else {
-    const dst = (form.elements.namedItem('dstIp') as HTMLInputElement).value;
+    // Trim before the guard: whitespace-only input would otherwise pass,
+    // classify as a name, and fall through the engine's blank-name check
+    // to a gateway ping the user never asked for (#126 review cycle 1).
+    const dst = (form.elements.namedItem('dstIp') as HTMLInputElement)
+      .value
+      .trim();
     if (!dst) return;
     lastDst = dst;
     dstIpDraft = null;

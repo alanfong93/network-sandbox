@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { addPreset, completeLink, initialState, select, setHostAddress, setIspHandoff, setPortAcceptable, setPvid, setUntaggedVlans, startLink } from './state';
+import { addPreset, addResolverRecord, completeLink, initialState, removeResolverRecord, select, setHostAddress, setIspHandoff, setPortAcceptable, setPvid, setResolverRecord, setUntaggedVlans, startLink } from './state';
 import { renderInspector, renderTrace } from './render';
 import { COLD_TRACE_NOTICE, runTrace } from './trace';
 
@@ -32,6 +32,44 @@ describe('inspector', () => {
     const html = renderInspector(select(state, h1));
     expect(html).toMatch(/Gateway/);
     expect(html).not.toMatch(/PVID \(ingress\)/);
+  });
+
+  it('a host shows the advertised resolver field with the shipped value (#126)', () => {
+    const { state, h1 } = switchedState();
+    const html = renderInspector(select(state, h1));
+    expect(html).toMatch(/Resolver/);
+    expect(html).toMatch(/data-action="resolver"/);
+    expect(html).toMatch(/value="192\.168\.1\.1"/);
+  });
+
+  it('a resolver box shows the records editor and its shipped record (#126)', () => {
+    let state = addPreset(initialState, 'resolver');
+    const dns = state.topology.devices[0]!.id;
+    const html = renderInspector(select(state, dns));
+    expect(html).toMatch(/DNS server records/);
+    expect(html).toMatch(/data-action="record-field"/);
+    expect(html).toMatch(/data-action="record-add"/);
+    expect(html).toMatch(/value="google\.com"/);
+    expect(html).toMatch(/value="192\.0\.2\.1"/);
+  });
+
+  it('record edits land in the named row and removal drops only that row (#126)', () => {
+    let state = addPreset(initialState, 'resolver');
+    const dns = state.topology.devices[0]!.id;
+    state = addResolverRecord(state, dns);
+    state = setResolverRecord(state, dns, 1, { name: 'nas.home', ip: '192.168.1.50' });
+    let chassis = state.topology.devices[0]!;
+    const fn = chassis.functions.find((f) => f.kind === 'resolver');
+    expect(fn?.kind === 'resolver' ? fn.records : []).toEqual([
+      { name: 'google.com', ip: '192.0.2.1' },
+      { name: 'nas.home', ip: '192.168.1.50' },
+    ]);
+    state = removeResolverRecord(state, dns, 0);
+    chassis = state.topology.devices[0]!;
+    const after = chassis.functions.find((f) => f.kind === 'resolver');
+    expect(after?.kind === 'resolver' ? after.records : []).toEqual([
+      { name: 'nas.home', ip: '192.168.1.50' },
+    ]);
   });
 
   it('router inspector has a WAN VLAN control, not Native VLAN (PVID)', () => {
