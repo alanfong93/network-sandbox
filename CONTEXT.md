@@ -421,5 +421,21 @@ reachability query are comparable. Arrival is modelled; application replies
 are not ([ADR 0018](docs/adr/0018-services-are-reached-not-answered.md)).
 
 - **Do not call it:** *dns*, *application*, *session*.
-- The DHCP scope field that holds the advertised resolver address is
-  `resolver`, not `dns`. Nothing in the codebase resolves a name.
+- A query that asks a name is a `service` payload with `dstPort: 53` plus a
+  `name` format fact — no second payload kind. The resolver table answers
+  only after the query is delivered
+  ([ADR 0030](docs/adr/0030-the-table-answers-after-arrival.md)).
+
+### Resolver
+
+Two fields, one word ([ADR 0030](docs/adr/0030-the-table-answers-after-arrival.md)):
+the **function** (`kind: 'resolver'`) whose `records` are a flat
+`name -> IP` table, and the **advertised address** — `Chassis.resolver`,
+and the same word on the DHCP scope. The address is an IP, not an engine:
+send-by-name walks udp/53 to the chassis it names. There is no zone file,
+recursion, or NXDOMAIN engine. The UI label is "DNS server"; the word
+`dns` stays out of `src/` identifiers and filenames.
+
+- **Do not call it:** *dns*, *DNS server* in code, a *zone*.
+- **Placement is topology.** The same function on a LAN box or beyond the
+  WAN; a router may carry it. There is no second "public" kind.

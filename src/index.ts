@@ -15,6 +15,7 @@ export type {
   InternalEdge,
   Link,
   MacAddr,
+  NameRecord,
   Port,
   PortForward,
   Radio,
@@ -128,6 +129,8 @@ export { handoffFrame, handoffWouldHandle } from './isp';
 
 export type { SendArgs } from './send';
 export { needsArp, nextHopIp, send, senderVlan, vlanOfIp } from './send';
+
+export { lookupRecord, matchRecord } from './resolver';
 
 export type { FlowArgs, FlowObservation, FlowResult } from './flow';
 export { flowObservationAsFormatInput, runFlow } from './flow';

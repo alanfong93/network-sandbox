@@ -131,6 +131,9 @@ export function renderInspector(state: EditorState): string {
       `<label>IP <input type="text" data-action="ip" value="${esc(chassis.ip ?? '')}"></label>`,
       `<label>Prefix <input type="number" data-action="prefix" value="${chassis.prefix ?? ''}"></label>`,
       `<label>Gateway <input type="text" data-action="gateway" value="${esc(chassis.gateway ?? '')}"></label>`,
+      // The advertised resolver is just an address (ADR 0030): what the
+      // chassis asks when it sends by name.
+      `<label>Resolver <input type="text" data-action="resolver" value="${esc(chassis.resolver ?? '')}"></label>`,
     );
   }
   parts.push(
@@ -245,6 +248,29 @@ export function renderInspector(state: EditorState): string {
         `<fieldset class="dhcp-scope"><legend>DHCP scope ${index + 1}</legend>${rows}</fieldset>`,
       );
     });
+  }
+  // The resolver function's table: name -> IP rows (ADR 0030). Function
+  // presence, not preset id, decides whether the editor renders.
+  const resolverFn = chassis.functions.find((fn) => fn.kind === 'resolver');
+  if (resolverFn && resolverFn.kind === 'resolver') {
+    const rows = resolverFn.records
+      .map(
+        (record, index) =>
+          `<div class="record-row">` +
+          `<label>Name <input type="text" data-action="record-field" ` +
+          `data-record="${index}" data-field="name" value="${esc(record.name)}"></label> ` +
+          `<label>IP <input type="text" data-action="record-field" ` +
+          `data-record="${index}" data-field="ip" value="${esc(record.ip)}"></label> ` +
+          `<button type="button" data-action="record-remove" data-record="${index}">` +
+          `Remove</button></div>`,
+      )
+      .join('\n');
+    parts.push(
+      `<fieldset class="resolver-records"><legend>DNS server records</legend>` +
+        (rows === '' ? '<p class="hint">No records yet.</p>' : rows) +
+        `<button type="button" data-action="record-add">Add record</button>` +
+        `</fieldset>`,
+    );
   }
   for (const port of chassis.ports) {
     parts.push(renderPortControls(state, chassis.id, port.id));

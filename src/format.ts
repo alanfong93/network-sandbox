@@ -27,6 +27,7 @@ export interface HopFacts {
   proto?: 'udp' | 'tcp';
   dstPort?: number;
   reachedVlan?: VlanId;
+  name?: string;
 }
 
 export interface HopInput {
@@ -63,7 +64,12 @@ export interface TraceInput {
 
 export interface FlowInput {
   kind: 'flow';
-  observation: 'asymmetric-path' | 'missing-return-route' | 'firewall-reply';
+  observation:
+    | 'asymmetric-path'
+    | 'missing-return-route'
+    | 'firewall-reply'
+    | 'no-resolver'
+    | 'no-record';
   facts: HopFacts;
 }
 
@@ -178,6 +184,9 @@ function formatHop(input: HopInput): string {
   if (code === 'nat:translated' && f.ip !== undefined && f.dstPort !== undefined) {
     return `Port forward rewrote the destination to ${f.ip}:${f.dstPort} at ${input.device}`;
   }
+  if (code === 'delivery:delivered' && f.name !== undefined) {
+    return `Query for ${f.name} delivered at ${input.device}`;
+  }
 
   const where = input.inPort
     ? ` at ${input.device} port ${input.inPort}`
@@ -226,6 +235,10 @@ function formatFlow(input: FlowInput): string {
       return `Reached ${f.otherIp} via ${f.via}. Reply to ${f.ip} dropped at ${f.devices?.[0]}: no route — add ${f.prefix} via ${f.via}`;
     case 'firewall-reply':
       return `ICMP reached VLAN ${f.reachedVlan}; reply dropped by rule VLAN${f.fromVlan} -> VLAN${f.toVlan} deny`;
+    case 'no-resolver':
+      return 'Sender has no advertised resolver';
+    case 'no-record':
+      return `No record for ${f.name} at ${f.devices?.[0]}`;
   }
 }
 

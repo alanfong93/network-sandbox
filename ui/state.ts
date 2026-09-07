@@ -461,9 +461,61 @@ export function setPortIngressFiltering(
 export function setHostAddress(
   state: EditorState,
   deviceId: DeviceId,
-  addr: { ip?: string; prefix?: number; gateway?: string },
+  addr: { ip?: string; prefix?: number; gateway?: string; resolver?: string },
 ): EditorState {
   return withChassis(state, deviceId, (chassis) => ({ ...chassis, ...addr }));
+}
+
+/**
+ * Touch only the named record of the resolver function (ADR 0030). No
+ * sibling moves; a chassis with no resolver function is a no-op, never an
+ * invented function.
+ */
+export function setResolverRecord(
+  state: EditorState,
+  deviceId: DeviceId,
+  index: number,
+  patch: { name?: string; ip?: string },
+): EditorState {
+  return withChassis(state, deviceId, (chassis) => ({
+    ...chassis,
+    functions: chassis.functions.map((fn) => {
+      if (fn.kind !== 'resolver') return fn;
+      const records = fn.records.map((record, i) =>
+        i === index ? { ...record, ...patch } : record,
+      );
+      return { ...fn, records };
+    }),
+  }));
+}
+
+export function addResolverRecord(
+  state: EditorState,
+  deviceId: DeviceId,
+): EditorState {
+  return withChassis(state, deviceId, (chassis) => ({
+    ...chassis,
+    functions: chassis.functions.map((fn) =>
+      fn.kind === 'resolver'
+        ? { ...fn, records: [...fn.records, { name: '', ip: '' }] }
+        : fn,
+    ),
+  }));
+}
+
+export function removeResolverRecord(
+  state: EditorState,
+  deviceId: DeviceId,
+  index: number,
+): EditorState {
+  return withChassis(state, deviceId, (chassis) => ({
+    ...chassis,
+    functions: chassis.functions.map((fn) =>
+      fn.kind === 'resolver'
+        ? { ...fn, records: fn.records.filter((_, i) => i !== index) }
+        : fn,
+    ),
+  }));
 }
 
 export function setRouterIfaceVlan(

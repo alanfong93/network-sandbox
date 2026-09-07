@@ -50,33 +50,49 @@ export interface TraceRender {
  * produced them with `format()` at trace time — and observations and STP
  * warnings go through `format()` here. The UI never re-derives a sentence.
  *
- * Two origins: an ICMP echo to a destination IP, or a DHCP DISCOVER — a
- * broadcast that needs no destination (#82). A DISCOVER trace is
- * request-only: flow.ts early-returns for non-ICMP payloads, so the hops
- * (flood path, OFFERs) are the honest as-shipped truth; the observation
- * sentences render here, labelled by phase (#63).
+ * Three origins (#126): an ICMP echo to a destination IP, a send-by-name —
+ * the engine walks udp/53 to the advertised resolver, then pings the
+ * resolved IP (ADR 0030) — or a DHCP DISCOVER, a broadcast that needs no
+ * destination (#82). A DISCOVER trace is request-only: flow.ts early-returns
+ * for non-ICMP payloads, so the hops (flood path, OFFERs) are the honest
+ * as-shipped truth; the observation sentences render here, labelled by
+ * phase (#63). A name send's request leg is the query walk, then the echo
+ * walk; `flow.query` carries the query frame separately from the echo.
  */
 export function runTrace(
   topology: Topology,
-  args: { from: DeviceId; dstIp: string } | { from: DeviceId; kind: 'dhcp-discover' },
+  args:
+    | { from: DeviceId; dstIp: string }
+    | { from: DeviceId; dstName: string }
+    | { from: DeviceId; kind: 'dhcp-discover' },
 ): TraceRender {
   const ctx = createRunContext(topology);
   const warnings = ctx.warnings.map((warning) =>
     format(warningAsFormatInput(warning)),
   );
   const icmpArgs = 'dstIp' in args ? args : undefined;
+  const nameArgs = 'dstName' in args ? args : undefined;
   const result =
-    icmpArgs === undefined
+    icmpArgs !== undefined
       ? runFlow(ctx, {
-          from: args.from,
-          dstIp: '255.255.255.255',
-          payload: { kind: 'dhcp', dhcpType: 'discover' },
-        })
-      : runFlow(ctx, {
           from: icmpArgs.from,
           dstIp: icmpArgs.dstIp,
           payload: { kind: 'icmp' },
-        });
+        })
+      : nameArgs !== undefined
+        ? // The name path reads the sender's advertised resolver itself;
+          // the payload is ignored there - a name send is a ping (ADR 0030).
+          runFlow(ctx, {
+            from: nameArgs.from,
+            dstIp: '',
+            dstName: nameArgs.dstName,
+            payload: { kind: 'icmp' },
+          })
+        : runFlow(ctx, {
+            from: args.from,
+            dstIp: '255.255.255.255',
+            payload: { kind: 'dhcp', dhcpType: 'discover' },
+          });
   // Every observation is the engine's own sentence via format() - walk
   // observations are labelled with the leg that produced them, flow
   // observations need no label (#63). Order is the runFlow contract:
@@ -90,8 +106,15 @@ export function runTrace(
       ? sentence
       : `${entry.phase[0]!.toUpperCase()}${entry.phase.slice(1)}: ${sentence}`;
   });
-  const requestHops = result.flow.request.hops;
   const replyHops = result.flow.reply?.hops ?? [];
+  // A name send's request leg is the query walk, then the echo walk: the
+  // query frame's hops lead so the trace shows the resolver step in order
+  // (ADR 0030). A dropped query means no echo walk exists and the request
+  // section is the query alone.
+  const requestHops = [
+    ...(result.flow.query?.hops ?? []),
+    ...result.flow.request.hops,
+  ];
   const request = requestHops.map((hop) => hop.reason);
   return {
     warnings,
@@ -104,8 +127,8 @@ export function runTrace(
       // The action token leads every formatted hop sentence, so 'flooded'
       // at line-start is a real flood; a device id merely CONTAINING
       // 'flood' (import preserves arbitrary ids) must not flip the
-      // notice.
-      icmpArgs === undefined
+      // notice. A name send runs ARP legs exactly like an IP trace.
+      icmpArgs === undefined && nameArgs === undefined
         ? request.some((line) => /^flooded\b/.test(line))
           ? COLD_DISCOVER_NOTICE
           : COLD_DISCOVER_DIRECT_NOTICE

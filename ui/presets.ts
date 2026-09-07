@@ -97,6 +97,10 @@ export const PRESETS: PresetDef[] = [
         ip: `192.168.1.${9 + seq}`,
         prefix: 24,
         gateway: '192.168.1.1',
+        // The advertised resolver is just an address (ADR 0030): the shipped
+        // gateway, the home-gateway default. Point it at a LAN resolver box
+        // to walk the query on the LAN.
+        resolver: '192.168.1.1',
       }),
   },
   {
@@ -303,6 +307,46 @@ export const PRESETS: PresetDef[] = [
         { internal: [{ from: 'rt', to: 'br' }] },
       );
     },
+  },
+  {
+    id: 'resolver',
+    label: 'DNS server',
+    build: (id, seq) =>
+      base(
+        id,
+        `DNS server ${seq}`,
+        'resolver',
+        seq,
+        [port('1', 'none')],
+        [
+          {
+            kind: 'resolver',
+            id: 'resolver',
+            // One shipped record so the first name query has something to
+            // answer with; records are editable in the inspector (ADR 0030).
+            records: [{ name: 'google.com', ip: '192.0.2.1' }],
+          },
+        ],
+        {
+          mac: mac(seq),
+          ip: `192.168.1.${9 + seq}`,
+          prefix: 24,
+          gateway: '192.168.1.1',
+        },
+      ),
+  },
+  {
+    id: 'internet',
+    label: 'Internet',
+    // The reference scenario's NET box: a host chassis at 192.0.2.1 that
+    // answers ICMP for its address once the frame arrives through WAN/NAT
+    // (ADR 0030). It is a palette box, not a second engine.
+    build: (id, seq) =>
+      base(id, `Internet ${seq}`, 'internet', seq, [port('1', 'none')], [], {
+        mac: mac(seq),
+        ip: '192.0.2.1',
+        prefix: 24,
+      }),
   },
   {
     id: 'dhcp-server',

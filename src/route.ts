@@ -467,6 +467,11 @@ export function routeFrame(ctx: RunContext, args: RouteArgs): RouteResult {
       // through the router (ADR 0022).
       if (!hairpin) skipSnat = true;
     } else {
+      const payload = working.payload;
+      const facts =
+        payload.kind === 'service' && payload.name !== undefined
+          ? { name: payload.name, dstPort: payload.dstPort, ip: payload.dstIp }
+          : undefined;
       return {
         hops: [
           makeHop({
@@ -477,6 +482,7 @@ export function routeFrame(ctx: RunContext, args: RouteArgs): RouteResult {
             action: 'delivered',
             step: 'delivery',
             outcome: 'delivered',
+            facts,
           }),
         ],
         transmissions: [],

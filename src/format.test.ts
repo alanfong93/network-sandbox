@@ -25,6 +25,37 @@ describe('format', () => {
       }),
     ).toBe('forwarded at SW1 port 1 (egress-tagging)');
   });
+
+  it('names the query and the device on a delivered udp/53 hop (#126)', () => {
+    expect(
+      format({
+        kind: 'hop',
+        device: 'DNS1',
+        inPort: '1',
+        vlan: 10,
+        action: 'delivered',
+        step: 'delivery',
+        outcome: 'delivered',
+        facts: { name: 'google.com', dstPort: 53, ip: '192.168.10.53' },
+      }),
+    ).toBe('Query for google.com delivered at DNS1');
+  });
+
+  it('states when the sender has no advertised resolver (#126)', () => {
+    expect(format({ kind: 'flow', observation: 'no-resolver', facts: {} })).toBe(
+      'Sender has no advertised resolver',
+    );
+  });
+
+  it('names the table that lacked the record (#126)', () => {
+    expect(
+      format({
+        kind: 'flow',
+        observation: 'no-record',
+        facts: { name: 'nas.home', devices: ['DNS1'] },
+      }),
+    ).toBe('No record for nas.home at DNS1');
+  });
 });
 
 describe('Estimate seam (ADR 0006, ADR 0024)', () => {

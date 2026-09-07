@@ -1,4 +1,5 @@
 import type { DeviceId } from '../src/index';
+import { parseIpv4 } from '../src/index';
 import { divergentScopeWarning, exportSandbox, importSandbox } from './jsonio';
 import { PRESETS } from './presets';
 import { fitContent, panCamera, screenDeltaToWorld, zoomAt, type Camera } from './camera';
@@ -8,9 +9,11 @@ import { autoPlace } from './layout';
 import { allHops, stepIndex, tokenMarks } from './replay';
 import {
   addPreset,
+  addResolverRecord,
   cancelLink,
   completeLink,
   initialState,
+  removeResolverRecord,
   select,
   setDhcpScope,
   setHostAddress,
@@ -19,6 +22,7 @@ import {
   setPortIngressFiltering,
   setPortMode,
   setPvid,
+  setResolverRecord,
   setRouterIfaceVlan,
   setStpPriority,
   setTaggedVlans,
@@ -51,9 +55,9 @@ let panView: {
   origin: Camera;
   svg: SVGSVGElement;
 } | null = null;
-let lastDstIp = '192.168.1.11';
+let lastDst = '192.168.1.11';
 // The draft keeps an unsent destination across re-renders (send-kind
-// toggle, device adds) - render() rebuilds the form, and lastDstIp only
+// toggle, device adds) - render() rebuilds the form, and lastDst only
 // records successful sends.
 let dstIpDraft: string | null = null;
 let sendKind: 'icmp' | 'dhcp-discover' = 'icmp';
@@ -144,10 +148,12 @@ function render(): void {
     `<option value="dhcp-discover"${sendKind === 'dhcp-discover' ? ' selected' : ''}>DHCP DISCOVER</option>` +
     '</select></label> ' +
     // A DISCOVER is broadcast: no destination IP is sent or asked for
-    // (#82). The ICMP path keeps its dstIp input untouched.
+    // (#82). The ICMP path keeps its destination input untouched. The
+    // field accepts an IP or a name (#126): a dotted quad goes by IP,
+    // anything else is a name and walks the resolver first (ADR 0030).
     (sendKind === 'icmp'
-      ? '<label>Destination IP ' +
-        `<input type="text" name="dstIp" value="${esc(dstIpDraft ?? lastDstIp)}"></label> `
+      ? '<label>Destination (IP or name) ' +
+        `<input type="text" name="dstIp" value="${esc(dstIpDraft ?? lastDst)}"></label> `
       : '') +
     '<button type="submit">Send</button></form>' +
     '<div id="trace-out"></div>' +
@@ -190,11 +196,19 @@ function send(event: Event): void {
     // A DISCOVER is broadcast (#82): no destination IP, request-only trace.
     lastTrace = runTrace(state.topology, { from, kind: 'dhcp-discover' });
   } else {
-    const dstIp = (form.elements.namedItem('dstIp') as HTMLInputElement).value;
-    if (!dstIp) return;
-    lastDstIp = dstIp;
+    // Trim before the guard: whitespace-only input would otherwise pass,
+    // classify as a name, and fall through the engine's blank-name check
+    // to a gateway ping the user never asked for (#126 review cycle 1).
+    const dst = (form.elements.namedItem('dstIp') as HTMLInputElement)
+      .value
+      .trim();
+    if (!dst) return;
+    lastDst = dst;
     dstIpDraft = null;
-    lastTrace = runTrace(state.topology, { from, dstIp });
+    lastTrace = runTrace(
+      state.topology,
+      parseIpv4(dst) !== undefined ? { from, dstIp: dst } : { from, dstName: dst },
+    );
   }
   replayIndex = 0;
   render();
@@ -320,6 +334,16 @@ function onClick(event: MouseEvent): void {
     case 'remove':
       if (device) state = removeDevice(state, device);
       break;
+    case 'record-add':
+      if (device) state = addResolverRecord(state, device);
+      break;
+    case 'record-remove': {
+      const record = target.dataset.record;
+      if (device && record !== undefined) {
+        state = removeResolverRecord(state, device, Number(record));
+      }
+      break;
+    }
     case 'fit-camera': {
       const size = contentSize(state);
       camera = fitContent(size.maxX, size.maxY);
@@ -446,6 +470,22 @@ function onChange(event: Event): void {
     case 'gateway':
       state = setHostAddress(state, device, { gateway: input.value });
       break;
+    case 'resolver':
+      state = setHostAddress(state, device, { resolver: input.value });
+      break;
+    case 'record-field': {
+      const record = input.dataset.record;
+      const field = input.dataset.field;
+      if (record !== undefined && (field === 'name' || field === 'ip')) {
+        state = setResolverRecord(
+          state,
+          device,
+          Number(record),
+          { [field]: input.value },
+        );
+      }
+      break;
+    }
     case 'iface-vlan': {
       const iface = input.dataset.iface;
       if (iface) {

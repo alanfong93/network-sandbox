@@ -162,11 +162,21 @@ function generatedTopology(seed: number): Topology {
     label: 'h',
     ports: [{ id: '1', mtu: 1500, ownedBy: 'none' }],
     radios: [],
-    functions: [],
+    functions: [
+      {
+        kind: 'resolver',
+        id: 'resolver',
+        records: [
+          { name: 'google.com', ip: '192.0.2.1' },
+          { name: 'nas.home', ip: '10.0.0.10' },
+        ],
+      },
+    ],
     internal: [],
     mac: 'aa:00:00:00:00:10',
     ip: '10.0.0.10',
     prefix: 24,
+    resolver: '10.0.0.1',
   };
   return {
     devices: [switchBox, host],
