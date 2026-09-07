@@ -30,6 +30,7 @@ import {
   type EditorState,
 } from './state';
 import { runTrace, type TraceRender } from './trace';
+import { traceFromId } from './tracefrom';
 
 let state: EditorState = initialState;
 let didDrag = false;
@@ -107,13 +108,14 @@ function render(): void {
 
   inspector.innerHTML = renderInspector(state);
 
+  const fromId = traceFromId(state.selected, sendFrom, state.topology.devices);
   const options =
     state.topology.devices.length > 0
       ? state.topology.devices
           .map(
             (device) =>
               `<option value="${esc(device.id)}"` +
-              `${device.id === sendFrom ? ' selected' : ''}>` +
+              `${device.id === fromId ? ' selected' : ''}>` +
               `${esc(device.label)} (${esc(device.id)})</option>`,
           )
           .join('')
@@ -476,7 +478,11 @@ document.addEventListener('submit', (event) => {
 });
 document.addEventListener('change', (event) => {
   const target = event.target as HTMLInputElement;
-  if (target.id === 'send-from') sendFrom = target.value;
+  if (target.id === 'send-from' && target.value) {
+    sendFrom = target.value;
+    state = select(state, target.value);
+    render();
+  }
   if (target.id === 'send-kind') {
     sendKind = target.value === 'dhcp-discover' ? 'dhcp-discover' : 'icmp';
     render();
