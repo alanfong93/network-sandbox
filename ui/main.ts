@@ -1,7 +1,8 @@
 import type { DeviceId } from '../src/index';
 import { divergentScopeWarning, exportSandbox, importSandbox } from './jsonio';
 import { PRESETS } from './presets';
-import { renderCanvas } from './canvas';
+import { fitContent, panCamera, screenDeltaToWorld, zoomAt, type Camera } from './camera';
+import { contentSize, renderCanvas } from './canvas';
 import { renderDeviceList, renderInspector, renderTrace } from './render';
 import { autoPlace } from './layout';
 import { allHops, floodGroup, stepIndex, tokenPoint } from './replay';
@@ -43,6 +44,13 @@ let dragBox: {
   svg: SVGSVGElement;
 } | null = null;
 let sendFrom: DeviceId | null = null;
+let camera: Camera | null = null;
+let panView: {
+  clientX: number;
+  clientY: number;
+  origin: Camera;
+  svg: SVGSVGElement;
+} | null = null;
 let lastDstIp = '192.168.1.11';
 // The draft keeps an unsent destination across re-renders (send-kind
 // toggle, device adds) - render() rebuilds the form, and lastDstIp only
@@ -96,9 +104,13 @@ function render(): void {
       `:${esc(state.pendingLink.port)}</strong> &mdash; click another device, ` +
       `or <button type="button" data-action="cancel-link">Cancel</button></p>`
     : '';
+  const size = contentSize(state);
+  if (!camera) camera = fitContent(size.maxX, size.maxY);
   devices.innerHTML =
     '<h2>Canvas</h2>' +
-    renderCanvas(state, tokens) +
+    '<p class="camera-bar"><button type="button" data-action="fit-camera">Fit</button> ' +
+    '<span class="hint">wheel zoom, drag empty space to pan</span></p>' +
+    renderCanvas(state, tokens, camera) +
     '<h2>Devices</h2>' +
     linking +
     renderDeviceList(state) +
@@ -309,6 +321,11 @@ function onClick(event: MouseEvent): void {
     case 'remove':
       if (device) state = removeDevice(state, device);
       break;
+    case 'fit-camera': {
+      const size = contentSize(state);
+      camera = fitContent(size.maxX, size.maxY);
+      break;
+    }
     case 'export':
       exportJson();
       return;
@@ -532,10 +549,34 @@ document.addEventListener('drop', (event) => {
   render();
 });
 
+document.addEventListener(
+  'wheel',
+  (event) => {
+    const svg = (event.target as Element).closest('svg.canvas-svg');
+    if (!(svg instanceof SVGSVGElement) || !camera) return;
+    event.preventDefault();
+    const world = clientToSvg(svg, event.clientX, event.clientY);
+    camera = zoomAt(camera, world.x, world.y, event.deltaY > 0 ? 1.12 : 0.88);
+    render();
+  },
+  { passive: false },
+);
+
 document.addEventListener('pointerdown', (event) => {
   if ((event.target as Element).closest('.port')) return;
   const g = (event.target as Element).closest('.device[data-device]');
-  if (!g || !g.closest('.canvas-svg')) return;
+  if (!g || !g.closest('.canvas-svg')) {
+    const svg = (event.target as Element).closest('svg.canvas-svg');
+    if (svg instanceof SVGSVGElement && camera && !g) {
+      panView = {
+        clientX: event.clientX,
+        clientY: event.clientY,
+        origin: camera,
+        svg,
+      };
+    }
+    return;
+  }
   const svg = g.closest('svg.canvas-svg');
   if (!(svg instanceof SVGSVGElement)) return;
   const id = g.getAttribute('data-device');
@@ -554,6 +595,21 @@ document.addEventListener('pointerdown', (event) => {
   didDrag = false;
 });
 document.addEventListener('pointermove', (event) => {
+  if (panView && camera) {
+    const svg = panView.svg;
+    const delta = screenDeltaToWorld(
+      panView.origin,
+      event.clientX - panView.clientX,
+      event.clientY - panView.clientY,
+      Math.max(1, svg.clientWidth),
+      Math.max(1, svg.clientHeight),
+    );
+    camera = panCamera(panView.origin, delta.x, delta.y);
+    render();
+    const next = document.querySelector('svg.canvas-svg');
+    if (next instanceof SVGSVGElement) panView.svg = next;
+    return;
+  }
   if (!dragBox) return;
   const now = clientToSvg(dragBox.svg, event.clientX, event.clientY);
   const dx = now.x - dragBox.startX;
@@ -569,6 +625,7 @@ document.addEventListener('pointermove', (event) => {
 });
 document.addEventListener('pointerup', () => {
   dragBox = null;
+  panView = null;
 });
 
 render();

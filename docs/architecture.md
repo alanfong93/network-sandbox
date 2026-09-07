@@ -171,7 +171,9 @@ states nothing; the owning function's `vlanAware` flag decides, never the
 preset id (ADR 0007, ADR 0013). The shipped UI is the forms editor
 (#58) plus a vanilla-SVG **view and builder** of the topology (`ui/canvas.ts`):
 boxes, ports, cables, select, drop/port-click/drag, and a hop-replay token
-that follows recorded hops (play/step/pause, no verdict). Forms UI stays
+that follows recorded hops (play/step/pause, no verdict). The SVG camera
+(wheel zoom toward the cursor, empty-drag pan, Fit) is a view transform
+only — it is not `layout` and is not in the sandbox file. Forms UI stays
 (ADR 0029). Layout is a sandbox-envelope
 sibling `{deviceId: {x,y}}`, never fields on Topology or Chassis. Missing
 layout is valid — the later UI auto-places. `ui/jsonio.ts` round-trips

@@ -104,7 +104,8 @@ The browser UI runs the same engine, driven by clicks. The shipped loop is:
 place a preset box, link two free ports, edit in the inspector, send, read
 sentences, export. An SVG canvas **view** draws boxes, ports and cables
 from `{topology, layout, selected}` (`ui/canvas.ts`); missing layout uses
-`autoPlace` for display only. After Send, hop replay steps a token along
+`autoPlace` for display only. Wheel zoom and empty-drag pan move a
+session-only camera; they do not write layout. After Send, hop replay steps a token along
 recorded `Hop[]` (play/step/pause) — it is not a clock (ADR 0003) and not
 a verdict (ADR 0002). The canvas is also the builder: drop a palette preset, click two ports to
 link, drag a box (layout only). Flood replay draws one token per recorded flood hop on that

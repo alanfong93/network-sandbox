@@ -110,6 +110,12 @@ describe('SVG canvas view (#105)', () => {
     expect(many.match(/class="token"/g)?.length).toBe(2);
   });
 
+  it('optional camera writes the viewBox in world units', () => {
+    const state = addPreset(initialState, 'host');
+    const svg = renderCanvas(state, null, { x: 10, y: 20, w: 30, h: 40 });
+    expect(svg).toContain('viewBox="10 20 30 40"');
+  });
+
   it('does not emit drag, drop, or hop-token markup', () => {
     const state = addPreset(initialState, 'host');
     const svg = renderCanvas(state);
