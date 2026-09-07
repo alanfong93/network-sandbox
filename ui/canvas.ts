@@ -52,7 +52,7 @@ export function renderCanvas(
     layout: Layout | null;
     selected: DeviceId | null;
   },
-  token?: { x: number; y: number } | null,
+  token?: { x: number; y: number } | readonly { x: number; y: number }[] | null,
 ): string {
   const layout = layoutForDisplay(state.topology, state.layout);
   const devices = state.topology.devices
@@ -110,9 +110,13 @@ export function renderCanvas(
     maxX = Math.max(maxX, origin.x + BOX_W + 16);
     maxY = Math.max(maxY, origin.y + BOX_H + 24);
   }
-  const marker = token
-    ? `<circle class="token" cx="${token.x}" cy="${token.y}" r="6" />`
-    : '';
+  const tokens = token == null ? [] : Array.isArray(token) ? token : [token];
+  const marker = tokens
+    .map(
+      (item) =>
+        `<circle class="token" cx="${item.x}" cy="${item.y}" r="6" />`,
+    )
+    .join('');
   return (
     `<svg class="canvas-svg" viewBox="0 0 ${maxX} ${maxY}" ` +
     `xmlns="http://www.w3.org/2000/svg">${links}${devices}${marker}</svg>`

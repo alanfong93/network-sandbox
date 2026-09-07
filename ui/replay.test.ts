@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { addPreset, completeLink, initialState, setPvid, startLink } from './state';
 import { runTrace } from './trace';
-import { allHops, stepIndex, tokenPoint } from './replay';
+import { allHops, floodGroup, stepIndex, tokenPoint } from './replay';
+import type { Hop } from '../src/index';
 
 function threeBoxLine() {
   let state = initialState;
@@ -63,5 +64,57 @@ describe('hop replay (#107)', () => {
         expect(hops[next]!.device).toBe(hops[next]!.device);
       }
     }
+  });
+});
+
+function floodHop(device: string, outPort?: string): Hop {
+  return {
+    device,
+    inPort: '1',
+    outPort,
+    vlan: 10,
+    action: 'flooded',
+    step: 'egress-tagging',
+    reasonCode: 'egress-tagging:flooded',
+    reason: `flooded at ${device}`,
+  };
+}
+
+describe('flood concurrent tokens (#108)', () => {
+  it('characterises DISCOVER flood hops and never invents extra tokens', () => {
+    const { state, h1 } = threeBoxLine();
+    const trace = runTrace(state.topology, { from: h1, kind: 'dhcp-discover' });
+    const hops = allHops(trace);
+    const flooded = hops.filter((hop) => hop.action === 'flooded');
+    expect(trace.request.length).toBe(hops.filter((_, i) => i < trace.requestHops.length).length);
+    for (let i = 0; i < hops.length; i++) {
+      const group = floodGroup(hops, i);
+      const tokens = group
+        .map((hop) => tokenPoint(hop, state.topology, null))
+        .filter((item) => item !== null);
+      expect(tokens.length, `index ${i}`).toBeLessThanOrEqual(
+        Math.max(1, flooded.length),
+      );
+      expect(tokens.length).toBeLessThanOrEqual(hops.length);
+    }
+  });
+
+  it('unicast path is still one token', () => {
+    const { state, h1, lastIp } = threeBoxLine();
+    const hops = allHops(runTrace(state.topology, { from: h1, dstIp: lastIp }));
+    const fwd = hops.findIndex((hop) => hop.action === 'forwarded' || hop.action === 'delivered');
+    expect(fwd).toBeGreaterThanOrEqual(0);
+    expect(floodGroup(hops, fwd)).toHaveLength(1);
+  });
+
+  it('consecutive flooded hops on one device draw one token per recorded hop, not more', () => {
+    const hops = [
+      floodHop('sw-1', '1'),
+      floodHop('sw-1', '2'),
+      floodHop('sw-1', '3'),
+    ];
+    const group = floodGroup(hops, 1);
+    expect(group).toHaveLength(3);
+    expect(group.map((hop) => hop.outPort)).toEqual(['1', '2', '3']);
   });
 });

@@ -3,7 +3,7 @@ import { divergentScopeWarning, exportSandbox, importSandbox } from './jsonio';
 import { PRESETS } from './presets';
 import { renderCanvas } from './canvas';
 import { renderDeviceList, renderInspector, renderTrace } from './render';
-import { allHops, stepIndex, tokenPoint } from './replay';
+import { allHops, floodGroup, stepIndex, tokenPoint } from './replay';
 import {
   addPreset,
   cancelLink,
@@ -74,10 +74,9 @@ function render(): void {
     ).join(' ');
 
   const hops = lastTrace ? allHops(lastTrace) : [];
-  const hop = hops[replayIndex];
-  const token = hop
-    ? tokenPoint(hop, state.topology, state.layout)
-    : null;
+  const tokens = floodGroup(hops, replayIndex)
+    .map((item) => tokenPoint(item, state.topology, state.layout))
+    .filter((item): item is NonNullable<typeof item> => item !== null);
   const linking = state.pendingLink
     ? `<p class="linking">Linking from <strong>${esc(state.pendingLink.device)}` +
       `:${esc(state.pendingLink.port)}</strong> &mdash; click another device, ` +
@@ -85,7 +84,7 @@ function render(): void {
     : '';
   devices.innerHTML =
     '<h2>Canvas</h2>' +
-    renderCanvas(state, token) +
+    renderCanvas(state, tokens) +
     '<h2>Devices</h2>' +
     linking +
     renderDeviceList(state) +

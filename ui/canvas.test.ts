@@ -103,6 +103,11 @@ describe('SVG canvas view (#105)', () => {
     expect(svg).toMatch(/class="token"/);
     expect(svg).toContain('cx="10"');
     expect(svg).toContain('cy="20"');
+    const many = renderCanvas(state, [
+      { x: 1, y: 2 },
+      { x: 3, y: 4 },
+    ]);
+    expect(many.match(/class="token"/g)?.length).toBe(2);
   });
 
   it('does not emit drag, drop, or hop-token markup', () => {

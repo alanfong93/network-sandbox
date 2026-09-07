@@ -12,6 +12,29 @@ export function stepIndex(length: number, index: number, delta: number): number 
   return Math.max(0, Math.min(length - 1, index + delta));
 }
 
+export function floodGroup(hops: readonly Hop[], index: number): Hop[] {
+  const current = hops[index];
+  if (!current) return [];
+  if (current.action !== 'flooded') return [current];
+  let start = index;
+  while (
+    start > 0 &&
+    hops[start - 1]!.action === 'flooded' &&
+    hops[start - 1]!.device === current.device
+  ) {
+    start -= 1;
+  }
+  let end = index;
+  while (
+    end + 1 < hops.length &&
+    hops[end + 1]!.action === 'flooded' &&
+    hops[end + 1]!.device === current.device
+  ) {
+    end += 1;
+  }
+  return hops.slice(start, end + 1);
+}
+
 export function tokenPoint(
   hop: Hop,
   topology: Topology,
