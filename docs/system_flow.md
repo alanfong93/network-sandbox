@@ -106,9 +106,8 @@ sentences, export. An SVG canvas **view** draws boxes, ports and cables
 from `{topology, layout, selected}` (`ui/canvas.ts`); missing layout uses
 `autoPlace` for display only. After Send, hop replay steps a token along
 recorded `Hop[]` (play/step/pause) — it is not a clock (ADR 0003) and not
-a verdict (ADR 0002). Under ADR 0029 a later pass makes the canvas the
-builder: drop a box, click two ports to link, drag to place. Authoring is
-not shipped. Flood replay draws one token per recorded flood hop on that
+a verdict (ADR 0002). The canvas is also the builder: drop a palette preset, click two ports to
+link, drag a box (layout only). Flood replay draws one token per recorded flood hop on that
 device (concurrent if the walk emitted several); it does not invent copies. The topology never leaves the tab except as the
 sandbox JSON file (optional `layout` sidecar).
 

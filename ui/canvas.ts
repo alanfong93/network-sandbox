@@ -51,6 +51,7 @@ export function renderCanvas(
     topology: Topology;
     layout: Layout | null;
     selected: DeviceId | null;
+    pendingLink?: { device: DeviceId; port: string } | null;
   },
   token?: { x: number; y: number } | readonly { x: number; y: number }[] | null,
 ): string {
@@ -64,8 +65,17 @@ export function renderCanvas(
         .map((port, i) => {
           const n = Math.max(1, device.ports.length);
           const cx = ((i + 1) * BOX_W) / (n + 1);
+          const busy = state.topology.links.some(
+            (link) =>
+              (link.a.device === device.id && link.a.port === port.id) ||
+              (link.b.device === device.id && link.b.port === port.id),
+          );
+          const pending =
+            state.pendingLink?.device === device.id &&
+            state.pendingLink.port === port.id;
+          const klass = `port${busy ? ' occupied' : ''}${pending ? ' pending' : ''}`;
           return (
-            `<circle class="port" data-device="${esc(device.id)}" ` +
+            `<circle class="${klass}" data-device="${esc(device.id)}" ` +
             `data-port="${esc(port.id)}" cx="${cx}" cy="${BOX_H}" r="4" />`
           );
         })

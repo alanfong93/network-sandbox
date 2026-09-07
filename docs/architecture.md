@@ -169,9 +169,9 @@ PVID, untagged, tagged), and each VLAN-blind bridging function states the
 capability in one note carrying its own member count - an empty bridge
 states nothing; the owning function's `vlanAware` flag decides, never the
 preset id (ADR 0007, ADR 0013). The shipped UI is the forms editor
-(#58) plus a vanilla-SVG **view** of the topology (`ui/canvas.ts`): boxes,
-ports, cables, select, and a hop-replay token that follows recorded hops
-(play/step/pause, no verdict). Builder (drop/drag) is still owed
+(#58) plus a vanilla-SVG **view and builder** of the topology (`ui/canvas.ts`):
+boxes, ports, cables, select, drop/port-click/drag, and a hop-replay token
+that follows recorded hops (play/step/pause, no verdict). Forms UI stays
 (ADR 0029). Layout is a sandbox-envelope
 sibling `{deviceId: {x,y}}`, never fields on Topology or Chassis. Missing
 layout is valid — the later UI auto-places. `ui/jsonio.ts` round-trips

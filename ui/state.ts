@@ -182,6 +182,39 @@ function withMember(
   });
 }
 
+export function setLayoutPoint(
+  state: EditorState,
+  deviceId: DeviceId,
+  pos: { x: number; y: number },
+): EditorState {
+  if (!state.topology.devices.some((device) => device.id === deviceId)) {
+    return state;
+  }
+  return {
+    ...state,
+    layout: { ...(state.layout ?? {}), [deviceId]: pos },
+  };
+}
+
+export function placePreset(
+  state: EditorState,
+  presetId: string,
+  pos: { x: number; y: number },
+): EditorState {
+  const next = addPreset(state, presetId);
+  const id = next.selected;
+  if (!id) return next;
+  return setLayoutPoint(next, id, pos);
+}
+
+export function moveDevice(
+  state: EditorState,
+  deviceId: DeviceId,
+  pos: { x: number; y: number },
+): EditorState {
+  return setLayoutPoint(state, deviceId, pos);
+}
+
 export function addPreset(state: EditorState, presetId: string): EditorState {
   const preset = presetById(presetId);
   if (!preset) {
@@ -255,6 +288,9 @@ export function completeLink(
       notice: `No free port on ${chassis.label} (${chassis.id})`,
       pendingLink: null,
     };
+  }
+  if (pending.device === deviceId && pending.port === port) {
+    return state;
   }
   if (portOccupied(state.topology, deviceId, port)) {
     return {

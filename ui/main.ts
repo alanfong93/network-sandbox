@@ -3,6 +3,7 @@ import { divergentScopeWarning, exportSandbox, importSandbox } from './jsonio';
 import { PRESETS } from './presets';
 import { renderCanvas } from './canvas';
 import { renderDeviceList, renderInspector, renderTrace } from './render';
+import { autoPlace } from './layout';
 import { allHops, floodGroup, stepIndex, tokenPoint } from './replay';
 import {
   addPreset,
@@ -22,12 +23,24 @@ import {
   setTaggedVlans,
   setUntaggedVlans,
   startLink,
+  placePreset,
+  portOccupied,
+  moveDevice,
   removeDevice,
   type EditorState,
 } from './state';
 import { runTrace, type TraceRender } from './trace';
 
 let state: EditorState = initialState;
+let didDrag = false;
+let dragBox: {
+  id: DeviceId;
+  startX: number;
+  startY: number;
+  origX: number;
+  origY: number;
+  svg: SVGSVGElement;
+} | null = null;
 let sendFrom: DeviceId | null = null;
 let lastDstIp = '192.168.1.11';
 // The draft keeps an unsent destination across re-renders (send-kind
@@ -70,7 +83,7 @@ function render(): void {
     PRESETS.map(
       (preset) =>
         `<button type="button" class="preset" data-action="add" ` +
-        `data-preset="${esc(preset.id)}">${esc(preset.label)}</button>`,
+        `data-preset="${esc(preset.id)}" draggable="true">${esc(preset.label)}</button>`,
     ).join(' ');
 
   const hops = lastTrace ? allHops(lastTrace) : [];
@@ -231,6 +244,31 @@ async function importJson(file: File): Promise<void> {
 }
 
 function onClick(event: MouseEvent): void {
+  if (didDrag) {
+    didDrag = false;
+    return;
+  }
+  const portEl = (event.target as Element).closest('.port');
+  if (portEl) {
+    const id = portEl.getAttribute('data-device');
+    const port = portEl.getAttribute('data-port');
+    if (id && port && !portOccupied(state.topology, id, port)) {
+      if (
+        state.pendingLink &&
+        state.pendingLink.device === id &&
+        state.pendingLink.port === port
+      ) {
+        return;
+      }
+      if (state.pendingLink) {
+        state = completeLink(state, id, port);
+      } else {
+        state = startLink(state, id, port);
+      }
+      render();
+    }
+    return;
+  }
   const target = (event.target as HTMLElement).closest<HTMLElement>('[data-action],[data-device].device');
   if (!target) return;
 
@@ -454,6 +492,77 @@ document.addEventListener('change', (event) => {
 document.addEventListener('input', (event) => {
   const target = event.target as HTMLInputElement;
   if (target.name === 'dstIp') dstIpDraft = target.value;
+});
+
+function clientToSvg(
+  svg: SVGSVGElement,
+  clientX: number,
+  clientY: number,
+): { x: number; y: number } {
+  const pt = svg.createSVGPoint();
+  pt.x = clientX;
+  pt.y = clientY;
+  const matrix = svg.getScreenCTM();
+  if (!matrix) return { x: clientX, y: clientY };
+  const loc = pt.matrixTransform(matrix.inverse());
+  return { x: loc.x, y: loc.y };
+}
+
+document.addEventListener('dragstart', (event) => {
+  const btn = (event.target as Element).closest('.preset');
+  const preset = btn?.getAttribute('data-preset');
+  if (preset) event.dataTransfer?.setData('text/plain', preset);
+});
+document.addEventListener('dragover', (event) => {
+  if ((event.target as Element).closest('.canvas-svg')) event.preventDefault();
+});
+document.addEventListener('drop', (event) => {
+  const svg = (event.target as Element).closest('svg.canvas-svg');
+  if (!(svg instanceof SVGSVGElement)) return;
+  event.preventDefault();
+  const preset = event.dataTransfer?.getData('text/plain');
+  if (!preset) return;
+  state = placePreset(state, preset, clientToSvg(svg, event.clientX, event.clientY));
+  render();
+});
+
+document.addEventListener('pointerdown', (event) => {
+  if ((event.target as Element).closest('.port')) return;
+  const g = (event.target as Element).closest('.device[data-device]');
+  if (!g || !g.closest('.canvas-svg')) return;
+  const svg = g.closest('svg.canvas-svg');
+  if (!(svg instanceof SVGSVGElement)) return;
+  const id = g.getAttribute('data-device');
+  if (!id) return;
+  const display = { ...autoPlace(state.topology), ...(state.layout ?? {}) };
+  const origin = display[id] ?? { x: 0, y: 0 };
+  const start = clientToSvg(svg, event.clientX, event.clientY);
+  dragBox = {
+    id,
+    startX: start.x,
+    startY: start.y,
+    origX: origin.x,
+    origY: origin.y,
+    svg,
+  };
+  didDrag = false;
+});
+document.addEventListener('pointermove', (event) => {
+  if (!dragBox) return;
+  const now = clientToSvg(dragBox.svg, event.clientX, event.clientY);
+  const dx = now.x - dragBox.startX;
+  const dy = now.y - dragBox.startY;
+  if (Math.hypot(dx, dy) > 2) didDrag = true;
+  state = moveDevice(state, dragBox.id, {
+    x: dragBox.origX + dx,
+    y: dragBox.origY + dy,
+  });
+  render();
+  const svg = document.querySelector('svg.canvas-svg');
+  if (svg instanceof SVGSVGElement && dragBox) dragBox.svg = svg;
+});
+document.addEventListener('pointerup', () => {
+  dragBox = null;
 });
 
 render();
