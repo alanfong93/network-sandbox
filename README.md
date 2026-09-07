@@ -10,7 +10,7 @@ No server, no account, no install. The engine is a TypeScript library; the brows
 >
 > It does *not* promise that anything working here will work identically on your specific switch. Vendors differ in syntax, defaults and edge-case behaviour, and those differences are where a lot of real outages live. This sandbox is faithful to **IEEE 802.1Q / 802.1D** — the standard every vendor implements — not to any one vendor's box.
 
-**Status:** Stages 1–3 of the engine are in the library (wired core, access points as wired devices, multi-WAN). Stage 4 has the estimate/trace seam and optional `Radio.channel`; coverage is not modelled. A first browser UI (Stage 5, forms) places presets, edits ports, sends a frame and shows the engine's hops. A canvas view/editor is owed under [ADR 0029](docs/adr/0029-canvas-is-a-ui-view-and-editor.md) and is not shipped. Who it is for is in [`docs/PRODUCT.md`](docs/PRODUCT.md); the spec is [`docs/SPEC.md`](docs/SPEC.md); decisions in [`docs/adr/`](docs/adr/); vocabulary in [`CONTEXT.md`](CONTEXT.md).
+**Status:** Stages 1–3 of the engine are in the library (wired core, access points as wired devices, multi-WAN). Stage 4 has the estimate/trace seam and optional `Radio.channel`; coverage is not modelled. A first browser UI (Stage 5, forms plus an SVG canvas view) places presets, edits ports, sends a frame and shows the engine's hops. Canvas authoring and hop replay are still owed under [ADR 0029](docs/adr/0029-canvas-is-a-ui-view-and-editor.md). Who it is for is in [`docs/PRODUCT.md`](docs/PRODUCT.md); the spec is [`docs/SPEC.md`](docs/SPEC.md); decisions in [`docs/adr/`](docs/adr/); vocabulary in [`CONTEXT.md`](CONTEXT.md).
 
 ```bash
 npm install
@@ -92,7 +92,7 @@ Routers are **one device type placed at any depth** — HQ, floor, department. "
 2. **Access points** - done. SSID to VLAN mapping and wireless clients, reusing the wired engine
 3. **Multi-WAN** - done. Policy routing per VLAN, failover as two runs, equal-cost as a named next-hop
 4. **Radio** - last. Estimate/trace seam and channel-as-config are in; coverage, roaming and a distinct UI are not
-5. **Browser UI** - started. Palette of presets, port inspector with separate PVID and untagged-VLAN controls, send a frame and read the hops, import/export sandbox JSON. Forms UI is current; a canvas view/editor is owed under [ADR 0029](docs/adr/0029-canvas-is-a-ui-view-and-editor.md). The topology is the file; layout is an optional envelope sidecar, never Topology
+5. **Browser UI** - started. Palette of presets, port inspector with separate PVID and untagged-VLAN controls, send a frame and read the hops, import/export sandbox JSON, SVG canvas **view** of boxes and cables. Forms UI stays; canvas authoring (drop/drag) and hop replay are still owed under [ADR 0029](docs/adr/0029-canvas-is-a-ui-view-and-editor.md). The topology is the file; layout is an optional envelope sidecar, never Topology
 
 Stage 4 is deliberately last. See below.
 

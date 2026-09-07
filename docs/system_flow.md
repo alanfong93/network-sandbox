@@ -102,12 +102,14 @@ direction died. It is not a pass/fail field.
 
 The browser UI runs the same engine, driven by clicks. The shipped loop is:
 place a preset box, link two free ports, edit in the inspector, send, read
-sentences, export. Under ADR 0029 a later canvas is also the builder and
-hop-replay surface: drop a box, click two ports to link, drag to place.
-Send still produces `Hop[]`; replay consumes those completed hops — it is
-not a clock (ADR 0003) and not a verdict (ADR 0002). The canvas is not
-shipped. The topology never leaves the tab except as the sandbox JSON file
-(optional `layout` sidecar).
+sentences, export. An SVG canvas **view** draws boxes, ports and cables
+from `{topology, layout, selected}` (`ui/canvas.ts`); missing layout uses
+`autoPlace` for display only. Under ADR 0029 a later pass makes that canvas
+the builder and hop-replay surface: drop a box, click two ports to link,
+drag to place. Send still produces `Hop[]`; replay consumes those completed
+hops — it is not a clock (ADR 0003) and not a verdict (ADR 0002). Authoring
+and replay are not shipped. The topology never leaves the tab except as the
+sandbox JSON file (optional `layout` sidecar).
 
 ```mermaid
 flowchart TD

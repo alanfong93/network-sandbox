@@ -169,8 +169,9 @@ PVID, untagged, tagged), and each VLAN-blind bridging function states the
 capability in one note carrying its own member count - an empty bridge
 states nothing; the owning function's `vlanAware` flag decides, never the
 preset id (ADR 0007, ADR 0013). The shipped UI is the forms editor
-(#58). A later vanilla-SVG canvas is both the topology builder and the
-hop-replay surface (ADR 0029); it is not shipped. Layout is a sandbox-envelope
+(#58) plus a vanilla-SVG **view** of the topology (`ui/canvas.ts`): boxes,
+ports, cables, select. Builder (drop/drag) and hop replay are still owed
+(ADR 0029). Layout is a sandbox-envelope
 sibling `{deviceId: {x,y}}`, never fields on Topology or Chassis. Missing
 layout is valid — the later UI auto-places. `ui/jsonio.ts` round-trips
 optional `layout` as an envelope sibling (`exportSandbox(topology, layout?)`,
@@ -181,8 +182,11 @@ receives topology only and ignores extra keys.
 flowchart LR
     P[presets.ts<br>palette boxes] --> S[state.ts<br>EditorState edits]
     S --> R[render.ts<br>HTML strings]
+    S --> CV[canvas.ts<br>SVG view]
     S --> T[trace.ts<br>createRunContext + runFlow]
     T --> R
+    LY --> CV
+    CV --> M[main.ts<br>DOM wiring]
     S --> J[jsonio.ts<br>envelope sibling layout]
     S --> LY[layout sidecar<br>device id to x,y]
     LY --> J
@@ -194,6 +198,7 @@ flowchart LR
     style E fill:#d7f5d7,color:#000
     style M fill:#d7f5d7,color:#000
     style LY fill:#fff3cd,color:#000
+    style CV fill:#fff3cd,color:#000
 ```
 
 ## Data model
