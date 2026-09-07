@@ -6,7 +6,7 @@ import {
   runFlow,
   warningAsFormatInput,
 } from '../src/index';
-import type { DeviceId, Flow, Topology } from '../src/index';
+import type { DeviceId, Flow, Hop, Topology } from '../src/index';
 
 /**
  * The cold-cache precondition is user-visible, not an implementation footnote
@@ -38,6 +38,8 @@ export interface TraceRender {
   warnings: string[];
   request: string[];
   reply: string[];
+  requestHops: Hop[];
+  replyHops: Hop[];
   flowNotes: string[];
   notices: string[];
   outcome: Flow['outcome'];
@@ -88,11 +90,15 @@ export function runTrace(
       ? sentence
       : `${entry.phase[0]!.toUpperCase()}${entry.phase.slice(1)}: ${sentence}`;
   });
-  const request = result.flow.request.hops.map((hop) => hop.reason);
+  const requestHops = result.flow.request.hops;
+  const replyHops = result.flow.reply?.hops ?? [];
+  const request = requestHops.map((hop) => hop.reason);
   return {
     warnings,
     request,
-    reply: result.flow.reply?.hops.map((hop) => hop.reason) ?? [],
+    requestHops,
+    reply: replyHops.map((hop) => hop.reason),
+    replyHops,
     flowNotes,
     notices: [
       // The action token leads every formatted hop sentence, so 'flooded'

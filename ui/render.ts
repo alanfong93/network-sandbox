@@ -252,7 +252,7 @@ export function renderInspector(state: EditorState): string {
   return parts.join('\n');
 }
 
-export function renderTrace(trace: TraceRender): string {
+export function renderTrace(trace: TraceRender, activeIndex?: number): string {
   const parts: string[] = [];
   if (trace.warnings.length > 0) {
     parts.push(
@@ -263,13 +263,24 @@ export function renderTrace(trace: TraceRender): string {
   }
   parts.push(
     `<h3>Request</h3>\n<ol class="hops">` +
-      trace.request.map((line) => `<li>${esc(line)}</li>`).join('\n') +
+      trace.request
+        .map((line, i) => {
+          const active = i === activeIndex ? ' class="active"' : '';
+          return `<li data-hop-index="${i}"${active}>${esc(line)}</li>`;
+        })
+        .join('\n') +
       `</ol>`,
   );
   if (trace.reply.length > 0) {
     parts.push(
       `<h3>Reply</h3>\n<ol class="hops">` +
-        trace.reply.map((line) => `<li>${esc(line)}</li>`).join('\n') +
+        trace.reply
+          .map((line, i) => {
+            const idx = trace.request.length + i;
+            const active = idx === activeIndex ? ' class="active"' : '';
+            return `<li data-hop-index="${idx}"${active}>${esc(line)}</li>`;
+          })
+          .join('\n') +
         `</ol>`,
     );
   }
