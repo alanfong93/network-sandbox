@@ -3,6 +3,7 @@ import type {
   Chassis,
   DhcpScope,
   Fn,
+  NameRecord,
   InternalEdge,
   Link,
   Port,
@@ -114,6 +115,7 @@ function encodeChassis(chassis: Chassis): ChassisJson {
   if (chassis.ip !== undefined) out.ip = chassis.ip;
   if (chassis.prefix !== undefined) out.prefix = chassis.prefix;
   if (chassis.gateway !== undefined) out.gateway = chassis.gateway;
+  if (chassis.resolver !== undefined) out.resolver = chassis.resolver;
   if (chassis.vlan !== undefined) out.vlan = chassis.vlan;
   return out;
 }
@@ -208,6 +210,12 @@ function encodeFn(fn: Fn): FnJson {
       if (fn.prefix !== undefined) out.prefix = fn.prefix;
       return out;
     }
+    case 'resolver':
+      return {
+        kind: 'resolver',
+        id: fn.id,
+        records: fn.records.map(encodeRecord),
+      };
     default: {
       const never: never = fn;
       throw new UnknownFunctionKindError(never);
@@ -253,6 +261,10 @@ function encodeForward(forward: PortForward): PortForward {
   };
 }
 
+function encodeRecord(record: NameRecord): NameRecord {
+  return { name: record.name, ip: record.ip };
+}
+
 function encodeScope(scope: DhcpScope): DhcpScope {
   return {
     vlan: scope.vlan,
@@ -295,6 +307,7 @@ function decodeChassis(value: unknown): Chassis {
   if (typeof rec.ip === 'string') chassis.ip = rec.ip;
   if (typeof rec.prefix === 'number') chassis.prefix = rec.prefix;
   if (typeof rec.gateway === 'string') chassis.gateway = rec.gateway;
+  if (typeof rec.resolver === 'string') chassis.resolver = rec.resolver;
   if (typeof rec.vlan === 'number') chassis.vlan = rec.vlan;
   return chassis;
 }
@@ -419,6 +432,14 @@ function decodeFn(value: unknown): Fn {
       if (typeof rec.prefix === 'number') out.prefix = rec.prefix;
       return out;
     }
+    case 'resolver':
+      return {
+        kind: 'resolver',
+        id: String(rec.id),
+        records: Array.isArray(rec.records)
+          ? rec.records.map(decodeRecord)
+          : [],
+      };
     default:
       throw new UnknownFunctionKindError(rec.kind);
   }
@@ -485,6 +506,11 @@ function decodeForward(value: unknown): PortForward {
     toIp: String(rec.toIp),
     toPort: Number(rec.toPort),
   };
+}
+
+function decodeRecord(value: unknown): NameRecord {
+  const rec = asRecord(value);
+  return { name: String(rec.name), ip: String(rec.ip) };
 }
 
 function decodeScope(value: unknown): DhcpScope {

@@ -38,6 +38,8 @@ export interface Chassis {
   ip?: string;
   prefix?: number;
   gateway?: string;
+  /** Advertised resolver address. An IP, not an engine (ADR 0030). */
+  resolver?: string;
   vlan?: VlanId;
 }
 
@@ -108,7 +110,13 @@ export type Fn =
       credentials?: { user: string; pass: string };
       ip?: string;
       prefix?: number;
-    };
+    }
+  | { kind: 'resolver'; id: FnId; records: NameRecord[] };
+
+export interface NameRecord {
+  name: string;
+  ip: string;
+}
 
 export interface PortForward {
   proto: TransportProto;
@@ -160,6 +168,8 @@ export type FramePayload =
       srcIp?: string;
       dstIp?: string;
       srcPort?: number;
+      /** Name asked on a udp/53 query. Format fact, not a zone (ADR 0030). */
+      name?: string;
     };
 
 export interface Frame {
@@ -187,6 +197,8 @@ export interface Hop {
 
 export interface Flow {
   id: string;
+  /** The udp/53 query walk's frame, present on send-by-name runs (ADR 0030). */
+  query?: Frame;
   request: Frame;
   reply?: Frame;
   outcome: 'round-trip' | 'request-failed' | 'reply-failed';

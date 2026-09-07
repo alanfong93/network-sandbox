@@ -44,6 +44,7 @@ flowchart LR
     U --> WL[wireless.ts<br>ssid-vlan classify]
     U --> N[send.ts<br>originate and ARP]
     U --> L[flow.ts<br>request and reply]
+    U --> RS[resolver.ts<br>name table lookup]
     W --> B
     W --> O
     W --> ISP
@@ -53,6 +54,7 @@ flowchart LR
     N --> W
     N --> DH
     L --> N
+    L --> RS
     B --> F
     W --> F
     O --> F
@@ -75,6 +77,7 @@ flowchart LR
     style WL color:#000
     style N color:#000
     style L color:#000
+    style RS color:#000
 ```
 
 | Module | Holds |
@@ -95,7 +98,8 @@ flowchart LR
 | `src/dhcp.ts` | DHCP server and relay as functions — siblings of routing when mounted on a router, or standalone on a host-like chassis (`standaloneDhcpDecision`, reached through the walk's fallback dispatch), and bridge-embedded: the walk's post-ingress seam consults a co-resident server after bridging classification, answering with the flood preserved (issue #79). DISCOVER/OFFER/REQUEST/ACK are frames. An OFFER is `poolStart` from the matching scope. No lease record. A standalone server with divergent multi-scope VLANs answers only on `chassis.vlan` — one identity, one VLAN (RFC 2131 s4.3.1); import warns on the shape. |
 | `src/isp.ts` | ISP handoff. The named `port` faces the customer; other ports owned by the function face the provider. A missing `vlanTag` or a PPPoE IP frame without that layer drops at `isp-handoff`. |
 | `src/send.ts` | Originate from a sender. ARP only when the next-hop MAC is unknown. DHCP DISCOVER is broadcast. |
-| `src/flow.ts` | Request then ICMP reply against one run context. Outcomes name which direction died; they are not pass/fail. |
+| `src/resolver.ts` | The name table: `matchRecord` over a resolver function's `{name, ip}` records, case-insensitive and trimmed; `lookupRecord` reads the table of the chassis the query reached. A table, not a zone, not recursion (ADR 0030). |
+| `src/flow.ts` | Request then ICMP reply against one run context. With a name destination: a udp/53 walk to the sender's advertised resolver first, the table lookup on the chassis the query reached, then the echo leg to the resolved IP — the query frame rides on `Flow.query` (ADR 0030). Outcomes name which direction died; they are not pass/fail. |
 | `src/host.ts` | Host chassis (no functions) answering ARP and taking delivery. |
 | `src/wireless.ts` | One pass through a wireless function: SSID to VLAN at `ssid-vlan`, then `InternalEdge` onto the chassis bridge. Not a second forwarder. Radio may store a configured channel (not an RF claim, ADR 0025). Radio and link carry no power or coverage. |
 
@@ -224,7 +228,9 @@ erDiagram
     Chassis ||--o{ Fn : has
     Chassis ||--o{ InternalEdge : has
     Fn ||--o{ BridgePort : members
+    Fn ||--o{ NameRecord : records
     Frame ||--|{ Hop : produces
+    Flow ||--o| Frame : query
     Flow ||--|| Frame : request
     Flow ||--o| Frame : reply
 ```

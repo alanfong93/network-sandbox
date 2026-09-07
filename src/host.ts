@@ -112,6 +112,11 @@ export function handleHost(
     };
   }
 
+  const payload = args.frame.payload;
+  const facts =
+    payload.kind === 'service' && payload.name !== undefined
+      ? { name: payload.name, dstPort: payload.dstPort, ip: payload.dstIp }
+      : undefined;
   return {
     hops: [
       makeHop({
@@ -121,6 +126,7 @@ export function handleHost(
         action: 'delivered',
         step: 'delivery',
         outcome: 'delivered',
+        facts,
       }),
     ],
     transmissions: [],

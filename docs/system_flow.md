@@ -98,6 +98,31 @@ The dest replies to the source address it actually received, so a masqueraded
 request comes home without a return route. `Flow.outcome` names which
 direction died. It is not a pass/fail field.
 
+Sending to a **name** (issue #126) is two walks in one run (ADR 0030):
+the destination is first a udp/53 `service` frame to the sender's
+advertised resolver, and only a **delivered** query consults the
+receiving chassis' record table. The resolved IP then feeds the ICMP
+echo leg as usual; `Flow.query` carries the query frame so the trace
+shows both walks in order. A sender with no advertised resolver, a query
+that never arrives, and a table without the name each stop the flow
+where it died — the trace, not a verdict, says which.
+
+```mermaid
+flowchart TD
+    N[Send to a name] --> R{Advertised<br>resolver set?}
+    R -->|no| NR[no-resolver observation<br>flow stops]
+    R -->|yes| Q[udp/53 query is a frame<br>through the send pipeline]
+    Q --> D{Query delivered?}
+    D -->|no| F[request-failed<br>the walk names the drop]
+    D -->|yes| L{Record on the<br>receiving chassis?}
+    L -->|no| NO[no-record observation<br>flow stops]
+    L -->|yes| P[ICMP to the resolved IP<br>as today]
+    style NR fill:#fff3cd,color:#000
+    style NO fill:#fff3cd,color:#000
+    style F fill:#fff3cd,color:#000
+    style P fill:#d7f5d7,color:#000
+```
+
 ## UI loop
 
 The browser UI runs the same engine, driven by clicks. The shipped loop is:

@@ -20,6 +20,7 @@ import type {
 } from './model';
 import { createRunContext, lookup } from './run';
 import { send } from './send';
+import { referenceScenario } from './wan.fixture';
 
 function trunk(port: string, tagged: VlanId[]): BridgePort {
   return {
@@ -590,5 +591,168 @@ describe('flow outcomes', () => {
     expect(back?.step).toBe('delivery');
     expect(back?.reasonCode).toBe('delivery:delivered');
     expect(back?.action).toBe('delivered');
+  });
+});
+
+describe('send by name: the table answers after arrival (#126, ADR 0030)', () => {
+  // The reference scenario's WAN leg (H10 - USW - MSW - RTR - ONT - NET)
+  // plus a LAN resolver box and a NAS for the local-name case.
+  function nameScenario(): Topology {
+    const topology = referenceScenario();
+    const devices = topology.devices.map((device) =>
+      device.id === 'H10' ? { ...device, resolver: '192.168.10.53' } : device,
+    );
+    const dns = hostBox('DNS1', {
+      mac: 'aa:00:00:00:00:53',
+      ip: '192.168.10.53',
+      prefix: 24,
+      gateway: '192.168.10.1',
+    });
+    const dnsBox: Chassis = {
+      ...dns,
+      functions: [
+        {
+          kind: 'resolver',
+          id: 'resolver',
+          records: [
+            { name: 'google.com', ip: '192.0.2.1' },
+            { name: 'nas.home', ip: '192.168.10.50' },
+          ],
+        },
+      ],
+    };
+    const nas = hostBox('NAS', {
+      mac: 'aa:00:00:00:00:50',
+      ip: '192.168.10.50',
+      prefix: 24,
+      gateway: '192.168.10.1',
+    });
+    return {
+      ...topology,
+      devices: [...devices, dnsBox, nas],
+      links: [
+        ...topology.links,
+        link('dns', { device: 'DNS1', port: '1' }, { device: 'USW', port: '3' }),
+        link('nas', { device: 'NAS', port: '1' }, { device: 'USW', port: '4' }),
+      ],
+    };
+  }
+
+  const nameSend = {
+    from: 'H10',
+    dstIp: '',
+    dstName: 'google.com',
+    payload: { kind: 'icmp' },
+  } as const;
+
+  it('walks udp/53 to the advertised resolver, then pings the resolved IP', () => {
+    const ctx = createRunContext(nameScenario());
+    const result = runFlow(ctx, nameSend);
+    expect(result.flow.outcome).toBe('round-trip');
+    expect(result.flow.id).toBe('H10:google.com');
+    // The query frame is carried separately and delivered at the resolver box.
+    const queryDelivery = result.flow.query?.hops.find(
+      (hop) => hop.step === 'delivery' && hop.action === 'delivered',
+    );
+    expect(queryDelivery?.device).toBe('DNS1');
+    expect(queryDelivery?.reason).toBe('Query for google.com delivered at DNS1');
+    // The echo leg lands on the Internet box; the reply returns to the sender.
+    const echoDelivery = result.flow.request.hops.find(
+      (hop) => hop.step === 'delivery' && hop.action === 'delivered',
+    );
+    expect(echoDelivery?.device).toBe('NET');
+    const replyDelivery = result.flow.reply?.hops.find(
+      (hop) => hop.step === 'delivery' && hop.action === 'delivered',
+    );
+    expect(replyDelivery?.device).toBe('H10');
+  });
+
+  it('keeps the ordering contract: query walk, echo walk, reply (#63)', () => {
+    const ctx = createRunContext(nameScenario());
+    const result = runFlow(ctx, nameSend);
+    const rank = { request: 0, reply: 1, flow: 2 } as const;
+    const ranks = result.observations.map((item) => rank[item.phase]);
+    expect(ranks).toContain(0);
+    expect(ranks).toContain(1);
+    expect(ranks).toEqual([...ranks].sort((a, b) => a - b));
+  });
+
+  it('a local name never leaves the house', () => {
+    const ctx = createRunContext(nameScenario());
+    const result = runFlow(ctx, {
+      from: 'H10',
+      dstIp: '',
+      dstName: 'nas.home',
+      payload: { kind: 'icmp' },
+    });
+    expect(result.flow.outcome).toBe('round-trip');
+    const echoDelivery = result.flow.request.hops.find(
+      (hop) => hop.step === 'delivery' && hop.action === 'delivered',
+    );
+    expect(echoDelivery?.device).toBe('NAS');
+    // The LAN flood legitimately brushes the router's port; the walk must
+    // not cross the WAN (done-when: "no WAN").
+    const legs = [...result.flow.request.hops, ...(result.flow.reply?.hops ?? [])];
+    const legDevices = new Set(legs.map((hop) => hop.device));
+    expect(legDevices.has('ONT')).toBe(false);
+    expect(legDevices.has('NET')).toBe(false);
+  });
+
+  it('stops at the query when the resolver is unreachable; ping-by-IP still works', () => {
+    const down = nameScenario();
+    down.links = down.links.filter((l) => l.id !== 'dns');
+    const ctx = createRunContext(down);
+    const result = runFlow(ctx, nameSend);
+    expect(result.flow.outcome).toBe('request-failed');
+    expect(result.flow.reply).toBeUndefined();
+    // No echo walk happened: the request is the query frame alone. Hosts
+    // that cannot answer the flooded query emit delivery:dropped hops —
+    // only a delivered hop would mean the query landed.
+    expect(result.flow.query).toBeUndefined();
+    expect(
+      result.flow.request.hops.some(
+        (hop) => hop.step === 'delivery' && hop.action === 'delivered',
+      ),
+    ).toBe(false);
+    const byIp = runFlow(createRunContext(nameScenario()), {
+      from: 'H10',
+      dstIp: '192.0.2.1',
+      payload: { kind: 'icmp' },
+    });
+    expect(byIp.flow.outcome).toBe('round-trip');
+  });
+
+  it('names the missing resolver when the sender advertises none', () => {
+    const topology = nameScenario();
+    topology.devices = topology.devices.map((device) =>
+      device.id === 'H10' ? { ...device, resolver: undefined } : device,
+    );
+    const ctx = createRunContext(topology);
+    const result = runFlow(ctx, nameSend);
+    expect(result.flow.outcome).toBe('request-failed');
+    const obs = result.observations.find(
+      (item) =>
+        item.kind === 'flow' &&
+        item.observation.observation === 'no-resolver',
+    );
+    expect(obs).toBeDefined();
+  });
+
+  it('names the box whose table lacked the record', () => {
+    const topology = nameScenario();
+    topology.devices = topology.devices.map((device) => {
+      if (device.id !== 'DNS1') return device;
+      const fn = device.functions[0];
+      return fn?.kind === 'resolver' ? { ...device, functions: [{ ...fn, records: [] }] } : device;
+    });
+    const ctx = createRunContext(topology);
+    const result = runFlow(ctx, nameSend);
+    expect(result.flow.outcome).toBe('request-failed');
+    const obs = result.observations.find(
+      (item) =>
+        item.kind === 'flow' && item.observation.observation === 'no-record',
+    );
+    expect(obs).toBeDefined();
+    expect(obs?.observation.facts.devices).toEqual(['DNS1']);
   });
 });

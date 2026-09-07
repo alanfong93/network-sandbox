@@ -11,6 +11,7 @@ const FN_KINDS = [
   'dhcp-relay',
   'wireless',
   'isp-handoff',
+  'resolver',
 ] as const;
 
 describe('presets', () => {
@@ -42,6 +43,35 @@ describe('presets', () => {
     expect(chassis?.mac).toBeDefined();
     expect(chassis?.ip).toBeDefined();
     expect(chassis?.gateway).toBeDefined();
+  });
+
+  it('host ships the advertised resolver as an address, the gateway default (#126)', () => {
+    const chassis = PRESETS.find((p) => p.id === 'host')?.build('h1', 1);
+    expect(chassis?.resolver).toBe('192.168.1.1');
+  });
+
+  it('resolver box is host-like, carries the resolver function and a shipped record (#126, ADR 0030)', () => {
+    const chassis = PRESETS.find((p) => p.id === 'resolver')?.build('res1', 1);
+    expect(chassis).toBeDefined();
+    expect(chassis?.mac).toBeDefined();
+    expect(chassis?.ip).toBe('192.168.1.10');
+    expect(chassis?.ports).toHaveLength(1);
+    const fn = chassis?.functions.find((f) => f.kind === 'resolver');
+    expect(fn && fn.kind === 'resolver' ? fn.records : []).toEqual([
+      { name: 'google.com', ip: '192.0.2.1' },
+    ]);
+    // The field is resolver, never dns (CONTEXT).
+    expect(JSON.stringify(chassis)).not.toMatch(/"dns"/i);
+  });
+
+  it('internet is a bare host chassis at 192.0.2.1 that answers ICMP (ADR 0030)', () => {
+    const chassis = PRESETS.find((p) => p.id === 'internet')?.build('net1', 1);
+    expect(chassis).toBeDefined();
+    expect(chassis?.functions).toEqual([]);
+    expect(chassis?.ip).toBe('192.0.2.1');
+    expect(chassis?.prefix).toBe(24);
+    expect(chassis?.gateway).toBeUndefined();
+    expect(chassis?.mac).toBeDefined();
   });
 
   it('managed switch writes bridging and stp, members match ports', () => {

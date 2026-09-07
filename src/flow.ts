@@ -2,10 +2,12 @@ import type { FlowInput, HopFacts } from './format';
 import { formatPrefix } from './ip';
 import type { DeviceId, Flow, Frame, FramePayload, Hop, Topology } from './model';
 import type { RunContext } from './run';
+import { lookupRecord } from './resolver';
 import { send, senderVlan, type SendArgs } from './send';
 import type { WalkObservation } from './walk';
 
-export type FlowArgs = SendArgs;
+/** A name send adds the destination name; the walk itself stays an IP send. */
+export type FlowArgs = SendArgs & { dstName?: string };
 
 export interface FlowObservation {
   observation: FlowInput['observation'];
@@ -82,6 +84,10 @@ function deliveryDevice(hops: Hop[]): DeviceId | undefined {
   return undefined;
 }
 
+function flowObs(observation: FlowObservation): FlowResultObservation {
+  return { phase: 'flow', kind: 'flow', observation };
+}
+
 function routedPath(hops: Hop[], topology: Topology): DeviceId[] {
   const routers = new Set(
     topology.devices
@@ -107,10 +113,19 @@ function firewallDrop(hops: Hop[]): Hop | undefined {
 }
 
 /**
- * One flow: the request, then — if it was delivered — the ICMP reply, against
- * the same run context so the return walk reads the tables the request built.
+ * One flow. With `dstName` this is send-by-name (ADR 0030): a udp/53 walk to
+ * the sender's advertised resolver first, the table lookup on the chassis the
+ * query reached, then the ICMP leg to the resolved IP. Without it, the ICMP
+ * echo walk. Both run against one context so later legs read the tables the
+ * earlier ones built.
  */
 export function runFlow(ctx: RunContext, args: FlowArgs): FlowResult {
+  const name = args.dstName?.trim();
+  if (name) return runNamedFlow(ctx, args, name);
+  return runIcmpFlow(ctx, args);
+}
+
+function runIcmpFlow(ctx: RunContext, args: FlowArgs): FlowResult {
   const sender = ctx.topology.devices.find((item) => item.id === args.from);
   const requestPayload = payloadOf(args, sender?.ip);
   const requestWalk = send(ctx, args);
@@ -228,5 +243,88 @@ export function runFlow(ctx: RunContext, args: FlowArgs): FlowResult {
         observation,
       })),
     ],
+  };
+}
+
+/**
+ * Send-by-name (ADR 0030). The query is still a frame on the 802.1Q path: a
+ * udp/53 service walk to the sending chassis' advertised resolver. The table
+ * answers only after delivery — the record is looked up on the chassis the
+ * query reached. A delivered record feeds the ICMP leg; a query that never
+ * arrives, a sender with no advertised resolver, and a table without the
+ * name each stop the flow there. Ping-by-IP never consults the table.
+ */
+function runNamedFlow(
+  ctx: RunContext,
+  args: FlowArgs,
+  name: string,
+): FlowResult {
+  const sender = ctx.topology.devices.find((item) => item.id === args.from);
+  const resolverIp = sender?.resolver;
+  const queryPayload: FramePayload = {
+    kind: 'service',
+    proto: 'udp',
+    dstPort: 53,
+    name,
+    srcIp: sender?.ip,
+  };
+  const flowId = `${args.from}:${name}`;
+  const queryFrame = asFrame(
+    sender?.mac ?? '00:00:00:00:00:00',
+    queryPayload,
+    [],
+  );
+
+  if (resolverIp === undefined) {
+    return {
+      flow: { id: flowId, request: queryFrame, outcome: 'request-failed' },
+      observations: [flowObs({ observation: 'no-resolver', facts: { name } })],
+    };
+  }
+
+  const walkedPayload: FramePayload = { ...queryPayload, dstIp: resolverIp };
+  const queryWalk = send(ctx, {
+    from: args.from,
+    dstIp: resolverIp,
+    payload: walkedPayload,
+  });
+  const walkedQuery = asFrame(
+    sender?.mac ?? '00:00:00:00:00:00',
+    walkedPayload,
+    queryWalk.hops,
+  );
+  const queryPhase = phaseOf('request', queryWalk.observations);
+  const deliveredAt = deliveryDevice(queryWalk.hops);
+
+  if (deliveredAt === undefined) {
+    return {
+      flow: { id: flowId, request: walkedQuery, outcome: 'request-failed' },
+      observations: queryPhase,
+    };
+  }
+
+  const table = ctx.topology.devices.find((item) => item.id === deliveredAt);
+  const record = table ? lookupRecord(table, name) : undefined;
+  if (record === undefined) {
+    return {
+      flow: { id: flowId, request: walkedQuery, outcome: 'request-failed' },
+      observations: [
+        ...queryPhase,
+        flowObs({
+          observation: 'no-record',
+          facts: { name, devices: [deliveredAt] },
+        }),
+      ],
+    };
+  }
+
+  const resolved = runIcmpFlow(ctx, {
+    from: args.from,
+    dstIp: record,
+    payload: { kind: 'icmp' },
+  });
+  return {
+    flow: { ...resolved.flow, id: flowId, query: walkedQuery },
+    observations: [...queryPhase, ...resolved.observations],
   };
 }
