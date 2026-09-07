@@ -253,6 +253,13 @@ function onClick(event: MouseEvent): void {
     const id = portEl.getAttribute('data-device');
     const port = portEl.getAttribute('data-port');
     if (id && port && !portOccupied(state.topology, id, port)) {
+      if (
+        state.pendingLink &&
+        state.pendingLink.device === id &&
+        state.pendingLink.port === port
+      ) {
+        return;
+      }
       if (state.pendingLink) {
         state = completeLink(state, id, port);
       } else {

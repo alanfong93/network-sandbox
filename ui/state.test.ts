@@ -280,6 +280,16 @@ describe('editor state', () => {
     expect(canvas.topology.links).toEqual(inspector.topology.links);
   });
 
+  it('completeLink on the same port as pending does not add a self-link (#106)', () => {
+    let state = initialState;
+    state = addPreset(state, 'host');
+    const id = state.topology.devices[0]!.id;
+    state = startLink(state, id, '1');
+    state = completeLink(state, id, '1');
+    expect(state.topology.links).toHaveLength(0);
+    expect(state.pendingLink).toEqual({ device: id, port: '1' });
+  });
+
   it('first cable can be router wan to modem 1', () => {
     let state = initialState;
     state = addPreset(state, 'router');

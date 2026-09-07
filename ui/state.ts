@@ -289,6 +289,9 @@ export function completeLink(
       pendingLink: null,
     };
   }
+  if (pending.device === deviceId && pending.port === port) {
+    return state;
+  }
   if (portOccupied(state.topology, deviceId, port)) {
     return {
       ...state,
