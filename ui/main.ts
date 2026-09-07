@@ -151,7 +151,7 @@ function send(event: Event): void {
 }
 
 function exportJson(): void {
-  const text = exportSandbox(state.topology);
+  const text = exportSandbox(state.topology, state.layout);
   const blob = new Blob([text], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
   const anchor = document.createElement('a');
@@ -178,16 +178,17 @@ function maxSuffix(topology: EditorState['topology']): number {
 
 async function importJson(file: File): Promise<void> {
   try {
-    const topology = importSandbox(await file.text());
+    const imported = importSandbox(await file.text());
     // Import-only limitation, named where the user meets it (#86): the
     // engine's standalone DHCP model is one VLAN (src/dhcp.ts), so a
     // multi-scope chassis answers on chassis.vlan only. Warn, never
     // reject - the topology is legal.
-    const warning = divergentScopeWarning(topology);
+    const warning = divergentScopeWarning(imported.topology);
     state = {
       ...initialState,
-      topology,
-      seq: maxSuffix(topology),
+      topology: imported.topology,
+      layout: imported.layout,
+      seq: maxSuffix(imported.topology),
       notice: warning ?? null,
     };
     lastTraceRender = null;

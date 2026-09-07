@@ -194,6 +194,7 @@ describe('sandbox JSON contract', () => {
     expectTypeOf<SandboxEnvelope>().toHaveProperty('format');
     expectTypeOf<SandboxEnvelope>().toHaveProperty('version');
     expectTypeOf<SandboxEnvelope>().toHaveProperty('topology');
+    expectTypeOf<SandboxEnvelope>().not.toHaveProperty('layout');
     expectTypeOf<TopologyJson>().not.toHaveProperty('x');
     expectTypeOf<TopologyJson>().not.toHaveProperty('y');
     expectTypeOf<ChassisJson>().not.toHaveProperty('x');

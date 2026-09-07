@@ -8,6 +8,7 @@ import type {
   Topology,
   VlanId,
 } from '../src/index';
+import { dropDevice, type Layout } from './layout';
 import { nextDhcpServerIndex, presetById } from './presets';
 
 export interface EditorState {
@@ -16,6 +17,7 @@ export interface EditorState {
   selected: DeviceId | null;
   pendingLink: { device: DeviceId; port: string } | null;
   notice: string | null;
+  layout: Layout | null;
 }
 
 export const initialState: EditorState = {
@@ -24,6 +26,7 @@ export const initialState: EditorState = {
   selected: null,
   pendingLink: null,
   notice: null,
+  layout: null,
 };
 
 function deviceOf(
@@ -307,6 +310,7 @@ export function removeDevice(
       profiles: state.topology.profiles,
     },
     selected: state.selected === deviceId ? null : state.selected,
+    layout: state.layout ? dropDevice(state.layout, deviceId) : null,
   };
 }
 
