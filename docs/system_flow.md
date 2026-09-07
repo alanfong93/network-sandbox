@@ -104,11 +104,11 @@ The browser UI runs the same engine, driven by clicks. The shipped loop is:
 place a preset box, link two free ports, edit in the inspector, send, read
 sentences, export. An SVG canvas **view** draws boxes, ports and cables
 from `{topology, layout, selected}` (`ui/canvas.ts`); missing layout uses
-`autoPlace` for display only. Under ADR 0029 a later pass makes that canvas
-the builder and hop-replay surface: drop a box, click two ports to link,
-drag to place. Send still produces `Hop[]`; replay consumes those completed
-hops — it is not a clock (ADR 0003) and not a verdict (ADR 0002). Authoring
-and replay are not shipped. The topology never leaves the tab except as the
+`autoPlace` for display only. After Send, hop replay steps a token along
+recorded `Hop[]` (play/step/pause) — it is not a clock (ADR 0003) and not
+a verdict (ADR 0002). Under ADR 0029 a later pass makes the canvas the
+builder: drop a box, click two ports to link, drag to place. Authoring is
+not shipped. Flood multiplying-tokens is a later issue. The topology never leaves the tab except as the
 sandbox JSON file (optional `layout` sidecar).
 
 ```mermaid

@@ -488,4 +488,23 @@ describe('trace panel', () => {
     // No verdict: the panel reports the outcome, it does not judge the network.
     expect(html).not.toMatch(/\b(OK|PASS|SUCCESS|GOOD)\b/);
   });
+
+  it('highlights the active hop sentence in lockstep with the cursor (#107)', () => {
+    let state = initialState;
+    state = addPreset(state, 'host');
+    state = addPreset(state, 'switch');
+    state = addPreset(state, 'host');
+    const [h1, sw, h2] = state.topology.devices.map((d) => d.id);
+    state = startLink(state, h1!, '1');
+    state = completeLink(state, sw!, '1');
+    state = startLink(state, sw!, '2');
+    state = completeLink(state, h2!, '1');
+    const lastIp = state.topology.devices[2]!.ip!;
+    const trace = runTrace(state.topology, { from: h1!, dstIp: lastIp });
+    const html = renderTrace(trace, 0);
+    expect(html).toMatch(/data-hop-index="0"[^>]*class="active"|class="active"[^>]*data-hop-index="0"/);
+    expect(html).toContain(trace.requestHops[0]!.reason);
+    expect(html).not.toMatch(/\b(Success|Fail)\b/);
+    expect(html).toMatch(/timers are not modelled/i);
+  });
 });

@@ -18,6 +18,18 @@ function layoutForDisplay(topology: Topology, layout: Layout | null): Layout {
   return { ...placed, ...layout };
 }
 
+export function handlePoint(
+  topology: Topology,
+  layout: Layout | null,
+  deviceId: DeviceId,
+  portId: string,
+): { x: number; y: number } | null {
+  const chassis = topology.devices.find((device) => device.id === deviceId);
+  if (!chassis) return null;
+  const display = layoutForDisplay(topology, layout);
+  return portPoint(chassis, portId, display[deviceId] ?? { x: 0, y: 0 });
+}
+
 function portPoint(
   chassis: Topology['devices'][number],
   portId: string,
@@ -34,11 +46,14 @@ function portPoint(
   };
 }
 
-export function renderCanvas(state: {
-  topology: Topology;
-  layout: Layout | null;
-  selected: DeviceId | null;
-}): string {
+export function renderCanvas(
+  state: {
+    topology: Topology;
+    layout: Layout | null;
+    selected: DeviceId | null;
+  },
+  token?: { x: number; y: number } | null,
+): string {
   const layout = layoutForDisplay(state.topology, state.layout);
   const devices = state.topology.devices
     .map((device) => {
@@ -95,8 +110,11 @@ export function renderCanvas(state: {
     maxX = Math.max(maxX, origin.x + BOX_W + 16);
     maxY = Math.max(maxY, origin.y + BOX_H + 24);
   }
+  const marker = token
+    ? `<circle class="token" cx="${token.x}" cy="${token.y}" r="6" />`
+    : '';
   return (
     `<svg class="canvas-svg" viewBox="0 0 ${maxX} ${maxY}" ` +
-    `xmlns="http://www.w3.org/2000/svg">${links}${devices}</svg>`
+    `xmlns="http://www.w3.org/2000/svg">${links}${devices}${marker}</svg>`
   );
 }

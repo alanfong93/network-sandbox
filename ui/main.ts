@@ -3,6 +3,7 @@ import { divergentScopeWarning, exportSandbox, importSandbox } from './jsonio';
 import { PRESETS } from './presets';
 import { renderCanvas } from './canvas';
 import { renderDeviceList, renderInspector, renderTrace } from './render';
+import { allHops, stepIndex, tokenPoint } from './replay';
 import {
   addPreset,
   cancelLink,
@@ -24,7 +25,7 @@ import {
   removeDevice,
   type EditorState,
 } from './state';
-import { runTrace } from './trace';
+import { runTrace, type TraceRender } from './trace';
 
 let state: EditorState = initialState;
 let sendFrom: DeviceId | null = null;
@@ -72,6 +73,11 @@ function render(): void {
         `data-preset="${esc(preset.id)}">${esc(preset.label)}</button>`,
     ).join(' ');
 
+  const hops = lastTrace ? allHops(lastTrace) : [];
+  const hop = hops[replayIndex];
+  const token = hop
+    ? tokenPoint(hop, state.topology, state.layout)
+    : null;
   const linking = state.pendingLink
     ? `<p class="linking">Linking from <strong>${esc(state.pendingLink.device)}` +
       `:${esc(state.pendingLink.port)}</strong> &mdash; click another device, ` +
@@ -79,7 +85,7 @@ function render(): void {
     : '';
   devices.innerHTML =
     '<h2>Canvas</h2>' +
-    renderCanvas(state) +
+    renderCanvas(state, token) +
     '<h2>Devices</h2>' +
     linking +
     renderDeviceList(state) +
@@ -126,28 +132,46 @@ function render(): void {
     '<textarea id="json-view" readonly placeholder="Exported sandbox JSON appears here"></textarea>';
 
   const out = document.querySelector<HTMLDivElement>('#trace-out');
-  if (out && lastTraceRender) out.innerHTML = lastTraceRender;
+  if (out && lastTrace) {
+    out.innerHTML =
+      '<div class="replay">' +
+      '<button type="button" data-action="replay-back">Step back</button> ' +
+      '<button type="button" data-action="replay-step">Step</button> ' +
+      '<button type="button" data-action="replay-play">Play</button> ' +
+      '<button type="button" data-action="replay-pause">Pause</button>' +
+      '</div>' +
+      renderTrace(lastTrace, replayIndex);
+  }
 }
 
-let lastTraceRender: string | null = null;
+let lastTrace: TraceRender | null = null;
+let replayIndex = 0;
+let replayTimer: ReturnType<typeof setInterval> | null = null;
+
+function stopReplay(): void {
+  if (replayTimer !== null) {
+    clearInterval(replayTimer);
+    replayTimer = null;
+  }
+}
 
 function send(event: Event): void {
   event.preventDefault();
   const form = event.target as HTMLFormElement;
   const from = (form.elements.namedItem('from') as HTMLSelectElement).value;
   if (!from) return;
+  stopReplay();
   if (sendKind === 'dhcp-discover') {
     // A DISCOVER is broadcast (#82): no destination IP, request-only trace.
-    const trace = runTrace(state.topology, { from, kind: 'dhcp-discover' });
-    lastTraceRender = renderTrace(trace);
+    lastTrace = runTrace(state.topology, { from, kind: 'dhcp-discover' });
   } else {
     const dstIp = (form.elements.namedItem('dstIp') as HTMLInputElement).value;
     if (!dstIp) return;
     lastDstIp = dstIp;
     dstIpDraft = null;
-    const trace = runTrace(state.topology, { from, dstIp });
-    lastTraceRender = renderTrace(trace);
+    lastTrace = runTrace(state.topology, { from, dstIp });
   }
+  replayIndex = 0;
   render();
   const out = document.querySelector<HTMLDivElement>('#trace-out');
   out?.scrollIntoView({ behavior: 'smooth' });
@@ -194,7 +218,8 @@ async function importJson(file: File): Promise<void> {
       seq: maxSuffix(imported.topology),
       notice: warning ?? null,
     };
-    lastTraceRender = null;
+    lastTrace = null;
+    stopReplay();
     sendFrom = null;
     render();
   } catch (error) {
@@ -248,6 +273,36 @@ function onClick(event: MouseEvent): void {
     case 'export':
       exportJson();
       return;
+    case 'replay-step':
+      if (lastTrace) {
+        replayIndex = stepIndex(allHops(lastTrace).length, replayIndex, 1);
+      }
+      break;
+    case 'replay-back':
+      if (lastTrace) {
+        replayIndex = stepIndex(allHops(lastTrace).length, replayIndex, -1);
+      }
+      break;
+    case 'replay-play':
+      stopReplay();
+      replayTimer = setInterval(() => {
+        if (!lastTrace) {
+          stopReplay();
+          return;
+        }
+        const hops = allHops(lastTrace);
+        const next = stepIndex(hops.length, replayIndex, 1);
+        if (next === replayIndex) {
+          stopReplay();
+          return;
+        }
+        replayIndex = next;
+        render();
+      }, 400);
+      return;
+    case 'replay-pause':
+      stopReplay();
+      break;
     default:
       return;
   }

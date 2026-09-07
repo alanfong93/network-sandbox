@@ -97,6 +97,14 @@ describe('SVG canvas view (#105)', () => {
     expect(svg).not.toMatch(/heatmap|coverage/i);
   });
 
+  it('draws a replay token at the given point (#107)', () => {
+    const state = addPreset(initialState, 'host');
+    const svg = renderCanvas(state, { x: 10, y: 20 });
+    expect(svg).toMatch(/class="token"/);
+    expect(svg).toContain('cx="10"');
+    expect(svg).toContain('cy="20"');
+  });
+
   it('does not emit drag, drop, or hop-token markup', () => {
     const state = addPreset(initialState, 'host');
     const svg = renderCanvas(state);
