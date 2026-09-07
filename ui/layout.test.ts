@@ -51,10 +51,10 @@ describe('layout sidecar (#104)', () => {
     const ids = topology.devices.map((d) => d.id);
     expect(autoPlace(topology)).toEqual({
       [ids[0]!]: { x: 0, y: 0 },
-      [ids[1]!]: { x: 160, y: 0 },
-      [ids[2]!]: { x: 320, y: 0 },
-      [ids[3]!]: { x: 480, y: 0 },
-      [ids[4]!]: { x: 0, y: 120 },
+      [ids[1]!]: { x: 200, y: 0 },
+      [ids[2]!]: { x: 400, y: 0 },
+      [ids[3]!]: { x: 600, y: 0 },
+      [ids[4]!]: { x: 0, y: 160 },
     });
   });
 

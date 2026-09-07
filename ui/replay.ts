@@ -1,5 +1,5 @@
 import type { Hop, Topology } from '../src/index';
-import { handlePoint } from './canvas';
+import { handlePoint, type TokenMark } from './canvas';
 import type { Layout } from './layout';
 import type { TraceRender } from './trace';
 
@@ -47,4 +47,31 @@ export function tokenPoint(
   const point = handlePoint(topology, layout, hop.device, port);
   if (!point) return null;
   return { ...point, device: hop.device };
+}
+
+export function tokenMarks(
+  hops: readonly Hop[],
+  index: number,
+  topology: Topology,
+  layout: Layout | null,
+): TokenMark[] {
+  const group = floodGroup(hops, index);
+  const prior = index > 0 ? tokenPoint(hops[index - 1]!, topology, layout) : null;
+  const marks: TokenMark[] = [];
+  for (const hop of group) {
+    const to = tokenPoint(hop, topology, layout);
+    if (!to) continue;
+    const inbound =
+      hop.inPort !== undefined
+        ? handlePoint(topology, layout, hop.device, hop.inPort)
+        : null;
+    const from =
+      prior && (prior.x !== to.x || prior.y !== to.y)
+        ? { x: prior.x, y: prior.y }
+        : inbound && (inbound.x !== to.x || inbound.y !== to.y)
+          ? inbound
+          : undefined;
+    marks.push({ x: to.x, y: to.y, from, action: hop.action });
+  }
+  return marks;
 }

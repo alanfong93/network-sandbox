@@ -102,11 +102,11 @@ direction died. It is not a pass/fail field.
 
 The browser UI runs the same engine, driven by clicks. The shipped loop is:
 place a preset box, link two free ports, edit in the inspector, send, read
-sentences, export. An SVG canvas **view** draws boxes, ports and cables
+sentences, export. An SVG canvas **view** draws chassis faces, ports and sagged cables
 from `{topology, layout, selected}` (`ui/canvas.ts`); missing layout uses
 `autoPlace` for display only. Wheel zoom and empty-drag pan move a
-session-only camera; they do not write layout. After Send, hop replay steps a token along
-recorded `Hop[]` (play/step/pause) — it is not a clock (ADR 0003) and not
+session-only camera; they do not write layout. After Send, hop replay rides a packet along
+the cable between recorded `Hop[]` (play/step/pause) — it is not a clock (ADR 0003) and not
 a verdict (ADR 0002). The canvas is also the builder: drop a palette preset, click two ports to
 link, drag a box (layout only). Flood replay draws one token per recorded flood hop on that
 device (concurrent if the walk emitted several); it does not invent copies. The topology never leaves the tab except as the

@@ -5,7 +5,7 @@ import { fitContent, panCamera, screenDeltaToWorld, zoomAt, type Camera } from '
 import { contentSize, renderCanvas } from './canvas';
 import { renderDeviceList, renderInspector, renderTrace } from './render';
 import { autoPlace } from './layout';
-import { allHops, floodGroup, stepIndex, tokenPoint } from './replay';
+import { allHops, stepIndex, tokenMarks } from './replay';
 import {
   addPreset,
   cancelLink,
@@ -82,10 +82,10 @@ function esc(text: string): string {
 
 function render(): void {
   const palette = document.querySelector<HTMLDivElement>('#palette');
-  const devices = document.querySelector<HTMLDivElement>('#devices');
+  const stage = document.querySelector<HTMLElement>('#stage');
   const inspector = document.querySelector<HTMLDivElement>('#inspector');
   const trace = document.querySelector<HTMLDivElement>('#trace');
-  if (!palette || !devices || !inspector || !trace) return;
+  if (!palette || !stage || !inspector || !trace) return;
 
   palette.innerHTML =
     '<h2>Palette</h2>' +
@@ -96,23 +96,22 @@ function render(): void {
     ).join(' ');
 
   const hops = lastTrace ? allHops(lastTrace) : [];
-  const tokens = floodGroup(hops, replayIndex)
-    .map((item) => tokenPoint(item, state.topology, state.layout))
-    .filter((item): item is NonNullable<typeof item> => item !== null);
+  const tokens = lastTrace
+    ? tokenMarks(hops, replayIndex, state.topology, state.layout)
+    : [];
   const linking = state.pendingLink
     ? `<p class="linking">Linking from <strong>${esc(state.pendingLink.device)}` +
-      `:${esc(state.pendingLink.port)}</strong> &mdash; click another device, ` +
+      `:${esc(state.pendingLink.port)}</strong> &mdash; click another port, ` +
       `or <button type="button" data-action="cancel-link">Cancel</button></p>`
     : '';
   const size = contentSize(state);
   if (!camera) camera = fitContent(size.maxX, size.maxY);
-  devices.innerHTML =
-    '<h2>Canvas</h2>' +
+  stage.innerHTML =
     '<p class="camera-bar"><button type="button" data-action="fit-camera">Fit</button> ' +
     '<span class="hint">wheel zoom, drag empty space to pan</span></p>' +
     renderCanvas(state, tokens, camera) +
-    '<h2>Devices</h2>' +
     linking +
+    '<h2>Devices</h2>' +
     renderDeviceList(state) +
     '<h3>Links</h3>' +
     renderLinks(state) +
@@ -354,7 +353,7 @@ function onClick(event: MouseEvent): void {
         }
         replayIndex = next;
         render();
-      }, 400);
+      }, 700);
       return;
     case 'replay-pause':
       stopReplay();
