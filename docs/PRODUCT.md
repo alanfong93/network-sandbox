@@ -11,10 +11,10 @@ network is a different product with a different failure mode.
 
 # Must be able to
 
-1. Build the topology they actually have — managed and unmanaged switches, routers at
-   any depth, hosts, DHCP both router-based and standalone, a resolver box whose
-   records they edit, and the Internet box their names resolve to — with no install,
-   no account, and no server.
+1. Build the topology they actually have — managed and unmanaged switches with their
+   market port count, routers at any depth, hosts, DHCP both router-based and
+   standalone, a resolver box whose records they edit, and the Internet box their
+   names resolve to — with no install, no account, and no server.
 2. Make the exact change they are about to make on the real gear.
 3. Send a frame — to an address or a name — and see, hop by hop, what happened to it,
    resolver walk included: when it dies, which step of the 802.1Q pipeline killed it,

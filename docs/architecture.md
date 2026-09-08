@@ -143,8 +143,13 @@ device kind (ADR 0013): the palette includes the managed switch, the
 unmanaged switch, the router (routing+nat), the L3 switch (bridging+stp+routing
 with SVI-shaped rt-owned bridging members — the #71 composition), the
 standalone DHCP server (host-like addressing plus a `dhcp-server` scope — the
-#72 composition, with scope-editing controls), the AP and the modem; the
-inspector keeps PVID and `untaggedVlans` as separate
+#72 composition, with scope-editing controls), the AP and the modem. Pure
+managed switches start at 8 ports; pure unmanaged switches start at 5. Their
+inspector uses the market-SKU select (5, 8, 16, 24, 48) to resize the chassis'
+ports and the matching bridge members together; it refuses to remove a cabled
+port and never silently unlinks it. The control is absent from the L3 switch:
+its routed SVI ports are a composition, not spare switch ports. The inspector
+keeps PVID and `untaggedVlans` as separate
 controls (ADR 0008); Start link is per free port (router `wan` can be first);
 router WAN VLAN is `RouterIface.vlan`, not PVID; SVI-shaped ifaces (an rt-owned
 port that is also a bridging member) render no independent VLAN control on

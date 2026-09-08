@@ -81,7 +81,7 @@ describe('presets', () => {
     expect(bridge).toBeDefined();
     const stp = chassis?.functions.find((fn) => fn.kind === 'stp');
     expect(stp).toBeDefined();
-    expect(chassis?.ports).toHaveLength(4);
+    expect(chassis?.ports).toHaveLength(8);
     expect(bridge && bridge.kind === 'bridging' ? bridge.members : []).toEqual(
       chassis?.ports.map((port) => expect.objectContaining({ port: port.id })),
     );
@@ -100,6 +100,7 @@ describe('presets', () => {
       false,
     );
     expect(chassis?.functions.some((fn) => fn.kind === 'stp')).toBe(false);
+    expect(chassis?.ports).toHaveLength(5);
   });
 
   it('router writes routing plus nat', () => {

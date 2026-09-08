@@ -82,6 +82,8 @@ function base(
 }
 
 const SWITCH_PORTS = ['1', '2', '3', '4'];
+const MANAGED_SWITCH_PORTS = ['1', '2', '3', '4', '5', '6', '7', '8'];
+const UNMANAGED_SWITCH_PORTS = ['1', '2', '3', '4', '5'];
 
 /**
  * The palette shows boxes, not functions (ADR 0013): every entry writes a
@@ -107,13 +109,13 @@ export const PRESETS: PresetDef[] = [
     id: 'switch',
     label: 'Managed switch',
     build: (id, seq) => {
-      const members = SWITCH_PORTS.map((p) => access(p, defaults.pvid));
+      const members = MANAGED_SWITCH_PORTS.map((p) => access(p, defaults.pvid));
       return base(
         id,
         `Switch ${seq}`,
         'switch',
         seq,
-        SWITCH_PORTS.map((p) => port(p, 'br')),
+        MANAGED_SWITCH_PORTS.map((p) => port(p, 'br')),
         [
           {
             kind: 'bridging',
@@ -143,13 +145,13 @@ export const PRESETS: PresetDef[] = [
         `Unmanaged ${seq}`,
         'unmanaged-switch',
         seq,
-        SWITCH_PORTS.map((p) => port(p, 'br')),
+        UNMANAGED_SWITCH_PORTS.map((p) => port(p, 'br')),
         [
           {
             kind: 'bridging',
             id: 'br',
             vlanAware: false,
-            members: SWITCH_PORTS.map((p) => access(p, defaults.pvid)),
+            members: UNMANAGED_SWITCH_PORTS.map((p) => access(p, defaults.pvid)),
             fdb: new Map(),
           },
         ],
