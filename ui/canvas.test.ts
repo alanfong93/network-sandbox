@@ -220,6 +220,24 @@ describe('SVG canvas view (#105)', () => {
     expect(svg).toMatch(/class="link-flow wireless live"/);
   });
 
+  it('the chevron march runs only while replay is playing (#122)', () => {
+    let state = initialState;
+    state = addPreset(state, 'host');
+    state = addPreset(state, 'host');
+    const [a, b] = state.topology.devices.map((d) => d.id);
+    state = startLink(state, a!, '1');
+    state = completeLink(state, b!, '1');
+    const from = handlePoint(state.topology, state.layout, a!, '1')!;
+    const to = handlePoint(state.topology, state.layout, b!, '1')!;
+    const paused = renderCanvas(state, { ...to, from, action: 'forwarded' });
+    expect(paused).toMatch(/class="canvas-svg"/);
+    expect(paused).not.toMatch(/canvas-svg playing/);
+    const playing = renderCanvas(state, { ...to, from, action: 'forwarded' }, null, {
+      playing: true,
+    });
+    expect(playing).toMatch(/class="canvas-svg playing"/);
+  });
+
   it('does not emit drag, drop, or hop-token markup', () => {
     const state = addPreset(initialState, 'host');
     const svg = renderCanvas(state);

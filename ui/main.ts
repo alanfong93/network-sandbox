@@ -115,7 +115,7 @@ function render(): void {
   stage.innerHTML =
     '<p class="camera-bar"><button type="button" data-action="fit-camera">Fit</button> ' +
     '<span class="hint">wheel zoom, drag empty space to pan</span></p>' +
-    renderCanvas(state, tokens, camera) +
+    renderCanvas(state, tokens, camera, { playing: replayTimer !== null }) +
     linking +
     '<h2>Devices</h2>' +
     renderDeviceList(state) +

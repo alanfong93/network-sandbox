@@ -171,6 +171,7 @@ export function renderCanvas(
   },
   token?: TokenMark | readonly TokenMark[] | null,
   camera?: Camera | null,
+  opts?: { playing?: boolean },
 ): string {
   const layout = layoutForDisplay(state.topology, state.layout);
   const tokens = token == null ? [] : Array.isArray(token) ? token : [token];
@@ -278,8 +279,12 @@ export function renderCanvas(
   const { maxX, maxY } = contentSize(state);
   const marker = tokens.map(renderToken).join('');
   const box = camera ?? { x: 0, y: 0, w: maxX, h: maxY };
+  // #122: the chevron march runs only while replay is playing - a paused
+  // or stepped frame freezes direction with the token instead of implying
+  // motion that is not happening.
+  const playing = opts?.playing ? ' playing' : '';
   return (
-    `<svg class="canvas-svg" viewBox="${viewBoxAttr(box)}" ` +
+    `<svg class="canvas-svg${playing}" viewBox="${viewBoxAttr(box)}" ` +
     `xmlns="http://www.w3.org/2000/svg">` +
     `<defs>` +
     `<pattern id="ns-grid" width="24" height="24" patternUnits="userSpaceOnUse">` +
