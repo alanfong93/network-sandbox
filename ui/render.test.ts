@@ -72,6 +72,42 @@ describe('inspector', () => {
     ]);
   });
 
+  it('a switch shows the SKU port-count select at its current count (#125)', () => {
+    let state = addPreset(initialState, 'unmanaged-switch');
+    const sw = state.topology.devices[0]!.id;
+    const html = renderInspector(select(state, sw));
+    expect(html).toMatch(/Port count/);
+    expect(html).toMatch(/data-action="switch-ports"/);
+    expect(html).toMatch(/<option value="5" selected>/);
+  });
+
+  it('names a saved four-port switch as legacy without making it a SKU (#125)', () => {
+    let state = addPreset(initialState, 'unmanaged-switch');
+    const sw = state.topology.devices[0]!.id;
+    const chassis = state.topology.devices[0]!;
+    state = {
+      ...state,
+      topology: {
+        ...state.topology,
+        devices: [{ ...chassis, ports: chassis.ports.slice(0, 4), functions: chassis.functions.map((fn) =>
+          fn.kind === 'bridging' ? { ...fn, members: fn.members.slice(0, 4) } : fn,
+        ) }],
+      },
+    };
+    const html = renderInspector(select(state, sw));
+    expect(html).toMatch(/<option value="4" selected disabled>4 ports \(legacy\)<\/option>/);
+    expect(html).not.toMatch(/<option value="4">4 ports<\/option>/);
+  });
+
+  it('an L3 switch and a host show no port-count control (#125)', () => {
+    let state = addPreset(initialState, 'l3-switch');
+    const l3 = state.topology.devices[0]!.id;
+    expect(renderInspector(select(state, l3))).not.toMatch(/switch-ports/);
+    state = addPreset(state, 'host');
+    const h = state.topology.devices.at(-1)!.id;
+    expect(renderInspector(select(state, h))).not.toMatch(/switch-ports/);
+  });
+
   it('router inspector has a WAN VLAN control, not Native VLAN (PVID)', () => {
     let state = addPreset(initialState, 'router');
     const rtr = state.topology.devices[0]!.id;
@@ -263,7 +299,7 @@ describe('inspector', () => {
     const usw = state.topology.devices[0]!.id;
     const html = renderInspector(select(state, usw));
     expect(html).toMatch(
-      /This switch has no VLAN awareness - all 4 ports are one broadcast domain/,
+      /This switch has no VLAN awareness - all 5 ports are one broadcast domain/,
     );
     expect(html).toMatch(/No configurable per-port VLAN membership/);
     // Once per chassis, not once per port.
@@ -299,7 +335,7 @@ describe('inspector', () => {
     const occurrences = html.match(/no VLAN awareness/g)?.length ?? 0;
     expect(occurrences).toBe(2);
     expect(html).toMatch(/all 3 ports are one broadcast domain\./);
-    expect(html).toMatch(/all 1 ports are one broadcast domain\./);
+    expect(html).toMatch(/all 2 ports are one broadcast domain\./);
   });
 
   it('a VLAN-blind bridge with zero members renders no capability note (#97)', () => {
@@ -315,7 +351,7 @@ describe('inspector', () => {
     const html = renderInspector(select(state, usw));
     expect(html).not.toMatch(/all 0 ports/);
     // The real bridge still gets its note.
-    expect(html).toMatch(/all 4 ports are one broadcast domain/);
+    expect(html).toMatch(/all 5 ports are one broadcast domain/);
   });
 
   it('a mixed chassis renders the note for the VLAN-blind bridge only, and the aware bridge keeps its controls (#97)', () => {

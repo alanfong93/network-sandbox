@@ -1,5 +1,5 @@
 import type { EditorState } from './state';
-import { bridgeMemberOf, freePorts, owningBridgeOf } from './state';
+import { bridgeMemberOf, freePorts, owningBridgeOf, SWITCH_PORT_SKUS } from './state';
 import type { TraceRender } from './trace';
 
 function esc(text: string): string {
@@ -270,6 +270,35 @@ export function renderInspector(state: EditorState): string {
         (rows === '' ? '<p class="hint">No records yet.</p>' : rows) +
         `<button type="button" data-action="record-add">Add record</button>` +
         `</fieldset>`,
+    );
+  }
+  // Port count select for a pure switch (#125): SKUs, not a free number.
+  // Presence is compositional, not preset id - every port must be the
+  // bridge's, so an L3 switch's rt-owned SVI ports keep the control away.
+  const bridgeFn = chassis.functions.find((fn) => fn.kind === 'bridging');
+  if (
+    bridgeFn &&
+    bridgeFn.kind === 'bridging' &&
+    chassis.ports.every((port) => port.ownedBy === bridgeFn.id)
+  ) {
+    parts.push(
+      `<label>Port count ` +
+        `<select data-action="switch-ports">` +
+        // Saved topologies from before #125 have four-port switches. It is
+        // not a new SKU: preserve and name the persisted value until the
+        // user deliberately selects a market size.
+        (!(SWITCH_PORT_SKUS as readonly number[]).includes(chassis.ports.length)
+          ? `<option value="${chassis.ports.length}" selected disabled>` +
+            `${chassis.ports.length} ports (legacy)</option>`
+          : '') +
+        SWITCH_PORT_SKUS.map(
+          (sku) =>
+            `<option value="${sku}"${
+              sku === chassis.ports.length ? ' selected' : ''
+            }>${sku} ports</option>`,
+        )
+          .join('') +
+        `</select></label>`,
     );
   }
   for (const port of chassis.ports) {

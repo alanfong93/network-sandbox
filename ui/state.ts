@@ -518,6 +518,106 @@ export function removeResolverRecord(
   }));
 }
 
+/** The market SKUs a switch port count may take (#125). No 7-port switches. */
+export const SWITCH_PORT_SKUS = [5, 8, 16, 24, 48] as const;
+
+function accessMember(portId: string, vlan: VlanId): BridgePort {
+  return {
+    port: portId,
+    mode: 'access',
+    pvid: vlan,
+    taggedVlans: new Set(),
+    untaggedVlans: new Set([vlan]),
+    acceptableFrameTypes: defaults.acceptableFrameTypes,
+    ingressFiltering: defaults.ingressFiltering,
+  };
+}
+
+/**
+ * Resize a pure switch's port count to a market SKU (#125). Growth appends
+ * numbered ports and matching access members at the defaults; shrink keeps
+ * the first count and refuses - with a notice, never a silent unlink - when
+ * any dropped port carries a link. Refused outside pure switches: an L3
+ * switch's rt-owned SVI ports are part of the #71 composition, and resizing
+ * around them would wreck it. There is no device kind anywhere - this edits
+ * one chassis' ports and its bridging members (ADR 0013).
+ */
+export function setSwitchPortCount(
+  state: EditorState,
+  deviceId: DeviceId,
+  count: number,
+): EditorState {
+  const chassis = deviceOf(state.topology, deviceId);
+  if (!chassis) return state;
+  const bridge = chassis.functions.find((fn) => fn.kind === 'bridging');
+  if (!bridge || bridge.kind !== 'bridging') {
+    return { ...state, notice: 'Only a switch has a port count' };
+  }
+  if (!chassis.ports.every((port) => port.ownedBy === bridge.id)) {
+    return {
+      ...state,
+      notice: 'This switch mixes bridge and routed ports - the port count is fixed',
+    };
+  }
+  if (!(SWITCH_PORT_SKUS as readonly number[]).includes(count)) {
+    return { ...state, notice: 'Port count must be 5, 8, 16, 24 or 48' };
+  }
+  const current = chassis.ports.length;
+  if (count === current) return state;
+  if (count < current) {
+    const dropped = chassis.ports.slice(count).map((port) => port.id);
+    if (
+      state.pendingLink?.device === deviceId &&
+      dropped.includes(state.pendingLink.port)
+    ) {
+      return {
+        ...state,
+        notice: `Port ${state.pendingLink.port} is waiting for a link - cancel it first`,
+      };
+    }
+    const linked = dropped.filter((portId) =>
+      portOccupied(state.topology, deviceId, portId),
+    );
+    if (linked.length > 0) {
+      return {
+        ...state,
+        notice: `Port${linked.length > 1 ? 's' : ''} ${linked.join(', ')} ${
+          linked.length > 1 ? 'have' : 'has'
+        } links - unlink them first`,
+      };
+    }
+    const keep = new Set(chassis.ports.slice(0, count).map((port) => port.id));
+    return withChassis(state, deviceId, (c) => ({
+      ...c,
+      ports: c.ports.slice(0, count),
+      functions: c.functions.map((fn) =>
+        fn.kind === 'bridging' && fn.id === bridge.id
+          ? { ...fn, members: fn.members.filter((m) => keep.has(m.port)) }
+          : fn,
+      ),
+    }));
+  }
+  return withChassis(state, deviceId, (c) => {
+    const ports = [...c.ports];
+    const nextBridge = c.functions.find(
+      (fn) => fn.kind === 'bridging' && fn.id === bridge.id,
+    );
+    if (!nextBridge || nextBridge.kind !== 'bridging') return c;
+    const members = [...nextBridge.members];
+    for (let i = current + 1; i <= count; i++) {
+      ports.push({ id: String(i), mtu: defaults.portMtu, ownedBy: bridge.id });
+      members.push(accessMember(String(i), defaults.pvid));
+    }
+    return {
+      ...c,
+      ports,
+      functions: c.functions.map((fn) =>
+        fn.kind === 'bridging' && fn.id === bridge.id ? { ...fn, members } : fn,
+      ),
+    };
+  });
+}
+
 export function setRouterIfaceVlan(
   state: EditorState,
   deviceId: DeviceId,

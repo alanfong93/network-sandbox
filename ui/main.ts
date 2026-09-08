@@ -25,6 +25,7 @@ import {
   setResolverRecord,
   setRouterIfaceVlan,
   setStpPriority,
+  setSwitchPortCount,
   setTaggedVlans,
   setUntaggedVlans,
   startLink,
@@ -419,6 +420,9 @@ function onChange(event: Event): void {
           (input as HTMLInputElement).checked,
         );
       }
+      break;
+    case 'switch-ports':
+      state = setSwitchPortCount(state, device, Number(input.value));
       break;
     case 'stp-priority': {
       // A cleared number input reports '' and Number('') is 0 - without

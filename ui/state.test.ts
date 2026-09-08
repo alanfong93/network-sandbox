@@ -15,10 +15,12 @@ import {
   setPvid,
   setRouterIfaceVlan,
   setStpPriority,
+  setSwitchPortCount,
   setUntaggedVlans,
   startLink,
   type EditorState,
 } from './state';
+import { portOccupied } from './state';
 
 function placed(
   state: EditorState,
@@ -454,5 +456,129 @@ describe('editor state', () => {
         ? bridge.members.find((m) => m.port === '1')
         : undefined;
     expect(member?.ingressFiltering).toBe(false);
+  });
+});
+
+describe('setSwitchPortCount (#125)', () => {
+  it('grows an unmanaged switch to 8 ports with 8 matching members', () => {
+    const { state, ids } = placed(initialState, 'unmanaged-switch');
+    const next = setSwitchPortCount(state, ids[0]!, 8);
+    const sw = next.topology.devices.find((d) => d.id === ids[0])!;
+    expect(sw.ports.map((p) => p.id)).toEqual([
+      '1', '2', '3', '4', '5', '6', '7', '8',
+    ]);
+    const bridge = sw.functions.find((fn) => fn.kind === 'bridging');
+    const members = bridge?.kind === 'bridging' ? bridge.members : [];
+    expect(members).toHaveLength(8);
+    for (const port of sw.ports) {
+      expect(members.some((m) => m.port === port.id)).toBe(true);
+    }
+    // The done-when: after cabling six hosts, a 7th still finds a free port.
+    expect(
+      sw.ports.filter(
+        (p) => !portOccupied(next.topology, sw.id, p.id),
+      ).length,
+    ).toBe(8);
+  });
+
+  it('leaves a seventh host a free eighth jack after six hosts are cabled (#125 done-when)', () => {
+    let state = addPreset(initialState, 'unmanaged-switch');
+    const sw = state.topology.devices[0]!.id;
+    state = setSwitchPortCount(state, sw, 8);
+    for (let i = 1; i <= 6; i++) {
+      state = addPreset(state, 'host');
+      const host = state.topology.devices.at(-1)!.id;
+      state = startLink(state, host, '1');
+      state = completeLink(state, sw, String(i));
+    }
+    state = addPreset(state, 'host');
+    const seventh = state.topology.devices.at(-1)!.id;
+    state = startLink(state, seventh, '1');
+    state = completeLink(state, sw, '7');
+    expect(state.topology.links).toHaveLength(7);
+    expect(portOccupied(state.topology, sw, '8')).toBe(false);
+  });
+
+  it('grows a managed switch and keeps stp plus existing member edits', () => {
+    let state = addPreset(initialState, 'switch');
+    const [sw] = state.topology.devices.map((d) => d.id);
+    state = setPvid(state, sw!, '1', 20);
+    state = setSwitchPortCount(state, sw!, 16);
+    const chassis = state.topology.devices.find((d) => d.id === sw)!;
+    const bridge = chassis.functions.find((fn) => fn.kind === 'bridging');
+    const members = bridge?.kind === 'bridging' ? bridge.members : [];
+    expect(chassis.ports).toHaveLength(16);
+    expect(members).toHaveLength(16);
+    expect(members.find((m) => m.port === '1')?.pvid).toBe(20);
+    expect(chassis.functions.some((fn) => fn.kind === 'stp')).toBe(true);
+  });
+
+  it('shrinks only across free ports and keeps the first count', () => {
+    const { state, ids } = placed(initialState, 'switch');
+    const sw = ids[0]!;
+    const grown = setSwitchPortCount(state, sw, 16);
+    const next = setSwitchPortCount(grown, sw, 5);
+    const chassis = next.topology.devices.find((d) => d.id === sw)!;
+    expect(chassis.ports.map((p) => p.id)).toEqual(['1', '2', '3', '4', '5']);
+    const bridge = chassis.functions.find((fn) => fn.kind === 'bridging');
+    const members = bridge?.kind === 'bridging' ? bridge.members : [];
+    expect(members).toHaveLength(5);
+  });
+
+  it('refuses to shrink below a cabled port - notice, no silent unlink', () => {
+    let state = addPreset(initialState, 'unmanaged-switch');
+    const [sw] = state.topology.devices.map((d) => d.id);
+    state = setSwitchPortCount(state, sw!, 8);
+    state = addPreset(state, 'host');
+    const host = state.topology.devices.at(-1)!.id;
+    state = startLink(state, host, '1');
+    state = completeLink(state, sw!, '8');
+    const before = JSON.stringify(
+      state.topology.devices.find((d) => d.id === sw),
+    );
+    const next = setSwitchPortCount(state, sw!, 5);
+    expect(next.notice).toMatch(/unlink|link/i);
+    expect(
+      JSON.stringify(next.topology.devices.find((d) => d.id === sw)),
+    ).toBe(before);
+    expect(next.topology.links).toEqual(state.topology.links);
+  });
+
+  it('refuses to shrink below the pending link port - no dangling endpoint (#125)', () => {
+    let state = addPreset(initialState, 'unmanaged-switch');
+    const sw = state.topology.devices[0]!.id;
+    state = setSwitchPortCount(state, sw, 8);
+    state = startLink(state, sw, '8');
+    const next = setSwitchPortCount(state, sw, 5);
+    expect(next.notice).toMatch(/link/i);
+    expect(next.pendingLink).toEqual({ device: sw, port: '8' });
+    expect(next.topology.devices.find((d) => d.id === sw)?.ports).toHaveLength(8);
+  });
+
+  it('refuses a count that is not a market SKU', () => {
+    const { state, ids } = placed(initialState, 'switch');
+    const next = setSwitchPortCount(state, ids[0]!, 7);
+    expect(next.notice).toMatch(/5, 8, 16, 24 or 48/);
+  });
+
+  it('is refused on a chassis with no bridging function', () => {
+    const { state, ids } = placed(initialState, 'host');
+    const next = setSwitchPortCount(state, ids[0]!, 8);
+    expect(next.notice).toBeDefined();
+    expect(
+      next.topology.devices.find((d) => d.id === ids[0])!.ports,
+    ).toHaveLength(1);
+  });
+
+  it('is refused on an L3 switch - the SVI composition is not resizable', () => {
+    const { state, ids } = placed(initialState, 'l3-switch');
+    const before = JSON.stringify(
+      state.topology.devices.find((d) => d.id === ids[0]),
+    );
+    const next = setSwitchPortCount(state, ids[0]!, 8);
+    expect(next.notice).toBeDefined();
+    expect(
+      JSON.stringify(next.topology.devices.find((d) => d.id === ids[0])),
+    ).toBe(before);
   });
 });
