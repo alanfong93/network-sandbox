@@ -215,9 +215,22 @@ export function send(ctx: RunContext, args: SendArgs): WalkResult {
  */
 export function originate(ctx: RunContext, args: SendArgs): WalkResult {
   const chassis = ctx.topology.devices.find((item) => item.id === args.from);
-  const rt = chassis?.functions.find((fn) => fn.kind === 'routing');
-  if (!chassis || !rt || rt.kind !== 'routing') return send(ctx, args);
+  if (!chassis) return send(ctx, args);
+  const routing = chassis.functions.filter(
+    (fn): fn is Extract<Chassis['functions'][number], { kind: 'routing' }> =>
+      fn.kind === 'routing',
+  );
+  if (routing.length === 0) return send(ctx, args);
   const srcIp = args.payload.srcIp;
+  // The iface whose address the frame sources from may live on ANY routing
+  // function of the chassis - an imported two-fn box must not fall back to
+  // the first fn's ifaces and egress with the wrong identity (#129).
+  const owner =
+    srcIp !== undefined
+      ? routing.find((fn) => fn.ifaces.some((iface) => iface.ip === srcIp))
+      : undefined;
+  const rt = owner ?? routing[0];
+  if (rt === undefined) return send(ctx, args);
   const entry =
     srcIp !== undefined
       ? rt.ifaces.find((iface) => iface.ip === srcIp)

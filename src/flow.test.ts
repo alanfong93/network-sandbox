@@ -799,4 +799,73 @@ describe('a reply from a routing chassis (#129)', () => {
     );
     expect(replyDelivery?.device).toBe('NET');
   });
+
+  it('sources the reply from the routing function that owns the address (#129 cycle 1)', () => {
+    // An imported two-routing-fn chassis: rt1 owns VLAN 10, rt2 owns VLAN
+    // 20, and the ping targets rt2's address. The reply must enter rt2 -
+    // the first-fn fallback would tag VLAN 10, miss the connected route,
+    // and die at route-lookup.
+    const twoFnRouter: Chassis = {
+      id: 'X',
+      label: 'X',
+      ports: [
+        { id: 'p1', mtu: defaults.portMtu, ownedBy: 'rt1' },
+        { id: 'p2', mtu: defaults.portMtu, ownedBy: 'rt2' },
+      ],
+      radios: [],
+      functions: [
+        {
+          kind: 'routing',
+          id: 'rt1',
+          ifaces: [
+            { id: 'p1', vlan: 10, ip: '192.168.10.1', prefix: 24, mac: 'aa:00:00:00:01:01' },
+          ],
+          routes: [],
+          firewall: [],
+        },
+        {
+          kind: 'routing',
+          id: 'rt2',
+          ifaces: [
+            { id: 'p2', vlan: 20, ip: '192.168.20.1', prefix: 24, mac: 'aa:00:00:00:01:02' },
+          ],
+          routes: [],
+          firewall: [],
+        },
+      ],
+      internal: [],
+    };
+    const topology = topo(
+      [
+        hostBox('H2', {
+          mac: 'aa:00:00:00:00:20',
+          ip: '192.168.20.20',
+          prefix: 24,
+          gateway: '192.168.20.1',
+        }),
+        switchBox('SW', [access('1', 20), trunk('2', [10, 20])]),
+        twoFnRouter,
+      ],
+      [
+        link('h', { device: 'H2', port: '1' }, { device: 'SW', port: '1' }),
+        link('t', { device: 'SW', port: '2' }, { device: 'X', port: 'p2' }),
+      ],
+    );
+    const ctx = createRunContext(topology);
+    const result = runFlow(ctx, {
+      from: 'H2',
+      dstIp: '192.168.20.1',
+      payload: { kind: 'icmp', srcIp: '192.168.20.20', dstIp: '192.168.20.1' },
+    });
+    expect(result.flow.outcome).toBe('round-trip');
+    const replyEgress = result.flow.reply?.hops.find(
+      (hop) => hop.step === 'route-lookup' && hop.action === 'forwarded',
+    );
+    expect(replyEgress?.outPort).toBe('p2');
+    expect(replyEgress?.vlan).toBe(20);
+    const replyDelivery = result.flow.reply?.hops.find(
+      (hop) => hop.step === 'delivery' && hop.action === 'delivered',
+    );
+    expect(replyDelivery?.device).toBe('H2');
+  });
 });
