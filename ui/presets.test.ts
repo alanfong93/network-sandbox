@@ -108,10 +108,25 @@ describe('presets', () => {
     const routing = chassis?.functions.find((fn) => fn.kind === 'routing');
     expect(routing && routing.kind === 'routing' ? routing.ifaces : []).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ id: 'lan' }),
+        expect.objectContaining({ id: 'lan-svi' }),
         expect.objectContaining({ id: 'wan', vlan: 500 }),
       ]),
     );
+    expect(chassis?.functions.some((fn) => fn.kind === 'nat')).toBe(true);
+  });
+
+  it('router LAN is a bridge plus one SVI - extra jacks stay one network (#124)', () => {
+    const chassis = PRESETS.find((p) => p.id === 'router')?.build('rtr1', 1);
+    expect(chassis?.ports.find((p) => p.id === 'lan')?.ownedBy).toBe('br');
+    expect(chassis?.ports.find((p) => p.id === 'lan-svi')?.ownedBy).toBe('rt');
+    expect(chassis?.ports.find((p) => p.id === 'wan')?.ownedBy).toBe('rt');
+    const bridge = chassis?.functions.find((fn) => fn.kind === 'bridging');
+    const members = bridge?.kind === 'bridging' ? bridge.members : [];
+    expect(members.map((m) => m.port).sort()).toEqual(['lan', 'lan-svi']);
+    const routing = chassis?.functions.find((fn) => fn.kind === 'routing');
+    const ifaces = routing?.kind === 'routing' ? routing.ifaces : [];
+    expect(ifaces.map((i) => i.id).sort()).toEqual(['lan-svi', 'wan']);
+    expect(chassis?.internal).toEqual([{ from: 'rt', to: 'br' }]);
     expect(chassis?.functions.some((fn) => fn.kind === 'nat')).toBe(true);
   });
 

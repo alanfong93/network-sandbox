@@ -24,6 +24,7 @@ import {
   setPvid,
   setResolverRecord,
   setRouterIfaceVlan,
+  setRouterPortCount,
   setStpPriority,
   setSwitchPortCount,
   setTaggedVlans,
@@ -424,6 +425,19 @@ function onChange(event: Event): void {
     case 'switch-ports':
       state = setSwitchPortCount(state, device, Number(input.value));
       break;
+    case 'router-lan-count': {
+      // Blank is a no-op, not a silent count-0 commit (#95 pattern).
+      const raw = input.value.trim();
+      if (raw === '') break;
+      state = setRouterPortCount(state, device, 'lan', Number(raw));
+      break;
+    }
+    case 'router-wan-count': {
+      const raw = input.value.trim();
+      if (raw === '') break;
+      state = setRouterPortCount(state, device, 'wan', Number(raw));
+      break;
+    }
     case 'stp-priority': {
       // A cleared number input reports '' and Number('') is 0 - without
       // this guard, blanking the field would silently commit priority 0,

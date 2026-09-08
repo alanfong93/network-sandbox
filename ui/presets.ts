@@ -166,14 +166,21 @@ export const PRESETS: PresetDef[] = [
         `Router ${seq}`,
         'router',
         seq,
-        [port('lan', 'rt'), port('wan', 'rt')],
+        [port('lan', 'br'), port('lan-svi', 'rt'), port('wan', 'rt')],
         [
+          {
+            kind: 'bridging',
+            id: 'br',
+            vlanAware: true,
+            members: [access('lan', defaults.pvid), access('lan-svi', defaults.pvid)],
+            fdb: new Map(),
+          },
           {
             kind: 'routing',
             id: 'rt',
             ifaces: [
               {
-                id: 'lan',
+                id: 'lan-svi',
                 vlan: defaults.pvid,
                 ip: '192.168.1.1',
                 prefix: 24,
@@ -192,6 +199,7 @@ export const PRESETS: PresetDef[] = [
           },
           { kind: 'nat', id: 'nat', on: 'rt', portForwards: [] },
         ],
+        { internal: [{ from: 'rt', to: 'br' }] },
       ),
   },
   {

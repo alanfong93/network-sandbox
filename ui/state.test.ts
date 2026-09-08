@@ -14,6 +14,7 @@ import {
   setPortIngressFiltering,
   setPvid,
   setRouterIfaceVlan,
+  setRouterPortCount,
   setStpPriority,
   setSwitchPortCount,
   setUntaggedVlans,
@@ -307,7 +308,7 @@ describe('editor state', () => {
       .find((d) => d.id === rtr)
       ?.functions.find((fn) => fn.kind === 'routing');
     expect(routing && routing.kind === 'routing' ? routing.ifaces[0]?.id : null).toBe(
-      'lan',
+      'lan-svi',
     );
   });
 
@@ -580,5 +581,130 @@ describe('setSwitchPortCount (#125)', () => {
     expect(
       JSON.stringify(next.topology.devices.find((d) => d.id === ids[0])),
     ).toBe(before);
+  });
+});
+
+describe('setRouterPortCount (#124)', () => {
+  it('grows the LAN to four jacks on the one bridge - no second subnet', () => {
+    const { state, ids } = placed(initialState, 'router');
+    const next = setRouterPortCount(state, ids[0]!, 'lan', 4);
+    const rtr = next.topology.devices.find((d) => d.id === ids[0])!;
+    const lanPorts = rtr.ports
+      .filter((p) => ['lan', 'lan2', 'lan3', 'lan4'].includes(p.id))
+      .map((p) => p.id)
+      .sort();
+    expect(lanPorts).toEqual(['lan', 'lan2', 'lan3', 'lan4']);
+    for (const id of lanPorts) {
+      expect(rtr.ports.find((p) => p.id === id)?.ownedBy).toBe('br');
+    }
+    const bridge = rtr.functions.find((fn) => fn.kind === 'bridging');
+    const members = bridge?.kind === 'bridging' ? bridge.members : [];
+    expect(
+      members.map((m) => m.port).sort(),
+    ).toEqual(['lan', 'lan-svi', 'lan2', 'lan3', 'lan4']);
+    // One network: the routing function keeps exactly the one LAN SVI plus
+    // the WAN - no lan2 iface was invented.
+    const rt = rtr.functions.find((fn) => fn.kind === 'routing');
+    expect(rt?.kind === 'routing' ? rt.ifaces.map((i) => i.id).sort() : []).toEqual([
+      'lan-svi',
+      'wan',
+    ]);
+  });
+
+  it('a grown LAN jack joins the PVID the existing jacks are on (#124)', () => {
+    const { state, ids } = placed(initialState, 'router');
+    let next = setPvid(state, ids[0]!, 'lan', 10);
+    next = setRouterPortCount(next, ids[0]!, 'lan', 2);
+    const rtr = next.topology.devices.find((d) => d.id === ids[0])!;
+    const bridge = rtr.functions.find((fn) => fn.kind === 'bridging');
+    const lan2 =
+      bridge?.kind === 'bridging'
+        ? bridge.members.find((m) => m.port === 'lan2')
+        : undefined;
+    expect(lan2?.pvid).toBe(10);
+  });
+
+  it('a second WAN is a routed uplink iface with its own default route (#124)', () => {
+    const { state, ids } = placed(initialState, 'router');
+    const next = setRouterPortCount(state, ids[0]!, 'wan', 2);
+    const rtr = next.topology.devices.find((d) => d.id === ids[0])!;
+    expect(rtr.ports.find((p) => p.id === 'wan2')?.ownedBy).toBe('rt');
+    const rt = rtr.functions.find((fn) => fn.kind === 'routing');
+    const wan2 = rt?.kind === 'routing' ? rt.ifaces.find((i) => i.id === 'wan2') : undefined;
+    expect(wan2?.ip).toBe('198.51.100.2');
+    expect(wan2?.prefix).toBe(24);
+    // Identity is unique against everything that existed before the grow
+    // (#85's collision class) - the new topology contains it by definition.
+    const inUse = new Set<string>();
+    for (const device of state.topology.devices) {
+      if (device.mac !== undefined) inUse.add(device.mac);
+      for (const fn of device.functions) {
+        if (fn.kind === 'routing') for (const iface of fn.ifaces) inUse.add(iface.mac);
+        if (fn.kind === 'stp') inUse.add(fn.baseMac);
+      }
+    }
+    expect(inUse.has(wan2!.mac!)).toBe(false);
+    expect(
+      rt?.kind === 'routing'
+        ? rt.routes.some((r) => r.via === '198.51.100.1')
+        : false,
+    ).toBe(true);
+  });
+
+  it('shrinking the WAN removes the iface and the default route it carried (#124)', () => {
+    const { state, ids } = placed(initialState, 'router');
+    let next = setRouterPortCount(state, ids[0]!, 'wan', 2);
+    next = setRouterPortCount(next, ids[0]!, 'wan', 1);
+    const rtr = next.topology.devices.find((d) => d.id === ids[0])!;
+    expect(rtr.ports.some((p) => p.id === 'wan2')).toBe(false);
+    const rt = rtr.functions.find((fn) => fn.kind === 'routing');
+    expect(rt?.kind === 'routing' ? rt.ifaces.map((i) => i.id) : []).toEqual([
+      'lan-svi',
+      'wan',
+    ]);
+    expect(
+      rt?.kind === 'routing' ? rt.routes.some((r) => r.via === '198.51.100.1') : true,
+    ).toBe(false);
+    // The shipped default is untouched.
+    expect(
+      rt?.kind === 'routing' ? rt.routes.some((r) => r.via === '203.0.113.1') : false,
+    ).toBe(true);
+  });
+
+  it('refuses to shrink below a cabled or pending LAN jack (#124)', () => {
+    const { state, ids } = placed(initialState, 'router');
+    let next = setRouterPortCount(state, ids[0]!, 'lan', 2);
+    const rtr = ids[0]!;
+    next = addPreset(next, 'host');
+    const host = next.topology.devices.at(-1)!.id;
+    next = startLink(next, host, '1');
+    next = completeLink(next, rtr, 'lan2');
+    const before = JSON.stringify(next.topology.devices.find((d) => d.id === rtr));
+    const refused = setRouterPortCount(next, rtr, 'lan', 1);
+    expect(refused.notice).toMatch(/unlink/i);
+    expect(
+      JSON.stringify(refused.topology.devices.find((d) => d.id === rtr)),
+    ).toBe(before);
+
+    let pendingState = setRouterPortCount(next, rtr, 'lan', 4);
+    pendingState = startLink(pendingState, rtr, 'lan4');
+    const pendingRefused = setRouterPortCount(pendingState, rtr, 'lan', 2);
+    expect(pendingRefused.notice).toMatch(/link/i);
+    expect(pendingRefused.pendingLink).toEqual({ device: rtr, port: 'lan4' });
+  });
+
+  it('refuses a count outside the range, and non-router chassis (#124)', () => {
+    const { state, ids } = placed(initialState, 'router');
+    expect(setRouterPortCount(state, ids[0]!, 'lan', 0).notice).toMatch(/1 to 8/);
+    expect(setRouterPortCount(state, ids[0]!, 'lan', 9).notice).toMatch(/1 to 8/);
+    expect(setRouterPortCount(state, ids[0]!, 'wan', 3).notice).toMatch(/1 to 2/);
+    const host = placed(state, 'host');
+    expect(
+      setRouterPortCount(host.state, host.ids[0]!, 'lan', 2).notice,
+    ).toMatch(/Only a router/);
+    const l3 = placed(state, 'l3-switch');
+    expect(
+      setRouterPortCount(l3.state, l3.ids[0]!, 'wan', 2).notice,
+    ).toMatch(/Only a router/);
   });
 });
