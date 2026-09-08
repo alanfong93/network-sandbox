@@ -114,7 +114,7 @@ describe('sandbox JSON import/export (#57 envelope)', () => {
     // Both VLANs are covered by routing ifaces - every scope answers
     // through decideDhcp. The lan iface carries VLAN 10 (the preset's
     // default pvid is 1, so pin it), the wan iface carries VLAN 20.
-    const lan = rt.ifaces.find((iface) => iface.id === 'lan');
+    const lan = rt.ifaces.find((iface) => iface.id === 'lan-svi');
     if (lan) {
       lan.vlan = 10;
       lan.ip = '192.168.10.1';
@@ -153,7 +153,7 @@ describe('sandbox JSON import/export (#57 envelope)', () => {
       gateway: '192.168.10.1',
       resolver: '192.168.10.1',
     };
-    const lan = rt.ifaces.find((iface) => iface.id === 'lan');
+    const lan = rt.ifaces.find((iface) => iface.id === 'lan-svi');
     if (lan) {
       lan.vlan = 10;
       // Tagged VLAN 10, but the IP lives in the VLAN-20 scope's /24.
@@ -184,7 +184,7 @@ describe('sandbox JSON import/export (#57 envelope)', () => {
     const rtr = state.topology.devices[0]!;
     const rt = rtr.functions.find((fn) => fn.kind === 'routing');
     if (rt?.kind !== 'routing') throw new Error('expected routing');
-    const lan = rt.ifaces.find((iface) => iface.id === 'lan');
+    const lan = rt.ifaces.find((iface) => iface.id === 'lan-svi');
     if (lan) {
       delete lan.vlan;
       lan.ip = '192.168.10.1';

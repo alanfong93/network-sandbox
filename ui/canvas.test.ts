@@ -27,6 +27,14 @@ describe('SVG canvas view (#105)', () => {
     }
   });
 
+  it('draws no handle for an SVI member port - it is not a jack (#124)', () => {
+    const state = addPreset(initialState, 'router');
+    const svg = renderCanvas(state);
+    expect(svg).not.toMatch(/data-port="lan-svi"/);
+    expect(svg).toMatch(/data-port="lan"/);
+    expect(svg).toMatch(/data-port="wan"/);
+  });
+
   it('lists every link as a path between those handles', () => {
     let state = initialState;
     state = addPreset(state, 'host');

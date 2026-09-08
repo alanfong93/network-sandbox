@@ -1,4 +1,4 @@
-import { defaults } from '../src/index';
+import { defaults, inSubnet } from '../src/index';
 import type {
   BridgePort,
   Chassis,
@@ -131,13 +131,19 @@ export function freePort(
   chassis: Chassis,
 ): string | undefined {
   return chassis.ports.find(
-    (candidate) => !portOccupied(topology, chassis.id, candidate.id),
+    (candidate) =>
+      !isSviMemberPort(chassis, candidate.id) &&
+      !portOccupied(topology, chassis.id, candidate.id),
   )?.id;
 }
 
 export function freePorts(topology: Topology, chassis: Chassis): string[] {
   return chassis.ports
-    .filter((candidate) => !portOccupied(topology, chassis.id, candidate.id))
+    .filter(
+      (candidate) =>
+        !isSviMemberPort(chassis, candidate.id) &&
+        !portOccupied(topology, chassis.id, candidate.id),
+    )
     .map((candidate) => candidate.id);
 }
 
@@ -614,6 +620,207 @@ export function setSwitchPortCount(
       functions: c.functions.map((fn) =>
         fn.kind === 'bridging' && fn.id === bridge.id ? { ...fn, members } : fn,
       ),
+    };
+  });
+}
+
+/**
+ * True when the port is internal wiring, not a jack: owned by a routing
+ * function and also a bridging member (the SVI composition, #71). Such a
+ * port never carries a link - cabling it is a false affordance, so neither
+ * the inspector nor the canvas offers it.
+ */
+export function isSviMemberPort(chassis: Chassis, portId: string): boolean {
+  const port = chassis.ports.find((item) => item.id === portId);
+  if (!port) return false;
+  const rtOwned = chassis.functions.some(
+    (fn) => fn.kind === 'routing' && fn.id === port.ownedBy,
+  );
+  if (!rtOwned) return false;
+  return chassis.functions.some(
+    (fn) => fn.kind === 'bridging' && fn.members.some((m) => m.port === portId),
+  );
+}
+
+/**
+ * A routing chassis shaped like the router preset: a routing function, a
+ * LAN-side bridge, and physical `lan`/`lanN` plus `wan`/`wanN` ports. The
+ * predicate is the data shape, never the preset id (ADR 0013) - the L3
+ * switch carries no such port names and never matches.
+ */
+export function isRouterShape(chassis: Chassis): boolean {
+  const rt = chassis.functions.find((fn) => fn.kind === 'routing');
+  if (!rt || rt.kind !== 'routing') return false;
+  const bridge = chassis.functions.find((fn) => fn.kind === 'bridging');
+  if (!bridge || bridge.kind !== 'bridging') return false;
+  return (
+    chassis.ports.some((p) => routerPortNumber(p.id, 'lan') !== undefined) &&
+    chassis.ports.some((p) => routerPortNumber(p.id, 'wan') !== undefined)
+  );
+}
+
+export function routerPortNumber(id: string, stem: 'lan' | 'wan'): number | undefined {
+  if (id === stem) return 1;
+  const match = new RegExp(`^${stem}(\\d+)$`).exec(id);
+  return match ? Number(match[1]) : undefined;
+}
+
+function allMacsInUse(topology: Topology): Set<string> {
+  const used = new Set<string>();
+  for (const device of topology.devices) {
+    if (device.mac !== undefined) used.add(device.mac);
+    for (const fn of device.functions) {
+      if (fn.kind === 'routing') {
+        for (const iface of fn.ifaces) used.add(iface.mac);
+      }
+      if (fn.kind === 'stp') used.add(fn.baseMac);
+    }
+  }
+  return used;
+}
+
+/**
+ * The next free MAC for a grown WAN iface, derived from the seed by walking
+ * the last octet up. Preset-derived identities always end :00, so a bumped
+ * last octet never collides with a placed box; the used-set check also
+ * covers hand-edited imports.
+ */
+function nextFreeIfaceMac(topology: Topology, seed: string): string {
+  const used = allMacsInUse(topology);
+  const parts = seed.split(':');
+  if (parts.length !== 6) parts.splice(0, parts.length, ...'02:00:00:00:00:00'.split(':'));
+  for (let last = 1; last <= 255; last++) {
+    const candidate = [...parts.slice(0, 5), last.toString(16).padStart(2, '0')].join(':');
+    if (!used.has(candidate)) return candidate;
+  }
+  return seed;
+}
+
+/**
+ * Resize the router's physical LAN or WAN set (#124). LAN ports join the
+ * one LAN bridge - `lan-svi` stays the sole LAN routing iface, so an extra
+ * jack can never become a second subnet. Extra WANs are routed uplinks on
+ * the engine's second-WAN pattern: an untagged iface and a second default
+ * route, both removed again on shrink. Cabled and pending ports are refused,
+ * never silently unlinked.
+ */
+export function setRouterPortCount(
+  state: EditorState,
+  deviceId: DeviceId,
+  side: 'lan' | 'wan',
+  count: number,
+): EditorState {
+  const max = side === 'lan' ? 8 : 2;
+  if (!Number.isInteger(count) || count < 1 || count > max) {
+    return {
+      ...state,
+      notice: `Router ${side.toUpperCase()} count must be 1 to ${max}`,
+    };
+  }
+  const chassis = deviceOf(state.topology, deviceId);
+  if (!chassis) return state;
+  if (!isRouterShape(chassis)) {
+    return { ...state, notice: 'Only a router has LAN and WAN counts' };
+  }
+  const rt = chassis.functions.find(
+    (fn) => fn.kind === 'routing' && fn.id !== undefined,
+  );
+  const bridge = chassis.functions.find((fn) => fn.kind === 'bridging');
+  if (!rt || rt.kind !== 'routing' || !bridge || bridge.kind !== 'bridging') {
+    return { ...state, notice: 'Router port count needs the LAN bridge and routing functions' };
+  }
+  const physical = chassis.ports
+    .filter((port) => routerPortNumber(port.id, side) !== undefined)
+    .sort((a, b) => routerPortNumber(a.id, side)! - routerPortNumber(b.id, side)!);
+  const current = physical.length;
+  if (count === current) return state;
+  if (count < current) {
+    const removed = physical.slice(count).map((port) => port.id);
+    const pending = state.pendingLink;
+    if (pending?.device === deviceId && removed.includes(pending.port)) {
+      return { ...state, notice: `Port ${pending.port} is waiting for a link - cancel it first` };
+    }
+    const linked = removed.filter((port) => portOccupied(state.topology, deviceId, port));
+    if (linked.length > 0) {
+      return { ...state, notice: `Port ${linked.join(', ')} has links - unlink it first` };
+    }
+    const removedSet = new Set(removed);
+    // WAN shrink also drops the default route the removed WAN carried: a
+    // route whose via sits in the dead iface's subnet is not a candidate
+    // (ADR 0020's reachability filter) - leaving it is stale data.
+    const deadSubnets =
+      side === 'wan'
+        ? rt.ifaces
+            .filter((iface) => removedSet.has(iface.id))
+            .map((iface) => ({ ip: iface.ip, prefix: iface.prefix }))
+        : [];
+    return withChassis(state, deviceId, (c) => ({
+      ...c,
+      ports: c.ports.filter((port) => !removedSet.has(port.id)),
+      functions: c.functions.map((fn) => {
+        if (side === 'lan' && fn.kind === 'bridging' && fn.id === bridge.id) {
+          return { ...fn, members: fn.members.filter((member) => !removedSet.has(member.port)) };
+        }
+        if (side === 'wan' && fn.kind === 'routing' && fn.id === rt.id) {
+          return {
+            ...fn,
+            ifaces: fn.ifaces.filter((iface) => !removedSet.has(iface.id)),
+            routes: fn.routes.filter(
+              (route) =>
+                !deadSubnets.some((net) => inSubnet(route.via, net.ip, net.prefix)),
+            ),
+          };
+        }
+        return fn;
+      }),
+    }));
+  }
+  return withChassis(state, deviceId, (c) => {
+    const ports = [...c.ports];
+    const bridgeMembers = [...bridge.members];
+    const ifaces = [...rt.ifaces];
+    const routes = [...rt.routes];
+    // A grown LAN jack joins the network the existing jacks are on: the
+    // first LAN member's PVID, not blindly the defaults (#124: one network).
+    const lanMember = bridge.members.find((member) => routerPortNumber(member.port, 'lan') === 1);
+    const lanPvid = lanMember?.pvid ?? defaults.pvid;
+    for (let n = current + 1; n <= count; n++) {
+      const id = `${side}${n}`;
+      if (side === 'lan') {
+        ports.push({ id, mtu: defaults.portMtu, ownedBy: bridge.id });
+        bridgeMembers.push(accessMember(id, lanPvid));
+      } else {
+        // The engine's second-WAN pattern (wan.fixture): an untagged routed
+        // iface on the other documentation /24 plus its own default route.
+        const ip = `198.51.100.2`;
+        ports.push({ id, mtu: defaults.portMtu, ownedBy: rt.id });
+        ifaces.push({
+          id,
+          vlan: undefined,
+          ip,
+          prefix: 24,
+          mac: nextFreeIfaceMac(
+            state.topology,
+            rt.ifaces.find((iface) => iface.id === 'wan')?.mac ??
+              rt.ifaces[0]?.mac ??
+              '02:00:00:00:00:00',
+          ),
+        });
+        routes.push({ dest: '0.0.0.0', prefix: 0, via: '198.51.100.1' });
+      }
+    }
+    return {
+      ...c,
+      ports,
+      functions: c.functions.map((fn) => {
+        if (side === 'lan' && fn.kind === 'bridging' && fn.id === bridge.id) {
+          return { ...fn, members: bridgeMembers };
+        }
+        if (side === 'wan' && fn.kind === 'routing' && fn.id === rt.id) {
+          return { ...fn, ifaces, routes };
+        }
+        return fn;
+      }),
     };
   });
 }

@@ -1,6 +1,7 @@
 import type { Chassis, DeviceId, Topology } from '../src/index';
 import { viewBoxAttr, type Camera } from './camera';
 import { autoPlace, type Layout } from './layout';
+import { isSviMemberPort } from './state';
 
 const BOX_W = 168;
 const BOX_H = 72;
@@ -181,6 +182,10 @@ export function renderCanvas(
         device.id === state.selected ? ' device selected' : ' device';
       const ports = device.ports
         .map((port, i) => {
+          // An SVI member port is internal wiring, not a jack (#124): it
+          // never carries a link, so it draws no handle. The index math
+          // keeps the full array so real ports stay where links attach.
+          if (isSviMemberPort(device, port.id)) return '';
           const n = Math.max(1, device.ports.length);
           const cx = ((i + 1) * BOX_W) / (n + 1);
           const busy = state.topology.links.some(

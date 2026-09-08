@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { addPreset, addResolverRecord, completeLink, initialState, removeResolverRecord, select, setHostAddress, setIspHandoff, setPortAcceptable, setPvid, setResolverRecord, setUntaggedVlans, startLink } from './state';
+import { addPreset, addResolverRecord, completeLink, initialState, removeResolverRecord, select, setHostAddress, setIspHandoff, setPortAcceptable, setPvid, setResolverRecord, setRouterIfaceVlan, setRouterPortCount, setUntaggedVlans, startLink } from './state';
 import { renderInspector, renderTrace } from './render';
 import { COLD_TRACE_NOTICE, runTrace } from './trace';
 
@@ -106,6 +106,158 @@ describe('inspector', () => {
     state = addPreset(state, 'host');
     const h = state.topology.devices.at(-1)!.id;
     expect(renderInspector(select(state, h))).not.toMatch(/switch-ports/);
+  });
+
+  it('router inspector offers LAN count and WAN count inputs (#124)', () => {
+    let state = addPreset(initialState, 'router');
+    const rtr = state.topology.devices[0]!.id;
+    const html = renderInspector(select(state, rtr));
+    expect(html).toMatch(/LAN count/);
+    expect(html).toMatch(/WAN count/);
+    expect(html).toMatch(/data-action="router-lan-count"[^>]*value="1"/);
+    expect(html).toMatch(/data-action="router-wan-count"[^>]*value="1"/);
+  });
+
+  it('an L3 switch offers no router count inputs (#124)', () => {
+    let state = addPreset(initialState, 'l3-switch');
+    const l3 = state.topology.devices[0]!.id;
+    expect(renderInspector(select(state, l3))).not.toMatch(/router-lan-count/);
+    expect(renderInspector(select(state, l3))).not.toMatch(/router-wan-count/);
+  });
+
+  it('the router LAN SVI port is not offered for cabling (#124)', () => {
+    let state = addPreset(initialState, 'router');
+    const rtr = state.topology.devices[0]!.id;
+    const html = renderInspector(select(state, rtr));
+    expect(html).not.toMatch(/data-port="lan-svi"/);
+    expect(html).toMatch(/data-action="start-link"[^>]*data-port="lan"/);
+  });
+
+  it('a pre-ADR-0031 imported router keeps its shape and shows no count controls (#124)', () => {
+    let state = addPreset(initialState, 'router');
+    const chassis = state.topology.devices[0]!;
+    const id = chassis.id;
+    // Back-date to the old shape: a routed lan port, no bridge, no internal
+    // edge - what a saved topology from before the change still imports as.
+    chassis.ports = [
+      { id: 'lan', mtu: chassis.ports[0]!.mtu, ownedBy: 'rt' },
+      { id: 'wan', mtu: chassis.ports[0]!.mtu, ownedBy: 'rt' },
+    ];
+    chassis.functions = chassis.functions
+      .filter((fn) => fn.kind !== 'bridging')
+      .map((fn) => {
+        if (fn.kind !== 'routing') return fn;
+        return {
+          ...fn,
+          ifaces: fn.ifaces.map((iface) =>
+            iface.id === 'lan-svi' ? { ...iface, id: 'lan' } : iface,
+          ),
+        };
+      });
+    chassis.internal = [];
+    const html = renderInspector(select(state, id));
+    expect(html).not.toMatch(/router-lan-count/);
+    expect(html).not.toMatch(/router-wan-count/);
+    expect(html).toMatch(/data-action="start-link"[^>]*data-port="lan"/);
+  });
+
+  it('a grown second WAN does not steal the egress - masquerade keeps following the first default (#124)', () => {
+    let state = initialState;
+    state = addPreset(state, 'router');
+    state = addPreset(state, 'host');
+    state = addPreset(state, 'host');
+    const [rtr, h1, wanHost] = state.topology.devices.map((d) => d.id);
+    state = setRouterIfaceVlan(state, rtr!, 'wan', undefined);
+    state = setRouterPortCount(state, rtr!, 'wan', 2);
+    state = startLink(state, h1!, '1');
+    state = completeLink(state, rtr!, 'lan');
+    state = startLink(state, wanHost!, '1');
+    state = completeLink(state, rtr!, 'wan');
+    state = setHostAddress(state, wanHost!, {
+      ip: '203.0.113.1',
+      prefix: 24,
+      gateway: '203.0.113.2',
+    });
+    // Two defaults now name wan and wan2. First-wins in routes[] order keeps
+    // the shipped wan default first (row 26) - the LAN host still egresses
+    // wan and the reply still returns through the same NAT session.
+    const trace = runTrace(state.topology, { from: h1!, dstIp: '203.0.113.1' });
+    expect(trace.outcome).toBe('round-trip');
+    expect(
+      trace.requestHops.some(
+        (hop) => hop.step === 'delivery' && hop.action === 'delivered' && hop.device === wanHost,
+      ),
+    ).toBe(true);
+    expect(
+      (trace.replyHops ?? []).some(
+        (hop) => hop.step === 'delivery' && hop.action === 'delivered' && hop.device === h1,
+      ),
+    ).toBe(true);
+  });
+
+  it('two hosts on two router LAN jacks reach each other without a second subnet (#124 done-when)', () => {
+    let state = initialState;
+    state = addPreset(state, 'router');
+    state = addPreset(state, 'host');
+    state = addPreset(state, 'host');
+    const [rtr, h1, h2] = state.topology.devices.map((d) => d.id);
+    state = setRouterPortCount(state, rtr!, 'lan', 4);
+    state = setRouterPortCount(state, rtr!, 'wan', 2);
+    state = startLink(state, h1!, '1');
+    state = completeLink(state, rtr!, 'lan');
+    state = startLink(state, h2!, '1');
+    state = completeLink(state, rtr!, 'lan3');
+    const h2Ip = state.topology.devices.find((d) => d.id === h2)!.ip!;
+    const trace = runTrace(state.topology, { from: h1!, dstIp: h2Ip });
+    // Delivered both ways - the ARP between the two jacks resolved through
+    // the one LAN bridge (the #124 tripwire).
+    expect(trace.outcome).toBe('round-trip');
+    // One network: the request never routes - there is no route-lookup hop
+    // between two hosts on the same subnet.
+    expect(
+      trace.requestHops.some((hop) => hop.step === 'route-lookup'),
+    ).toBe(false);
+    expect(trace.requestHops.some((hop) => hop.step === 'delivery' && hop.action === 'delivered' && hop.device === h2)).toBe(true);
+  });
+
+  it('a LAN host reaches a WAN-side host through the SVI punt and masquerade (#124)', () => {
+    let state = initialState;
+    state = addPreset(state, 'router');
+    state = addPreset(state, 'host');
+    state = addPreset(state, 'host');
+    const [rtr, h1, wanHost] = state.topology.devices.map((d) => d.id);
+    // A direct host on the WAN jack needs the no-tag handoff - the shipped
+    // tag 500 is for the modem path (#68's clear-the-tag control).
+    state = setRouterIfaceVlan(state, rtr!, 'wan', undefined);
+    state = startLink(state, h1!, '1');
+    state = completeLink(state, rtr!, 'lan');
+    state = startLink(state, wanHost!, '1');
+    state = completeLink(state, rtr!, 'wan');
+    // The WAN-side host is the shipped default route's via: the exact
+    // gateway the router ARPs for on the WAN segment.
+    state = setHostAddress(state, wanHost!, {
+      ip: '203.0.113.1',
+      prefix: 24,
+      gateway: '203.0.113.2',
+    });
+    const trace = runTrace(state.topology, { from: h1!, dstIp: '203.0.113.1' });
+    expect(trace.outcome).toBe('round-trip');
+    // The request punted through the SVI into routing - without the punt
+    // the frame would flood the LAN bridge and die.
+    expect(
+      trace.requestHops.some((hop) => hop.step === 'route-lookup' && hop.device === rtr),
+    ).toBe(true);
+    expect(
+      trace.requestHops.some(
+        (hop) => hop.step === 'delivery' && hop.action === 'delivered' && hop.device === wanHost,
+      ),
+    ).toBe(true);
+    // The reply returns through the NAT session to the LAN host.
+    expect(
+      (trace.replyHops ?? []).some(
+        (hop) => hop.step === 'delivery' && hop.action === 'delivered' && hop.device === h1,
+      ),
+    ).toBe(true);
   });
 
   it('router inspector has a WAN VLAN control, not Native VLAN (PVID)', () => {

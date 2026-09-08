@@ -1,5 +1,12 @@
 import type { EditorState } from './state';
-import { bridgeMemberOf, freePorts, owningBridgeOf, SWITCH_PORT_SKUS } from './state';
+import {
+  bridgeMemberOf,
+  freePorts,
+  isRouterShape,
+  owningBridgeOf,
+  routerPortNumber,
+  SWITCH_PORT_SKUS,
+} from './state';
 import type { TraceRender } from './trace';
 
 function esc(text: string): string {
@@ -270,6 +277,22 @@ export function renderInspector(state: EditorState): string {
         (rows === '' ? '<p class="hint">No records yet.</p>' : rows) +
         `<button type="button" data-action="record-add">Add record</button>` +
         `</fieldset>`,
+    );
+  }
+  // Router jack counts (#124): LAN jacks join the one LAN bridge, extra WANs
+  // are routed uplinks. The shape is the data, never the preset id.
+  if (isRouterShape(chassis)) {
+    const lanCount = chassis.ports.filter(
+      (p) => routerPortNumber(p.id, 'lan') !== undefined,
+    ).length;
+    const wanCount = chassis.ports.filter(
+      (p) => routerPortNumber(p.id, 'wan') !== undefined,
+    ).length;
+    parts.push(
+      `<label>LAN count ` +
+        `<input type="number" min="1" max="8" data-action="router-lan-count" value="${lanCount}"></label>`,
+      `<label>WAN count ` +
+        `<input type="number" min="1" max="2" data-action="router-wan-count" value="${wanCount}"></label>`,
     );
   }
   // Port count select for a pure switch (#125): SKUs, not a free number.

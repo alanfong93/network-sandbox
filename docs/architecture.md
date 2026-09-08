@@ -140,7 +140,14 @@ The UI is a separate entry under `ui/` that imports the engine and never the
 other way round (ADR 0016, ADR 0027). Behaviour lives in pure, unit-tested
 modules; `main.ts` is the only DOM-glue module. Presets write functions, not a
 device kind (ADR 0013): the palette includes the managed switch, the
-unmanaged switch, the router (routing+nat), the L3 switch (bridging+stp+routing
+unmanaged switch, the router (a LAN-side bridge plus one LAN SVI and routed
+WAN uplinks — routing+bridging+nat,
+[ADR 0031](adr/0031-router-lan-jacks-are-one-bridge.md); the inspector offers
+LAN count 1-8 and WAN count 1-2: grown LAN jacks join the one LAN bridge at
+the existing members' PVID, an extra WAN is a routed iface with its own
+default route, and both come back off on shrink; an SVI member port is
+internal wiring and is offered nowhere as a cabling jack — not on the canvas
+and not in the inspector), the L3 switch (bridging+stp+routing
 with SVI-shaped rt-owned bridging members — the #71 composition), the
 standalone DHCP server (host-like addressing plus a `dhcp-server` scope — the
 #72 composition, with scope-editing controls), the AP and the modem. Pure

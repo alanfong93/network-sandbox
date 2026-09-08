@@ -126,8 +126,10 @@ flowchart TD
 ## UI loop
 
 The browser UI runs the same engine, driven by clicks. The shipped loop is:
-place a preset box, select a market-SKU port count where the box is a pure
-managed or unmanaged switch, link two free ports, edit in the inspector, send, read
+place a preset box, set its jack counts — a market-SKU port count on a pure
+managed or unmanaged switch, LAN count and WAN count on a router (the LAN
+jacks join one bridge, extra WANs are routed uplinks, ADR 0031) — link two
+free ports, edit in the inspector, send, read
 sentences, export. An SVG canvas **view** draws chassis faces, ports and sagged cables
 from `{topology, layout, selected}` (`ui/canvas.ts`); missing layout uses
 `autoPlace` for display only. Wheel zoom and empty-drag pan move a
