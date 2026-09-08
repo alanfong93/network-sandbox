@@ -81,6 +81,24 @@ describe('inspector', () => {
     expect(html).toMatch(/<option value="5" selected>/);
   });
 
+  it('names a saved four-port switch as legacy without making it a SKU (#125)', () => {
+    let state = addPreset(initialState, 'unmanaged-switch');
+    const sw = state.topology.devices[0]!.id;
+    const chassis = state.topology.devices[0]!;
+    state = {
+      ...state,
+      topology: {
+        ...state.topology,
+        devices: [{ ...chassis, ports: chassis.ports.slice(0, 4), functions: chassis.functions.map((fn) =>
+          fn.kind === 'bridging' ? { ...fn, members: fn.members.slice(0, 4) } : fn,
+        ) }],
+      },
+    };
+    const html = renderInspector(select(state, sw));
+    expect(html).toMatch(/<option value="4" selected disabled>4 ports \(legacy\)<\/option>/);
+    expect(html).not.toMatch(/<option value="4">4 ports<\/option>/);
+  });
+
   it('an L3 switch and a host show no port-count control (#125)', () => {
     let state = addPreset(initialState, 'l3-switch');
     const l3 = state.topology.devices[0]!.id;

@@ -284,6 +284,13 @@ export function renderInspector(state: EditorState): string {
     parts.push(
       `<label>Port count ` +
         `<select data-action="switch-ports">` +
+        // Saved topologies from before #125 have four-port switches. It is
+        // not a new SKU: preserve and name the persisted value until the
+        // user deliberately selects a market size.
+        (!(SWITCH_PORT_SKUS as readonly number[]).includes(chassis.ports.length)
+          ? `<option value="${chassis.ports.length}" selected disabled>` +
+            `${chassis.ports.length} ports (legacy)</option>`
+          : '') +
         SWITCH_PORT_SKUS.map(
           (sku) =>
             `<option value="${sku}"${

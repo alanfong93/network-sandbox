@@ -541,6 +541,7 @@ describe('setSwitchPortCount (#125)', () => {
     expect(
       JSON.stringify(next.topology.devices.find((d) => d.id === sw)),
     ).toBe(before);
+    expect(next.topology.links).toEqual(state.topology.links);
   });
 
   it('refuses to shrink below the pending link port - no dangling endpoint (#125)', () => {
