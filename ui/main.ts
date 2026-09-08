@@ -366,6 +366,9 @@ function onClick(event: MouseEvent): void {
       break;
     case 'replay-play':
       stopReplay();
+      // The Play pace. #122's chevron march period (0.35s, index.html) must
+      // divide this evenly: each re-render restarts CSS animations, and a
+      // whole number of cycles per step keeps the restart invisible.
       replayTimer = setInterval(() => {
         if (!lastTrace) {
           stopReplay();

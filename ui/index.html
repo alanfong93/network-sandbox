@@ -141,7 +141,11 @@
         stroke-dasharray: 3 12;
         stroke-linecap: round;
         opacity: 0.95;
-        animation: link-flow-march 0.8s linear infinite;
+        /* Two full march cycles per replay step: main.ts re-renders the SVG
+           every 700ms (the Play pace), which restarts CSS animations from
+           zero - a period that divides the pace evenly lands the restart on
+           a cycle boundary, so the march never visibly jumps (#122). */
+        animation: link-flow-march 0.35s linear infinite;
       }
       .canvas-svg .link-flow.wireless { stroke: #ffe08a; }
       .canvas-svg .link-flow.down { opacity: 0.2; }
