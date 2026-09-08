@@ -187,6 +187,9 @@ states nothing; the owning function's `vlanAware` flag decides, never the
 preset id (ADR 0007, ADR 0013). The shipped UI is the forms editor
 (#58) plus a vanilla-SVG **view and builder** of the topology (`ui/canvas.ts`):
 chassis faces (from preset/functions, not a device kind), sagged cables,
+port handles labelled with a readable jack name - `LAN`/`WAN` and
+`LAN 2`/`WAN 2` for the router convention, the port id everywhere else,
+a pure id mapping with the real `data-port` kept for linking (#121) -
 select, drop/port-click/drag, and a hop-replay packet that rides the cable
 between recorded hops (play/step/pause, no verdict). A live hop also
 draws a marching-chevron overlay along the same cable path, traversed

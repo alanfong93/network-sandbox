@@ -162,6 +162,20 @@ function renderToken(item: TokenMark): string {
   );
 }
 
+/**
+ * A readable label for a cabling jack (#121): router uplink/LAN naming for
+ * the router convention, and the port id itself everywhere else. Pure
+ * id mapping - no device kind, no function lookup - and the handle keeps
+ * the real data-port id, so linking is unchanged.
+ */
+export function portLabel(id: string): string {
+  if (id === 'lan') return 'LAN';
+  if (id === 'wan') return 'WAN';
+  if (/^lan\d+$/.test(id)) return `LAN ${id.slice(3)}`;
+  if (/^wan\d+$/.test(id)) return `WAN ${id.slice(3)}`;
+  return id;
+}
+
 export function renderCanvas(
   state: {
     topology: Topology;
@@ -201,7 +215,8 @@ export function renderCanvas(
           return (
             `<rect class="${klass}" data-device="${esc(device.id)}" ` +
             `data-port="${esc(port.id)}" x="${cx - 5}" y="${BOX_H - 7}" ` +
-            `width="10" height="10" rx="1.5" />`
+            `width="10" height="10" rx="1.5" />` +
+            `<text class="port-label" x="${cx}" y="${BOX_H + 8}" text-anchor="middle">${esc(portLabel(port.id))}</text>`
           );
         })
         .join('');

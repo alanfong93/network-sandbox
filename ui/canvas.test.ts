@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { addPreset, completeLink, initialState, select, startLink } from './state';
+import { addPreset, completeLink, initialState, select, setRouterPortCount, startLink } from './state';
 import { autoPlace } from './layout';
-import { handlePoint, renderCanvas } from './canvas';
+import { handlePoint, portLabel, renderCanvas } from './canvas';
 
 describe('SVG canvas view (#105)', () => {
   it('lists every device as a labelled box with data-device', () => {
@@ -236,6 +236,44 @@ describe('SVG canvas view (#105)', () => {
       playing: true,
     });
     expect(playing).toMatch(/class="canvas-svg playing"/);
+  });
+
+  it('maps port ids to readable labels without inventing device kinds (#121)', () => {
+    expect(portLabel('lan')).toBe('LAN');
+    expect(portLabel('wan')).toBe('WAN');
+    expect(portLabel('lan2')).toBe('LAN 2');
+    expect(portLabel('wan2')).toBe('WAN 2');
+    expect(portLabel('lan-svi')).toBe('lan-svi');
+    expect(portLabel('1')).toBe('1');
+    expect(portLabel('svi10')).toBe('svi10');
+  });
+
+  it('a placed router labels its jacks LAN and WAN (#121)', () => {
+    const state = addPreset(initialState, 'router');
+    const svg = renderCanvas(state);
+    expect(svg).toMatch(/>LAN<\/text>/);
+    expect(svg).toMatch(/>WAN<\/text>/);
+    // Linking still uses the real port id - the handle keeps data-port.
+    expect(svg).toMatch(/data-port="lan"/);
+    expect(svg).toMatch(/data-port="wan"/);
+    // The internal SVI port draws no handle and no label.
+    expect(svg).not.toMatch(/lan-svi/);
+  });
+
+  it('a placed switch labels its ports by id (#121)', () => {
+    const state = addPreset(initialState, 'switch');
+    const svg = renderCanvas(state);
+    for (const id of ['1', '2', '3', '4', '5', '6', '7', '8']) {
+      expect(svg).toMatch(new RegExp(`>${id}</text>`));
+    }
+  });
+
+  it('a grown router labels the second LAN jack LAN 2 (#121)', () => {
+    let state = addPreset(initialState, 'router');
+    const rtr = state.topology.devices[0]!.id;
+    state = setRouterPortCount(state, rtr, 'lan', 2);
+    const svg = renderCanvas(state);
+    expect(svg).toMatch(/>LAN 2<\/text>/);
   });
 
   it('does not emit drag, drop, or hop-token markup', () => {
