@@ -188,8 +188,11 @@ preset id (ADR 0007, ADR 0013). The shipped UI is the forms editor
 (#58) plus a vanilla-SVG **view and builder** of the topology (`ui/canvas.ts`):
 chassis faces (from preset/functions, not a device kind), sagged cables,
 select, drop/port-click/drag, and a hop-replay packet that rides the cable
-between recorded hops (play/step/pause, no verdict). A live wired hop
-does not reuse the wireless dash. The SVG camera (wheel zoom toward the
+between recorded hops (play/step/pause, no verdict). A live hop also
+draws a marching-chevron overlay along the same cable path, traversed
+from the hop's origin toward its destination (#122) - its own element,
+so a live wired hop keeps the solid stroke and does not reuse the
+wireless dash (#119). The SVG camera (wheel zoom toward the
 cursor, empty-drag pan, Fit) is a view transform only — it is not `layout`
 and is not in the sandbox file. Forms UI stays
 (ADR 0029). Layout is a sandbox-envelope

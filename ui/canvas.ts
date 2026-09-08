@@ -171,6 +171,7 @@ export function renderCanvas(
   },
   token?: TokenMark | readonly TokenMark[] | null,
   camera?: Camera | null,
+  opts?: { playing?: boolean },
 ): string {
   const layout = layoutForDisplay(state.topology, state.layout);
   const tokens = token == null ? [] : Array.isArray(token) ? token : [token];
@@ -219,26 +220,27 @@ export function renderCanvas(
     .join('');
 
   const byId = new Map(state.topology.devices.map((device) => [device.id, device]));
-  const live = new Set(
-    tokens.flatMap((item) => {
-      if (!item.from) return [];
-      return state.topology.links
-        .filter((link) => {
-          const aDev = byId.get(link.a.device);
-          const bDev = byId.get(link.b.device);
-          if (!aDev || !bDev) return false;
-          const a = portPoint(aDev, link.a.port, layout[aDev.id] ?? { x: 0, y: 0 });
-          const b = portPoint(bDev, link.b.port, layout[bDev.id] ?? { x: 0, y: 0 });
-          const hits = (p: { x: number; y: number }, q: { x: number; y: number }) =>
-            (Math.hypot(p.x - item.from!.x, p.y - item.from!.y) < 12 &&
-              Math.hypot(q.x - item.x, q.y - item.y) < 12) ||
-            (Math.hypot(q.x - item.from!.x, q.y - item.from!.y) < 12 &&
-              Math.hypot(p.x - item.x, p.y - item.y) < 12);
-          return hits(a, b);
-        })
-        .map((link) => link.id);
-    }),
-  );
+  // Which cables a hop is riding, and in which direction (#122): the first
+  // token to claim a link fixes its travel - key is the link id, value is
+  // true when the hop runs link.a -> link.b, false when it runs b -> a.
+  const live = new Map<string, boolean>();
+  for (const item of tokens) {
+    if (!item.from) continue;
+    for (const link of state.topology.links) {
+      const aDev = byId.get(link.a.device);
+      const bDev = byId.get(link.b.device);
+      if (!aDev || !bDev) continue;
+      const a = portPoint(aDev, link.a.port, layout[aDev.id] ?? { x: 0, y: 0 });
+      const b = portPoint(bDev, link.b.port, layout[bDev.id] ?? { x: 0, y: 0 });
+      const near = (p: { x: number; y: number }, q: { x: number; y: number }) =>
+        Math.hypot(p.x - q.x, p.y - q.y) < 12;
+      if (near(a, item.from) && near(b, item)) {
+        if (!live.has(link.id)) live.set(link.id, true);
+      } else if (near(b, item.from) && near(a, item)) {
+        if (!live.has(link.id)) live.set(link.id, false);
+      }
+    }
+  }
   const links = state.topology.links
     .map((link) => {
       const aDev = byId.get(link.a.device);
@@ -254,9 +256,21 @@ export function renderCanvas(
           ? `<text class="assumption" x="${(a.x + b.x) / 2}" y="${(a.y + b.y) / 2 + 18}" text-anchor="middle">estimate</text>`
           : '';
       const d = cablePath(a, b);
+      // The direction overlay (#122): the same cable path, traversed from
+      // the hop's origin toward its destination, carrying the marching
+      // chevrons. Its own element - the base cable keeps its solid stroke
+      // (#119), and the wireless estimate dash is untouched.
+      const flow =
+        riding === ''
+          ? ''
+          : `<path class="link-flow${medium}${down}${riding}" data-link="${esc(link.id)}" ` +
+            `d="${
+              live.get(link.id) ? cablePath(a, b) : cablePath(b, a)
+            }" />`;
       return (
         `<path class="link-glow${medium}${down}${riding}" data-link="${esc(link.id)}" d="${d}" />` +
         `<path class="link${medium}${down}${riding}" data-link="${esc(link.id)}" d="${d}" />` +
+        flow +
         assumption
       );
     })
@@ -265,8 +279,12 @@ export function renderCanvas(
   const { maxX, maxY } = contentSize(state);
   const marker = tokens.map(renderToken).join('');
   const box = camera ?? { x: 0, y: 0, w: maxX, h: maxY };
+  // #122: the chevron march runs only while replay is playing - a paused
+  // or stepped frame freezes direction with the token instead of implying
+  // motion that is not happening.
+  const playing = opts?.playing ? ' playing' : '';
   return (
-    `<svg class="canvas-svg" viewBox="${viewBoxAttr(box)}" ` +
+    `<svg class="canvas-svg${playing}" viewBox="${viewBoxAttr(box)}" ` +
     `xmlns="http://www.w3.org/2000/svg">` +
     `<defs>` +
     `<pattern id="ns-grid" width="24" height="24" patternUnits="userSpaceOnUse">` +

@@ -134,6 +134,25 @@
       }
       .canvas-svg .link-glow.wired.live { stroke: #3ee0c555; }
       .canvas-svg .link.wireless.live { stroke: #ffe08a; }
+      .canvas-svg .link-flow {
+        fill: none;
+        stroke: var(--accent);
+        stroke-width: 1.6;
+        stroke-dasharray: 3 12;
+        stroke-linecap: round;
+        opacity: 0.95;
+        /* Two full march cycles per replay step: main.ts re-renders the SVG
+           every 700ms (the Play pace), which restarts CSS animations from
+           zero - a period that divides the pace evenly lands the restart on
+           a cycle boundary, so the march never visibly jumps (#122). */
+        animation: link-flow-march 0.35s linear infinite;
+      }
+      .canvas-svg .link-flow.wireless { stroke: #ffe08a; }
+      .canvas-svg .link-flow.down { opacity: 0.2; }
+      @keyframes link-flow-march {
+        to { stroke-dashoffset: -15; }
+      }
+      .canvas-svg:not(.playing) .link-flow { animation-play-state: paused; }
       .canvas-svg .assumption { fill: var(--warn); font-size: 10px; }
       .canvas-svg .token { fill: #3ee0c655; stroke: var(--accent); stroke-width: 1.5; filter: drop-shadow(0 0 6px #3ee0c5); }
       .canvas-svg .token-core { fill: #f4fffc; stroke: none; }

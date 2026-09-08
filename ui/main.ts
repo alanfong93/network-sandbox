@@ -115,7 +115,7 @@ function render(): void {
   stage.innerHTML =
     '<p class="camera-bar"><button type="button" data-action="fit-camera">Fit</button> ' +
     '<span class="hint">wheel zoom, drag empty space to pan</span></p>' +
-    renderCanvas(state, tokens, camera) +
+    renderCanvas(state, tokens, camera, { playing: replayTimer !== null }) +
     linking +
     '<h2>Devices</h2>' +
     renderDeviceList(state) +
@@ -366,6 +366,9 @@ function onClick(event: MouseEvent): void {
       break;
     case 'replay-play':
       stopReplay();
+      // The Play pace. #122's chevron march period (0.35s, index.html) must
+      // divide this evenly: each re-render restarts CSS animations, and a
+      // whole number of cycles per step keeps the restart invisible.
       replayTimer = setInterval(() => {
         if (!lastTrace) {
           stopReplay();
