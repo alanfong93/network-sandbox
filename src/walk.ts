@@ -26,6 +26,13 @@ export interface WalkArgs {
   inPort: string;
   frame: Frame;
   arrivedFrom?: DeviceId;
+  /**
+   * Dispatch directly onto this function instead of reading
+   * `Port.ownedBy` (#129): a chassis originating a frame enters its own
+   * routing function the same way the SVI punt's internal dispatch does
+   * (#71). Optional and omitted by every arrival-driven walk.
+   */
+  dispatchFn?: FnId;
 }
 
 export interface WalkObservation {
@@ -495,6 +502,7 @@ export function walkFrame(ctx: RunContext, args: WalkArgs): WalkResult {
       inPort: args.inPort,
       frame: args.frame,
       arrivedFrom: args.arrivedFrom,
+      dispatchFn: args.dispatchFn,
     },
   ];
   const learnedAt = new Map<string, string>();

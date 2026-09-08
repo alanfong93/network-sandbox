@@ -204,3 +204,43 @@ export function send(ctx: RunContext, args: SendArgs): WalkResult {
     deliveredFrame: ipWalk.deliveredFrame,
   };
 }
+
+/**
+ * Originate a frame from any sender (#129). A host-shaped chassis keeps
+ * send()'s ARP-then-walk. A routing chassis originates through its own
+ * routing function: the frame enters routeFrame at the iface whose address
+ * it sources from — the same internal-dispatch entry the SVI punt uses
+ * (#71) — so route lookup, the pending-ARP machinery, NAT, and the SVI
+ * egress re-entry all run unchanged. No new pipeline step (ADR 0001).
+ */
+export function originate(ctx: RunContext, args: SendArgs): WalkResult {
+  const chassis = ctx.topology.devices.find((item) => item.id === args.from);
+  const rt = chassis?.functions.find((fn) => fn.kind === 'routing');
+  if (!chassis || !rt || rt.kind !== 'routing') return send(ctx, args);
+  const srcIp = args.payload.srcIp;
+  const entry =
+    srcIp !== undefined
+      ? rt.ifaces.find((iface) => iface.ip === srcIp)
+      : undefined;
+  const iface = entry ?? rt.ifaces[0];
+  if (!iface) return { hops: [], observations: [] };
+  const vlan = iface.vlan ?? null;
+  const frame: Frame = {
+    srcMac: iface.mac,
+    // Placeholder: routeFrame overwrites the destination from its own
+    // resolution — directly, or via the pending-ARP serve — before any
+    // transmission leaves the chassis.
+    dstMac: defaults.broadcastMac,
+    vlan,
+    size: args.size ?? 64,
+    encapsulation: vlan === null ? ['ethernet'] : ['ethernet', 'vlan-tag'],
+    payload: { ...args.payload, dstIp: args.payload.dstIp ?? args.dstIp },
+    hops: [],
+  };
+  return walkFrame(ctx, {
+    device: args.from,
+    inPort: iface.id,
+    frame,
+    dispatchFn: rt.id,
+  });
+}

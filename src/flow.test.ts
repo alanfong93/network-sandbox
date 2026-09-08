@@ -756,3 +756,47 @@ describe('send by name: the table answers after arrival (#126, ADR 0030)', () =>
     expect(obs?.observation.facts.devices).toEqual(['DNS1']);
   });
 });
+
+describe('a reply from a routing chassis (#129)', () => {
+  it('round-trips a ping to the router LAN address (done-when)', () => {
+    const ctx = createRunContext(referenceScenario());
+    const result = runFlow(ctx, {
+      from: 'H10',
+      dstIp: '192.168.10.1',
+      payload: { kind: 'icmp', srcIp: '192.168.10.10', dstIp: '192.168.10.1' },
+    });
+    expect(result.flow.outcome).toBe('round-trip');
+    const requestDelivery = result.flow.request.hops.find(
+      (hop) => hop.step === 'delivery' && hop.action === 'delivered',
+    );
+    expect(requestDelivery?.device).toBe('RTR');
+    const replyDelivery = result.flow.reply?.hops.find(
+      (hop) => hop.step === 'delivery' && hop.action === 'delivered',
+    );
+    expect(replyDelivery?.device).toBe('H10');
+    // The reply walked the router's own routing pipeline, not a host send.
+    expect(
+      result.flow.reply?.hops.some(
+        (hop) => hop.device === 'RTR' && hop.step === 'route-lookup' && hop.action === 'forwarded',
+      ),
+    ).toBe(true);
+  });
+
+  it('round-trips a WAN-side ping to the router WAN address', () => {
+    const ctx = createRunContext(referenceScenario());
+    const result = runFlow(ctx, {
+      from: 'NET',
+      dstIp: '192.0.2.2',
+      payload: { kind: 'icmp', srcIp: '192.0.2.1', dstIp: '192.0.2.2' },
+    });
+    expect(result.flow.outcome).toBe('round-trip');
+    const requestDelivery = result.flow.request.hops.find(
+      (hop) => hop.step === 'delivery' && hop.action === 'delivered',
+    );
+    expect(requestDelivery?.device).toBe('RTR');
+    const replyDelivery = result.flow.reply?.hops.find(
+      (hop) => hop.step === 'delivery' && hop.action === 'delivered',
+    );
+    expect(replyDelivery?.device).toBe('NET');
+  });
+});
