@@ -543,6 +543,17 @@ describe('setSwitchPortCount (#125)', () => {
     ).toBe(before);
   });
 
+  it('refuses to shrink below the pending link port - no dangling endpoint (#125)', () => {
+    let state = addPreset(initialState, 'unmanaged-switch');
+    const sw = state.topology.devices[0]!.id;
+    state = setSwitchPortCount(state, sw, 8);
+    state = startLink(state, sw, '8');
+    const next = setSwitchPortCount(state, sw, 5);
+    expect(next.notice).toMatch(/link/i);
+    expect(next.pendingLink).toEqual({ device: sw, port: '8' });
+    expect(next.topology.devices.find((d) => d.id === sw)?.ports).toHaveLength(8);
+  });
+
   it('refuses a count that is not a market SKU', () => {
     const { state, ids } = placed(initialState, 'switch');
     const next = setSwitchPortCount(state, ids[0]!, 7);

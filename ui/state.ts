@@ -566,6 +566,15 @@ export function setSwitchPortCount(
   if (count === current) return state;
   if (count < current) {
     const dropped = chassis.ports.slice(count).map((port) => port.id);
+    if (
+      state.pendingLink?.device === deviceId &&
+      dropped.includes(state.pendingLink.port)
+    ) {
+      return {
+        ...state,
+        notice: `Port ${state.pendingLink.port} is waiting for a link - cancel it first`,
+      };
+    }
     const linked = dropped.filter((portId) =>
       portOccupied(state.topology, deviceId, portId),
     );
