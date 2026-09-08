@@ -142,7 +142,9 @@ from `{topology, layout, selected}` (`ui/canvas.ts`); missing layout uses
 `autoPlace` for display only. Wheel zoom and empty-drag pan move a
 session-only camera; they do not write layout. After Send, hop replay rides a packet along
 the cable between recorded `Hop[]` (play/step/pause) — it is not a clock (ADR 0003) and not
-a verdict (ADR 0002). The canvas is also the builder: drop a palette preset, click two ports to
+a verdict (ADR 0002). The live cable also carries a marching-chevron
+overlay from the hop's origin toward its destination (#122); the wired
+live stroke stays solid (#119). The canvas is also the builder: drop a palette preset, click two ports to
 link, drag a box (layout only). Flood replay draws one token per recorded flood hop on that
 device (concurrent if the walk emitted several); it does not invent copies. The topology never leaves the tab except as the
 sandbox JSON file (optional `layout` sidecar).

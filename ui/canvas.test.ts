@@ -146,6 +146,80 @@ describe('SVG canvas view (#105)', () => {
     expect(svg).not.toMatch(/class="[^"]*wireless[^"]*live/);
   });
 
+  it('a live cable draws the flow overlay from origin toward the destination (#122)', () => {
+    let state = initialState;
+    state = addPreset(state, 'host');
+    state = addPreset(state, 'host');
+    const [a, b] = state.topology.devices.map((d) => d.id);
+    state = startLink(state, a!, '1');
+    state = completeLink(state, b!, '1');
+    const from = handlePoint(state.topology, state.layout, a!, '1')!;
+    const to = handlePoint(state.topology, state.layout, b!, '1')!;
+    const linkId = state.topology.links[0]!.id;
+    const svg = renderCanvas(state, { ...to, from, action: 'forwarded' });
+    // The flow overlay is its own element on the same cable, and its path
+    // data starts at the origin end so the march runs toward the
+    // destination.
+    expect(svg).toMatch(
+      new RegExp(`class="link-flow wired live"[^>]*data-link="${linkId}"`),
+    );
+    expect(svg).toMatch(
+      new RegExp(`class="link-flow wired live"[^>]*d="M ${from.x} ${from.y}`),
+    );
+  });
+
+  it('the flow overlay reverses with the hop direction (#122)', () => {
+    let state = initialState;
+    state = addPreset(state, 'host');
+    state = addPreset(state, 'host');
+    const [a, b] = state.topology.devices.map((d) => d.id);
+    state = startLink(state, a!, '1');
+    state = completeLink(state, b!, '1');
+    const from = handlePoint(state.topology, state.layout, a!, '1')!;
+    const to = handlePoint(state.topology, state.layout, b!, '1')!;
+    const svg = renderCanvas(state, { ...from, from: to, action: 'forwarded' });
+    expect(svg).toMatch(
+      new RegExp(`class="link-flow wired live"[^>]*d="M ${to.x} ${to.y}`),
+    );
+  });
+
+  it('the wired live base cable stays solid - the flow is a separate element (#122, #119)', () => {
+    let state = initialState;
+    state = addPreset(state, 'host');
+    state = addPreset(state, 'host');
+    const [a, b] = state.topology.devices.map((d) => d.id);
+    state = startLink(state, a!, '1');
+    state = completeLink(state, b!, '1');
+    const from = handlePoint(state.topology, state.layout, a!, '1')!;
+    const to = handlePoint(state.topology, state.layout, b!, '1')!;
+    const linkId = state.topology.links[0]!.id;
+    const svg = renderCanvas(state, { ...to, from, action: 'forwarded' });
+    // The base cable keeps exactly its own class string - no dash classes
+    // leak onto it - and the flow element is separate.
+    expect(svg).toMatch(new RegExp(`class="link wired live"[^>]*data-link="${linkId}"`));
+    const flowMatch = svg.match(/class="link-flow[^>]*data-link/g);
+    expect(flowMatch?.length).toBe(1);
+  });
+
+  it('a wireless live hop keeps the estimate dash and gains the direction overlay (#122)', () => {
+    let state = initialState;
+    state = addPreset(state, 'access-point');
+    state = addPreset(state, 'host');
+    const ap = state.topology.devices.find((d) => d.id.startsWith('access-point-'))!;
+    const host = state.topology.devices.find((d) => d.id !== ap.id)!;
+    const wifiPort =
+      ap.ports.find((p) =>
+        ap.functions.some((fn) => fn.kind === 'wireless' && fn.id === p.ownedBy),
+      )?.id ?? ap.ports[0]!.id;
+    state = startLink(state, ap.id, wifiPort);
+    state = completeLink(state, host.id, '1');
+    const from = handlePoint(state.topology, state.layout, ap.id, wifiPort)!;
+    const to = handlePoint(state.topology, state.layout, host.id, '1')!;
+    const svg = renderCanvas(state, { ...to, from, action: 'forwarded' });
+    expect(svg).toMatch(/class="[^"]*wireless[^"]*live/);
+    expect(svg).toMatch(/class="link-flow wireless live"/);
+  });
+
   it('does not emit drag, drop, or hop-token markup', () => {
     const state = addPreset(initialState, 'host');
     const svg = renderCanvas(state);
