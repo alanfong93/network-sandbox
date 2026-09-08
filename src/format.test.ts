@@ -41,6 +41,20 @@ describe('format', () => {
     ).toBe('Query for google.com delivered at DNS1');
   });
 
+  it('renders the origin hop sentence: the sender and its port (#123)', () => {
+    expect(
+      format({
+        kind: 'hop',
+        device: 'H1',
+        outPort: '1',
+        vlan: null,
+        action: 'forwarded',
+        step: 'origin',
+        outcome: 'forwarded',
+      }),
+    ).toBe('sent from H1 port 1');
+  });
+
   it('states when the sender has no advertised resolver (#126)', () => {
     expect(format({ kind: 'flow', observation: 'no-resolver', facts: {} })).toBe(
       'Sender has no advertised resolver',

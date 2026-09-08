@@ -4,6 +4,7 @@
  */
 
 export const PIPELINE_STEPS = [
+  'origin',
   'acceptable-frame-types',
   'pvid-assignment',
   'ingress-filtering',

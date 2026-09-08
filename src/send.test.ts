@@ -161,6 +161,102 @@ const rightVlan = topo(
   ],
 );
 
+describe('origin hop (#123)', () => {
+  it('records the sending chassis as hop 0, before the walk hops', () => {
+    // The same-LAN shape: H1 - USW - H2. Before #123 the first hop named
+    // the switch - the walk starts at the neighbor, so the sender never
+    // appeared and the trace read as if the switch originated the frame.
+    const topology = topo(
+      [
+        hostBox('H1', {
+          mac: 'aa:00:00:00:00:10',
+          ip: '192.168.10.10',
+          prefix: 24,
+          gateway: '192.168.10.1',
+        }),
+        hostBox('H2', {
+          mac: 'aa:00:00:00:00:20',
+          ip: '192.168.10.20',
+          prefix: 24,
+          gateway: '192.168.10.1',
+        }),
+        switchBox('SW1', [access('1', 10), access('2', 10)]),
+      ],
+      [
+        link('a', { device: 'H1', port: '1' }, { device: 'SW1', port: '1' }),
+        link('b', { device: 'SW1', port: '2' }, { device: 'H2', port: '1' }),
+      ],
+    );
+    const ctx = createRunContext(topology);
+    const result = send(ctx, {
+      from: 'H1',
+      dstIp: '192.168.10.20',
+      payload: { kind: 'icmp', srcIp: '192.168.10.10', dstIp: '192.168.10.20' },
+    });
+    expect(result.hops[0]?.device).toBe('H1');
+    expect(result.hops[0]?.step).toBe('origin');
+    expect(result.hops[0]?.reasonCode).toBe('origin:forwarded');
+    expect(result.hops[0]?.reason).toBe('sent from H1 port 1');
+    expect(result.hops[0]?.outPort).toBe('1');
+    // The walk hops follow, shifted by one - not dropped or reordered.
+    expect(result.hops[1]?.device).toBe('SW1');
+    expect(
+      result.hops.some((hop) => hop.step === 'delivery' && hop.action === 'delivered'),
+    ).toBe(true);
+  });
+
+  it('leads with the origin hop even when only the ARP walk ran', () => {
+    // Cold ARP with no reply: the sender still originated the request, so
+    // the trace names the sender first and the ARP flood second.
+    const topology = topo(
+      [
+        hostBox('H1', {
+          mac: 'aa:00:00:00:00:10',
+          ip: '192.168.10.10',
+          prefix: 24,
+          gateway: '192.168.10.1',
+        }),
+        switchBox('SW1', [access('1', 10), access('2', 10)]),
+      ],
+      [link('a', { device: 'H1', port: '1' }, { device: 'SW1', port: '1' })],
+    );
+    const ctx = createRunContext(topology);
+    const result = send(ctx, {
+      from: 'H1',
+      dstIp: '192.168.10.20',
+      payload: { kind: 'icmp', srcIp: '192.168.10.10', dstIp: '192.168.10.20' },
+    });
+    expect(result.hops[0]?.device).toBe('H1');
+    expect(result.hops[0]?.reasonCode).toBe('origin:forwarded');
+    expect(result.hops[1]?.device).toBe('SW1');
+  });
+
+  it('records no origin hop when nothing was sent', () => {
+    // No port, no frame: an origin hop with nothing after it would claim a
+    // send that never happened.
+    const topology = topo(
+      [
+        {
+          ...hostBox('H1', {
+            mac: 'aa:00:00:00:00:10',
+            ip: '192.168.10.10',
+            prefix: 24,
+          }),
+          ports: [],
+        },
+      ],
+      [],
+    );
+    const ctx = createRunContext(topology);
+    const result = send(ctx, {
+      from: 'H1',
+      dstIp: '192.168.10.20',
+      payload: { kind: 'icmp', srcIp: '192.168.10.10', dstIp: '192.168.10.20' },
+    });
+    expect(result.hops).toEqual([]);
+  });
+});
+
 describe('needsArp', () => {
   it('is false for an ARP frame, a DHCP DISCOVER, and a supplied destination MAC', () => {
     expect(needsArp({ kind: 'arp', dstIp: '192.168.10.1' })).toBe(false);
