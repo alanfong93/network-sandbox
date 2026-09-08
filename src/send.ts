@@ -1,5 +1,6 @@
 import { dhcpObservations } from './dhcp';
 import { defaults } from './defaults';
+import { makeHop } from './hop';
 import { resolveKey } from './host';
 import { inSubnet } from './ip';
 import type {
@@ -142,7 +143,14 @@ export function send(ctx: RunContext, args: SendArgs): WalkResult {
       frame: originFrame(chassis, dstMac, payload, args.size),
       arrivedFrom: args.from,
     });
-    return withDhcpObservations(ctx, args, chassis, walked);
+    return withDhcpObservations(
+      ctx,
+      args,
+      chassis,
+      walked.hops.length > 0
+        ? { ...walked, hops: [originHop(args.from, port.id), ...walked.hops] }
+        : walked,
+    );
   }
 
   const nextHop = nextHopIp(chassis, args.dstIp);
@@ -151,6 +159,10 @@ export function send(ctx: RunContext, args: SendArgs): WalkResult {
   let mac = getResolvedMac(ctx, resolveKey(args.from, nextHop));
   const hops: Hop[] = [];
   const observations: WalkObservation[] = [];
+  // The origin hop leads whenever a frame was actually handed to the walk;
+  // alone it would claim a send that never happened (#123).
+  const withOrigin = (walked: readonly Hop[]): Hop[] =>
+    walked.length > 0 ? [originHop(args.from, port.id), ...walked] : [];
 
   if (!mac && far) {
     const arp = originFrame(chassis, defaults.broadcastMac, {
@@ -188,10 +200,10 @@ export function send(ctx: RunContext, args: SendArgs): WalkResult {
         facts: { ip: args.dstIp },
       });
     }
-    return { hops, observations };
+    return { hops: withOrigin(hops), observations };
   }
 
-  if (!far) return { hops, observations };
+  if (!far) return { hops: withOrigin(hops), observations };
   const ipWalk = walkFrame(ctx, {
     device: far.device,
     inPort: far.port,
@@ -199,10 +211,27 @@ export function send(ctx: RunContext, args: SendArgs): WalkResult {
     arrivedFrom: args.from,
   });
   return {
-    hops: [...hops, ...ipWalk.hops],
+    hops: withOrigin([...hops, ...ipWalk.hops]),
     observations: [...observations, ...ipWalk.observations],
     deliveredFrame: ipWalk.deliveredFrame,
   };
+}
+
+/**
+ * The hop that names the sender before any walk hop (#123): a trace used
+ * to start at the first neighbor, so it read as if the switch originated
+ * the frame. A step, not a scenario - the code is `origin:forwarded`
+ * (ADR 0017).
+ */
+function originHop(device: DeviceId, port: string): Hop {
+  return makeHop({
+    device,
+    outPort: port,
+    vlan: null,
+    action: 'forwarded',
+    step: 'origin',
+    outcome: 'forwarded',
+  });
 }
 
 /**

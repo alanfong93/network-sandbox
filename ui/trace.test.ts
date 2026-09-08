@@ -35,6 +35,43 @@ describe('trace', () => {
     expect(firstIp).toBeTruthy();
   });
 
+  it('the sender leads its own request and reply sections (#123)', () => {
+    const { state, h1, lastIp } = twoHostsOnASwitch();
+    const trace = runTrace(state.topology, { from: h1, dstIp: lastIp });
+    expect(trace.request[0]).toMatch(new RegExp(`^sent from ${h1} port 1`));
+    expect(trace.reply[0]).toMatch(new RegExp(`^sent from .+ port 1`));
+  });
+
+  it('a name send shows one origin line per walk - query then echo (#123 x #126)', () => {
+    let state = initialState;
+    state = addPreset(state, 'host');
+    state = addPreset(state, 'resolver');
+    state = addPreset(state, 'switch');
+    const [h1, dns, sw] = state.topology.devices.map((d) => d.id);
+    state = startLink(state, h1!, '1');
+    state = completeLink(state, sw!, '1');
+    state = startLink(state, sw!, '2');
+    state = completeLink(state, dns!, '1');
+    // The resolver is the host's advertised resolver and holds the record.
+    state = {
+      ...state,
+      topology: {
+        ...state.topology,
+        devices: state.topology.devices.map((device) =>
+          device.id === h1
+            ? { ...device, resolver: state.topology.devices.find((d) => d.id === dns)!.ip! }
+            : device,
+        ),
+      },
+    };
+    const trace = runTrace(state.topology, { from: h1!, dstName: 'google.com' });
+    expect(trace.outcome).toBe('request-failed');
+    // Two walks, each led by its own origin line naming the same sender.
+    const origins = trace.request.filter((line) => /^sent from /.test(line));
+    expect(origins.length).toBe(2);
+    expect(trace.request[0]).toMatch(new RegExp(`^sent from ${h1} port 1`));
+  });
+
   it('the cold-trace notice is visible (ADR 0010)', () => {
     const { state, h1, lastIp } = twoHostsOnASwitch();
     const trace = runTrace(state.topology, { from: h1, dstIp: lastIp });

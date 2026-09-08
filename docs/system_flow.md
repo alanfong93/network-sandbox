@@ -3,6 +3,10 @@
 The product workflow from [`PRODUCT.md`](PRODUCT.md). `createRunContext`
 computes spanning tree before any frame exists. `send` originates from a
 host or other sender and ARPs only when that sender lacks its next-hop MAC.
+The sender's own hop leads the trace — `origin:forwarded`, rendered as
+`sent from <host> port <n>` — so hop 0 names who sent the frame, not the
+first device it reached (#123); a send that never handed a frame to the
+walk records no origin hop.
 `runFlow` sends a request, then — if it was delivered — the ICMP reply,
 against that same context, and returns every observation in a
 deterministic order: the request walk's, then the reply walk's, then the

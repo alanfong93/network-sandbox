@@ -187,6 +187,9 @@ function formatHop(input: HopInput): string {
   if (code === 'delivery:delivered' && f.name !== undefined) {
     return `Query for ${f.name} delivered at ${input.device}`;
   }
+  if (code === 'origin:forwarded') {
+    return `sent from ${input.device}${input.outPort !== undefined ? ` port ${input.outPort}` : ''}`;
+  }
 
   const where = input.inPort
     ? ` at ${input.device} port ${input.inPort}`
