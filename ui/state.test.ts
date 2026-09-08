@@ -707,4 +707,46 @@ describe('setRouterPortCount (#124)', () => {
       setRouterPortCount(l3.state, l3.ids[0]!, 'wan', 2).notice,
     ).toMatch(/Only a router/);
   });
+
+  it('two routers allocate distinct wan2 MACs - the used-set is global (#124)', () => {
+    let state = addPreset(initialState, 'router');
+    state = addPreset(state, 'router');
+    const [a, b] = state.topology.devices.map((d) => d.id);
+    const before = new Set<string>();
+    for (const device of state.topology.devices) {
+      for (const fn of device.functions) {
+        if (fn.kind === 'routing') for (const iface of fn.ifaces) before.add(iface.mac);
+      }
+    }
+    state = setRouterPortCount(state, a!, 'wan', 2);
+    state = setRouterPortCount(state, b!, 'wan', 2);
+    const wan2Macs = state.topology.devices
+      .filter((d) => [a, b].includes(d.id))
+      .map((d) => {
+        const rt = d.functions.find((fn) => fn.kind === 'routing');
+        return rt?.kind === 'routing'
+          ? rt.ifaces.find((iface) => iface.id === 'wan2')?.mac
+          : undefined;
+      });
+    expect(wan2Macs[0]).toBeDefined();
+    expect(wan2Macs[1]).toBeDefined();
+    expect(wan2Macs[0]).not.toBe(wan2Macs[1]);
+    for (const mac of wan2Macs) {
+      expect(before.has(mac!)).toBe(false);
+    }
+  });
+
+  it('a pending link on a surviving port survives a LAN shrink (#124)', () => {
+    const { state, ids } = placed(initialState, 'router');
+    let next = setRouterPortCount(state, ids[0]!, 'lan', 3);
+    next = startLink(next, ids[0]!, 'lan');
+    const after = setRouterPortCount(next, ids[0]!, 'lan', 1);
+    expect(after.notice).toBeNull();
+    expect(after.pendingLink).toEqual({ device: ids[0], port: 'lan' });
+    expect(
+      after.topology.devices
+        .find((d) => d.id === ids[0])!
+        .ports.some((p) => p.id === 'lan2' || p.id === 'lan3'),
+    ).toBe(false);
+  });
 });

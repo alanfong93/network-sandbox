@@ -133,6 +133,68 @@ describe('inspector', () => {
     expect(html).toMatch(/data-action="start-link"[^>]*data-port="lan"/);
   });
 
+  it('a pre-ADR-0031 imported router keeps its shape and shows no count controls (#124)', () => {
+    let state = addPreset(initialState, 'router');
+    const chassis = state.topology.devices[0]!;
+    const id = chassis.id;
+    // Back-date to the old shape: a routed lan port, no bridge, no internal
+    // edge - what a saved topology from before the change still imports as.
+    chassis.ports = [
+      { id: 'lan', mtu: chassis.ports[0]!.mtu, ownedBy: 'rt' },
+      { id: 'wan', mtu: chassis.ports[0]!.mtu, ownedBy: 'rt' },
+    ];
+    chassis.functions = chassis.functions
+      .filter((fn) => fn.kind !== 'bridging')
+      .map((fn) => {
+        if (fn.kind !== 'routing') return fn;
+        return {
+          ...fn,
+          ifaces: fn.ifaces.map((iface) =>
+            iface.id === 'lan-svi' ? { ...iface, id: 'lan' } : iface,
+          ),
+        };
+      });
+    chassis.internal = [];
+    const html = renderInspector(select(state, id));
+    expect(html).not.toMatch(/router-lan-count/);
+    expect(html).not.toMatch(/router-wan-count/);
+    expect(html).toMatch(/data-action="start-link"[^>]*data-port="lan"/);
+  });
+
+  it('a grown second WAN does not steal the egress - masquerade keeps following the first default (#124)', () => {
+    let state = initialState;
+    state = addPreset(state, 'router');
+    state = addPreset(state, 'host');
+    state = addPreset(state, 'host');
+    const [rtr, h1, wanHost] = state.topology.devices.map((d) => d.id);
+    state = setRouterIfaceVlan(state, rtr!, 'wan', undefined);
+    state = setRouterPortCount(state, rtr!, 'wan', 2);
+    state = startLink(state, h1!, '1');
+    state = completeLink(state, rtr!, 'lan');
+    state = startLink(state, wanHost!, '1');
+    state = completeLink(state, rtr!, 'wan');
+    state = setHostAddress(state, wanHost!, {
+      ip: '203.0.113.1',
+      prefix: 24,
+      gateway: '203.0.113.2',
+    });
+    // Two defaults now name wan and wan2. First-wins in routes[] order keeps
+    // the shipped wan default first (row 26) - the LAN host still egresses
+    // wan and the reply still returns through the same NAT session.
+    const trace = runTrace(state.topology, { from: h1!, dstIp: '203.0.113.1' });
+    expect(trace.outcome).toBe('round-trip');
+    expect(
+      trace.requestHops.some(
+        (hop) => hop.step === 'delivery' && hop.action === 'delivered' && hop.device === wanHost,
+      ),
+    ).toBe(true);
+    expect(
+      (trace.replyHops ?? []).some(
+        (hop) => hop.step === 'delivery' && hop.action === 'delivered' && hop.device === h1,
+      ),
+    ).toBe(true);
+  });
+
   it('two hosts on two router LAN jacks reach each other without a second subnet (#124 done-when)', () => {
     let state = initialState;
     state = addPreset(state, 'router');
