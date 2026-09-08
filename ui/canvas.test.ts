@@ -276,6 +276,27 @@ describe('SVG canvas view (#105)', () => {
     expect(svg).toMatch(/>LAN 2<\/text>/);
   });
 
+  it('a host and a modem label their jacks by port id (#121)', () => {
+    let state = addPreset(initialState, 'host');
+    let svg = renderCanvas(state);
+    expect(svg).toMatch(/>1<\/text>/);
+    state = addPreset(state, 'modem');
+    svg = renderCanvas(state);
+    // The modem's ports are its ids - the handoff names the customer side,
+    // not a LAN/WAN convention the ids do not carry.
+    expect((svg.match(/>1<\/text>/g) ?? []).length).toBeGreaterThanOrEqual(2);
+    expect(svg).toMatch(/>2<\/text>/);
+  });
+
+  it('an imported port id with markup is escaped in its label (#121)', () => {
+    let state = addPreset(initialState, 'host');
+    const chassis = state.topology.devices[0]!;
+    chassis.ports = [{ id: '<b>', mtu: chassis.ports[0]!.mtu, ownedBy: 'none' }];
+    const svg = renderCanvas(state);
+    expect(svg).not.toMatch(/<b><\/text>/);
+    expect(svg).toMatch(/&lt;b&gt;<\/text>/);
+  });
+
   it('does not emit drag, drop, or hop-token markup', () => {
     const state = addPreset(initialState, 'host');
     const svg = renderCanvas(state);

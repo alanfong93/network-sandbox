@@ -123,7 +123,15 @@
       .canvas-svg .port { fill: #0d1c22; stroke: #7f93a8; stroke-width: 1.2; }
       .canvas-svg .port.occupied { fill: var(--accent-dim); stroke: var(--accent); }
       .canvas-svg .port.pending { fill: #d33682; stroke: #ff9ac8; }
-      .canvas-svg .port-label { fill: #7f93a8; font-size: 8px; }
+      .canvas-svg .port-label {
+        fill: #7f93a8;
+        font-size: 8px;
+        /* Cables sag straight down through the label row; a dark halo
+           keeps the jack names legible where the wire crosses them. */
+        paint-order: stroke;
+        stroke: #0d1c22;
+        stroke-width: 2px;
+      }
       .canvas-svg .link-glow { fill: none; stroke: #3ee0c822; stroke-width: 8; }
       .canvas-svg .link { fill: none; stroke: var(--wire); stroke-width: 2.2; stroke-linecap: round; }
       .canvas-svg .link.wireless, .canvas-svg .link-glow.wireless { stroke: var(--warn); stroke-dasharray: 7 6; }
