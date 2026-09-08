@@ -220,6 +220,34 @@ describe('inspector', () => {
     expect(trace.requestHops.some((hop) => hop.step === 'delivery' && hop.action === 'delivered' && hop.device === h2)).toBe(true);
   });
 
+  it('the router answers a LAN host at its own SVI address (#129 done-when)', () => {
+    let state = initialState;
+    state = addPreset(state, 'router');
+    state = addPreset(state, 'host');
+    const [rtr, h1] = state.topology.devices.map((d) => d.id);
+    state = startLink(state, h1!, '1');
+    state = completeLink(state, rtr!, 'lan');
+    const trace = runTrace(state.topology, { from: h1!, dstIp: '192.168.1.1' });
+    expect(trace.outcome).toBe('round-trip');
+    expect(
+      trace.requestHops.some(
+        (hop) => hop.step === 'delivery' && hop.action === 'delivered' && hop.device === rtr,
+      ),
+    ).toBe(true);
+    expect(
+      (trace.replyHops ?? []).some(
+        (hop) => hop.step === 'delivery' && hop.action === 'delivered' && hop.device === h1,
+      ),
+    ).toBe(true);
+    // The reply originated through the router's routing function, not a
+    // host send: its first leg is the router's own route-lookup.
+    expect(
+      (trace.replyHops ?? []).some(
+        (hop) => hop.device === rtr && hop.step === 'route-lookup' && hop.action === 'forwarded',
+      ),
+    ).toBe(true);
+  });
+
   it('a LAN host reaches a WAN-side host through the SVI punt and masquerade (#124)', () => {
     let state = initialState;
     state = addPreset(state, 'router');

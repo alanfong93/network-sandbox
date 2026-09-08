@@ -128,7 +128,7 @@ export type { HandoffArgs, HandoffResult, IspFn } from './isp';
 export { handoffFrame, handoffWouldHandle } from './isp';
 
 export type { SendArgs } from './send';
-export { needsArp, nextHopIp, send, senderVlan, vlanOfIp } from './send';
+export { needsArp, nextHopIp, originate, send, senderVlan, vlanOfIp } from './send';
 
 export { lookupRecord, matchRecord } from './resolver';
 

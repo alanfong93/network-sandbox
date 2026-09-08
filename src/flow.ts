@@ -3,7 +3,7 @@ import { formatPrefix } from './ip';
 import type { DeviceId, Flow, Frame, FramePayload, Hop, Topology } from './model';
 import type { RunContext } from './run';
 import { lookupRecord } from './resolver';
-import { send, senderVlan, type SendArgs } from './send';
+import { originate, send, senderVlan, type SendArgs } from './send';
 import type { WalkObservation } from './walk';
 
 /** A name send adds the destination name; the walk itself stays an IP send. */
@@ -161,7 +161,10 @@ function runIcmpFlow(ctx: RunContext, args: FlowArgs): FlowResult {
   }
 
   const seenSrc = requestWalk.deliveredFrame?.payload.srcIp ?? srcIp;
-  const replyWalk = send(ctx, {
+  // The reply's sender is the chassis the request was delivered at. When
+  // that is a routing chassis there is no host identity to send() with, so
+  // the reply originates through the router's own routing function (#129).
+  const replyWalk = originate(ctx, {
     from: dest,
     dstIp: seenSrc,
     payload: {

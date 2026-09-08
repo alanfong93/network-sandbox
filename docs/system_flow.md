@@ -95,8 +95,11 @@ A flow — request plus reply sharing one run context — is how rows 9, 13 and
 15 are seen. `runFlow` is that driver. The reply reads the FDB, resolved
 MACs and NAT sessions the request populated; a reply traced cold floods.
 The dest replies to the source address it actually received, so a masqueraded
-request comes home without a return route. `Flow.outcome` names which
-direction died. It is not a pass/fail field.
+request comes home without a return route. When the dest is a routing
+chassis — the ping targeted the router itself — the reply originates
+through the router's own routing function (#129): route lookup, the
+pending-ARP machinery, and SVI egress re-entry run as for any routed frame.
+`Flow.outcome` names which direction died. It is not a pass/fail field.
 
 Sending to a **name** (issue #126) is two walks in one run (ADR 0030):
 the destination is first a udp/53 `service` frame to the sender's
