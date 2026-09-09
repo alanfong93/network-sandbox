@@ -36,6 +36,7 @@ describe('README evidence (characterisation)', () => {
       'router',
       'access-point',
       'extender',
+      'mesh-node',
       'modem',
       'l3-switch',
       'resolver',
