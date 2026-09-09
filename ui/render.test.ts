@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { addPreset, addResolverRecord, completeLink, initialState, removeResolverRecord, select, setHostAddress, setIspHandoff, setPortAcceptable, setPvid, setResolverRecord, setRouterIfaceVlan, setRouterPortCount, setUntaggedVlans, setWirelessAp, startLink } from './state';
+import { addPreset, addFirewallRule, addResolverRecord, completeLink, initialState, removeResolverRecord, select, setHostAddress, setIspHandoff, setPortAcceptable, setPvid, setResolverRecord, setRouterIfaceVlan, setRouterPortCount, setUntaggedVlans, setWirelessAp, startLink } from './state';
 import { renderInspector, renderTrace } from './render';
 import { COLD_TRACE_NOTICE, runTrace } from './trace';
 
@@ -748,6 +748,61 @@ describe('inspector', () => {
     const html = renderTrace(trace);
     expect(html).toMatch(/route-lookup/);
     expect(html).toMatch(/delivered at .+ \(delivery\)/);
+  });
+
+  it('routing inspector has add/remove firewall rule controls (#151)', () => {
+    let state = addPreset(initialState, 'router');
+    const rtr = state.topology.devices[0]!.id;
+    const empty = renderInspector(select(state, rtr));
+    expect(empty).toMatch(/data-action="firewall-add"/);
+    expect(empty).not.toMatch(/data-action="firewall-remove"/);
+    state = addFirewallRule(state, rtr, { from: 20, to: 10, action: 'deny' });
+    const html = renderInspector(select(state, rtr));
+    expect(html).toMatch(/data-action="firewall-from"/);
+    expect(html).toMatch(/data-action="firewall-to"/);
+    expect(html).toMatch(/data-action="firewall-action"/);
+    expect(html).toMatch(/data-action="firewall-remove"/);
+    expect(html).toMatch(/value="20"/);
+    expect(html).toMatch(/value="10"/);
+    expect(html).toMatch(/<option value="deny" selected>/);
+  });
+
+  it('deny VLAN20→VLAN10 from the inspector drops the ICMP reply at firewall (#151)', () => {
+    let state = initialState;
+    state = addPreset(state, 'l3-switch');
+    state = addPreset(state, 'host');
+    state = addPreset(state, 'host');
+    const [l3s, h1, h2] = state.topology.devices.map((d) => d.id);
+    state = startLink(state, h1!, '1');
+    state = completeLink(state, l3s!, '1');
+    state = startLink(state, h2!, '1');
+    state = completeLink(state, l3s!, '2');
+    state = setPvid(state, l3s!, '1', 10);
+    state = setUntaggedVlans(state, l3s!, '1', [10]);
+    state = setPvid(state, l3s!, '2', 20);
+    state = setUntaggedVlans(state, l3s!, '2', [20]);
+    state = setHostAddress(state, h1!, {
+      ip: '192.168.10.10',
+      prefix: 24,
+      gateway: '192.168.10.1',
+    });
+    state = setHostAddress(state, h2!, {
+      ip: '192.168.20.20',
+      prefix: 24,
+      gateway: '192.168.20.1',
+    });
+    state = addFirewallRule(state, l3s!, { from: 20, to: 10, action: 'deny' });
+    const trace = runTrace(state.topology, {
+      from: h1!,
+      dstIp: '192.168.20.20',
+    });
+    const drop = trace.replyHops.find((hop) => hop.step === 'firewall');
+    expect(drop?.reasonCode).toBe('firewall:dropped');
+    expect(drop?.action).toBe('dropped');
+    expect(drop?.reason).toBe(drop ? drop.reason : '');
+    expect(trace.flowNotes.some((line) =>
+      line.includes('ICMP reached VLAN 20') && line.includes('VLAN20 -> VLAN10 deny'),
+    )).toBe(true);
   });
 });
 

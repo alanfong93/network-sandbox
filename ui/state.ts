@@ -566,6 +566,79 @@ export function setResolverRecord(
   }));
 }
 
+function firewallVlanOk(vlan: VlanId | undefined): boolean {
+  return (
+    vlan === undefined ||
+    (Number.isInteger(vlan) && vlan >= 1 && vlan <= 4094)
+  );
+}
+
+function firewallActionOk(
+  action: 'allow' | 'deny' | undefined,
+): boolean {
+  return action === undefined || action === 'allow' || action === 'deny';
+}
+
+export function addFirewallRule(
+  state: EditorState,
+  deviceId: DeviceId,
+  rule: { from: VlanId; to: VlanId; action: 'allow' | 'deny' } = {
+    from: 1,
+    to: 2,
+    action: 'deny',
+  },
+): EditorState {
+  if (!firewallVlanOk(rule.from) || !firewallVlanOk(rule.to) || !firewallActionOk(rule.action)) {
+    return { ...state, notice: 'Firewall rule invalid' };
+  }
+  const chassis = deviceOf(state.topology, deviceId);
+  if (!chassis?.functions.some((fn) => fn.kind === 'routing')) {
+    return { ...state, notice: 'Firewall rules need a routing function' };
+  }
+  return withChassis(state, deviceId, (box) => ({
+    ...box,
+    functions: box.functions.map((fn) =>
+      fn.kind === 'routing' ? { ...fn, firewall: [...fn.firewall, rule] } : fn,
+    ),
+  }));
+}
+
+export function setFirewallRule(
+  state: EditorState,
+  deviceId: DeviceId,
+  index: number,
+  patch: { from?: VlanId; to?: VlanId; action?: 'allow' | 'deny' },
+): EditorState {
+  if (!firewallVlanOk(patch.from) || !firewallVlanOk(patch.to) || !firewallActionOk(patch.action)) {
+    return { ...state, notice: 'Firewall rule invalid' };
+  }
+  return withChassis(state, deviceId, (chassis) => ({
+    ...chassis,
+    functions: chassis.functions.map((fn) => {
+      if (fn.kind !== 'routing') return fn;
+      const firewall = fn.firewall.map((item, i) =>
+        i === index ? { ...item, ...patch } : item,
+      );
+      return { ...fn, firewall };
+    }),
+  }));
+}
+
+export function removeFirewallRule(
+  state: EditorState,
+  deviceId: DeviceId,
+  index: number,
+): EditorState {
+  return withChassis(state, deviceId, (chassis) => ({
+    ...chassis,
+    functions: chassis.functions.map((fn) =>
+      fn.kind === 'routing'
+        ? { ...fn, firewall: fn.firewall.filter((_, i) => i !== index) }
+        : fn,
+    ),
+  }));
+}
+
 export function addResolverRecord(
   state: EditorState,
   deviceId: DeviceId,
