@@ -173,4 +173,21 @@ flowchart TD
     style EX fill:#d7f5d7,color:#000
     style RP fill:#fff3cd,color:#000
     style DR fill:#fff3cd,color:#000
-```
+    ```
+
+## Opening the sandbox
+
+A visitor opens the README URL. Local Node and optional Docker remain clone
+paths. None of them add a server, an account, or persistence.
+
+```mermaid
+flowchart LR
+    A[README URL] --> B[GitHub Pages serves ui/dist]
+    B --> C[Place a box]
+    C --> D[Send]
+    E[Local Node 22<br>npm run ui:dev] --> C
+    F[Optional Docker nginx] --> C
+    style B fill:#d7f5d7,color:#000
+    style C fill:#d7f5d7,color:#000
+    style D fill:#d7f5d7,color:#000
+    ```

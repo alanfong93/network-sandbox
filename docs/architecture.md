@@ -1,7 +1,10 @@
 # Architecture
 
 Headless TypeScript engine. Nothing here talks to a server. Persistence is a
-JSON file the user keeps — there is no database. The in-memory Topology is
+JSON file the user keeps — there is no database. GitHub Pages serves the
+Vite `ui/dist` bundle at https://alanfong93.github.io/network-sandbox/
+([ADR 0032](adr/0032-host-the-static-ui-on-github-pages.md)); that host is
+static files, not an API. The in-memory Topology is
 that file: `toJson` / `fromJson` round-trip it through the version-1 sandbox
 envelope `{format, version, topology}`. An optional `layout` sibling
 (device id → `{x,y}`) is UI-owned; the engine never reads it (ADR 0029).
