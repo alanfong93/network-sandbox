@@ -29,6 +29,23 @@ export const initialState: EditorState = {
   layout: null,
 };
 
+export function loadTopology(
+  topology: Topology,
+  layout: Layout | null = null,
+  notice: string | null = null,
+): EditorState {
+  let seq = 0;
+  for (const device of topology.devices) {
+    const match = /(\d+)$/.exec(device.id);
+    if (match) seq = Math.max(seq, Number(match[1]));
+  }
+  for (const link of topology.links) {
+    const match = /^l(\d+)$/.exec(link.id);
+    if (match) seq = Math.max(seq, Number(match[1]));
+  }
+  return { ...initialState, topology, layout, seq, notice };
+}
+
 function deviceOf(
   topology: Topology,
   id: DeviceId,
