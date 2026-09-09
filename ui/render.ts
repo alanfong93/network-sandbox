@@ -187,6 +187,11 @@ export function renderInspector(state: EditorState): string {
   }
   const routingFn = chassis.functions.find((fn) => fn.kind === 'routing');
   if (routingFn && routingFn.kind === 'routing') {
+    const natOn = chassis.functions.some((fn) => fn.kind === 'nat');
+    parts.push(
+      `<label>NAT ` +
+        `<input type="checkbox" data-action="nat-on"${natOn ? ' checked' : ''}></label>`,
+    );
     const rows = routingFn.firewall
       .map(
         (rule, index) =>

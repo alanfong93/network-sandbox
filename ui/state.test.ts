@@ -22,6 +22,7 @@ import {
   addFirewallRule,
   removeFirewallRule,
   setFirewallRule,
+  setNatOn,
   startLink,
   type EditorState,
 } from './state';
@@ -752,6 +753,31 @@ describe('setRouterPortCount (#124)', () => {
         .find((d) => d.id === ids[0])!
         .ports.some((p) => p.id === 'lan2' || p.id === 'lan3'),
     ).toBe(false);
+  });
+});
+
+describe('NAT on/off (#150)', () => {
+  it('a placed router has NAT; turning it off removes the function', () => {
+    let state = addPreset(initialState, 'router');
+    const id = state.topology.devices[0]!.id;
+    const hasNat = (s: EditorState) =>
+      s.topology.devices[0]!.functions.some((fn) => fn.kind === 'nat');
+    expect(hasNat(state)).toBe(true);
+    state = setNatOn(state, id, false);
+    expect(hasNat(state)).toBe(false);
+    state = setNatOn(state, id, true);
+    expect(hasNat(state)).toBe(true);
+    const nat = state.topology.devices[0]!.functions.find((fn) => fn.kind === 'nat');
+    expect(nat && nat.kind === 'nat' ? nat.on : null).toBe('rt');
+  });
+
+  it('a second placed router still has NAT after the first was turned off', () => {
+    let state = addPreset(initialState, 'router');
+    const first = state.topology.devices[0]!.id;
+    state = setNatOn(state, first, false);
+    state = addPreset(state, 'router');
+    const second = state.topology.devices[1]!;
+    expect(second.functions.some((fn) => fn.kind === 'nat')).toBe(true);
   });
 });
 

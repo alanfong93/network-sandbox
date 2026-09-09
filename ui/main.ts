@@ -21,6 +21,7 @@ import {
   setDhcpScope,
   setHostAddress,
   setIspHandoff,
+  setNatOn,
   setPortAcceptable,
   setPortIngressFiltering,
   setPortMode,
@@ -454,6 +455,9 @@ function onChange(event: Event): void {
       state = setStpPriority(state, device, Number(raw));
       break;
     }
+    case 'nat-on':
+      state = setNatOn(state, device, (input as HTMLInputElement).checked);
+      break;
     case 'isp-mode':
       state = setIspHandoff(state, device, {
         mode: input.value as 'pppoe' | 'dhcp' | 'static',
