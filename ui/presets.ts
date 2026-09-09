@@ -236,6 +236,50 @@ export const PRESETS: PresetDef[] = [
       ),
   },
   {
+    id: 'extender',
+    label: 'Extender',
+    build: (id, seq) =>
+      base(
+        id,
+        `Extender ${seq}`,
+        'extender',
+        seq,
+        [port('wifi', 'wlan-ap'), port('up', 'wlan-sta')],
+        [
+          {
+            kind: 'wireless',
+            id: 'wlan-ap',
+            radio: 'radio0',
+            mode: 'ap',
+            ssid: 'main',
+            vlan: 10,
+          },
+          {
+            kind: 'wireless',
+            id: 'wlan-sta',
+            radio: 'radio0',
+            mode: 'client',
+            ssid: 'main',
+            vlan: 10,
+          },
+          {
+            kind: 'bridging',
+            id: 'br',
+            vlanAware: true,
+            members: [access('wifi', 10), access('up', 10)],
+            fdb: new Map(),
+          },
+        ],
+        {
+          radios: [{ id: 'radio0', band: '5' }],
+          internal: [
+            { from: 'wlan-ap', to: 'br' },
+            { from: 'wlan-sta', to: 'br' },
+          ],
+        },
+      ),
+  },
+  {
     id: 'modem',
     label: 'ISP modem',
     build: (id, seq) =>
