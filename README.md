@@ -95,7 +95,7 @@ Palette labels come from `ui/presets.ts`. **Engine** means the TypeScript librar
 | Unmanaged switch | yes | palette; VLAN membership controls hidden | |
 | Router (routing, NAT, DHCP, firewall) | yes | palette; LAN/WAN jack counts, iface VLAN, NAT | |
 | L3 switch | yes | palette; SVI VLAN is not an independent inspector control | |
-| Access point (SSID → VLAN) | yes | palette | |
+| Access point (SSID → VLAN) | yes | palette; SSID, VLAN | |
 | ISP modem (PPPoE / tagged WAN) | yes | palette | |
 | Standalone DHCP server | yes | palette | |
 | DNS server (resolver table) | yes | palette | |

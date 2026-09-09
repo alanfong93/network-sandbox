@@ -99,6 +99,60 @@ export function setIspHandoff(
 }
 
 /**
+ * One AP-mode wireless function: SSID string and/or VLAN id (#152).
+ * A VLAN write also updates the matching bridge member on ports this
+ * function owns, so the SSID mapping and the access-port composition
+ * cannot desync. The uplink trunk is not that member.
+ */
+export function setWirelessAp(
+  state: EditorState,
+  deviceId: DeviceId,
+  fnId: string,
+  patch: { ssid?: string; vlan?: VlanId },
+): EditorState {
+  const ssidValid =
+    patch.ssid === undefined ||
+    (typeof patch.ssid === 'string' && patch.ssid.trim() !== '');
+  const vlanValid =
+    patch.vlan === undefined ||
+    (Number.isInteger(patch.vlan) && patch.vlan >= 1 && patch.vlan <= 4094);
+  if (!ssidValid) {
+    return { ...state, notice: 'SSID invalid' };
+  }
+  if (!vlanValid) {
+    return { ...state, notice: 'SSID VLAN invalid' };
+  }
+  const chassis = deviceOf(state.topology, deviceId);
+  const fn = chassis?.functions.find((item) => item.id === fnId);
+  if (!fn || fn.kind !== 'wireless' || fn.mode !== 'ap') {
+    return { ...state, notice: 'SSID mapping is an AP wireless function' };
+  }
+  let next = withChassis(state, deviceId, (box) => ({
+    ...box,
+    functions: box.functions.map((item) => {
+      if (item.id !== fnId || item.kind !== 'wireless') return item;
+      const updated = { ...item };
+      if (patch.ssid !== undefined) updated.ssid = patch.ssid.trim();
+      if (patch.vlan !== undefined) updated.vlan = patch.vlan;
+      return updated;
+    }),
+  }));
+  if (patch.vlan !== undefined) {
+    const vlan = patch.vlan;
+    const box = deviceOf(next.topology, deviceId);
+    for (const port of box?.ports ?? []) {
+      if (port.ownedBy !== fnId) continue;
+      next = withMember(next, deviceId, port.id, (member) => ({
+        ...member,
+        pvid: vlan,
+        untaggedVlans: new Set([vlan]),
+      }));
+    }
+  }
+  return { ...next, notice: null };
+}
+
+/**
  * The bridging function whose members include portId. First match in
  * functions[] order is canonical for member identity when an imported
  * port sits in two bridges (ADR 0028): the search covers EVERY bridging

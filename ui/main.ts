@@ -31,6 +31,7 @@ import {
   setSwitchPortCount,
   setTaggedVlans,
   setUntaggedVlans,
+  setWirelessAp,
   startLink,
   placePreset,
   portOccupied,
@@ -452,6 +453,19 @@ function onChange(event: Event): void {
       state = setIspHandoff(state, device, {
         vlanTag: raw === '' ? undefined : Number(raw),
       });
+      break;
+    }
+    case 'wireless-ssid': {
+      const fn = input.dataset.fn;
+      if (fn) state = setWirelessAp(state, device, fn, { ssid: input.value });
+      break;
+    }
+    case 'wireless-vlan': {
+      const fn = input.dataset.fn;
+      const raw = input.value.trim();
+      if (fn && raw !== '') {
+        state = setWirelessAp(state, device, fn, { vlan: Number(raw) });
+      }
       break;
     }
     case 'pvid':
