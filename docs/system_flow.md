@@ -173,7 +173,7 @@ flowchart TD
     style EX fill:#d7f5d7,color:#000
     style RP fill:#fff3cd,color:#000
     style DR fill:#fff3cd,color:#000
-    ```
+```
 
 ## Opening the sandbox
 
@@ -190,4 +190,4 @@ flowchart LR
     style B fill:#d7f5d7,color:#000
     style C fill:#d7f5d7,color:#000
     style D fill:#d7f5d7,color:#000
-    ```
+```
