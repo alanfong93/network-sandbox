@@ -63,3 +63,17 @@ precise about Linux, which is fidelity to the wrong thing.
   hybrid, which is the whole point.
 - If the claim ever needs to be stronger than the standard can support, this ADR is
   what must be superseded — not quietly patched.
+
+## Clarification (2026-09-09)
+
+The 2026-08-25 sentence *"If your design works here, the design is sound — you still
+translate it to your box's syntax and check its defaults"* is the **weakened** honesty
+boundary from this ADR, not a certification. Fidelity is to the implemented IEEE
+802.1Q/802.1D bridge pipeline. Routing, NAT, DHCP, ARP, resolver and ISP handoff are
+documented models. A passing trace does not certify a production design and does not
+emulate vendor defaults.
+
+*"No server, no install"* in the decision meant no kernel dataplane and no accounts.
+It did not mean the UI needs no local toolchain. There is no hosted demo as of this
+date; Node.js 22+ is required to run the shipped UI. The original decision text above
+is unchanged.

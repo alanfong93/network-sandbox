@@ -9,8 +9,9 @@ This project is **AGPL-3.0**. Your contribution stays under that licence.
 **You keep the copyright on what you write.** Nobody takes ownership of it — not
 other contributors, and not the maintainer.
 
-There is **no CLA**. Nobody here can relicense the project or take it closed. That
-includes the maintainer, and it is deliberate. See
+There is **no CLA**. That does not grant the maintainer an extra right to
+relicense another contributor's work. Relicensing the whole project requires
+every relevant copyright holder. See
 [ADR 0014](docs/adr/0014-agpl-with-dco-no-cla.md).
 
 ## Sign your commits off
@@ -80,8 +81,10 @@ If a change rejects a real alternative, add an ADR in the same commit.
 
 ## Profiles
 
-Vendor and ISP profiles are data, not code. You do not need to touch the engine to
-add one. See [ADR 0012](docs/adr/0012-profiles-are-data-the-engine-is-the-only-executor.md).
+Vendor and ISP profiles are data, not code. The engine loads a version-1 profile
+document (`fromProfileJson`) against a registry; it does not execute profile
+behaviour. The author does not ship vendor content, and the UI has no picker yet.
+See [ADR 0012](docs/adr/0012-profiles-are-data-the-engine-is-the-only-executor.md).
 
 A profile you write stays yours. AGPL-3.0 covers this project's code, not the
 profile content you contribute.
