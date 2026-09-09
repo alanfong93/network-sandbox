@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { addPreset, addResolverRecord, completeLink, initialState, removeResolverRecord, select, setHostAddress, setIspHandoff, setPortAcceptable, setPvid, setResolverRecord, setRouterIfaceVlan, setRouterPortCount, setUntaggedVlans, startLink } from './state';
+import { addPreset, addResolverRecord, completeLink, initialState, removeResolverRecord, select, setHostAddress, setIspHandoff, setPortAcceptable, setPvid, setResolverRecord, setRouterIfaceVlan, setRouterPortCount, setUntaggedVlans, setWirelessAp, startLink } from './state';
 import { renderInspector, renderTrace } from './render';
 import { COLD_TRACE_NOTICE, runTrace } from './trace';
 
@@ -587,6 +587,36 @@ describe('inspector', () => {
     const apHtml = renderInspector(select(state, ap));
     expect(apHtml).toMatch(/data-action="pvid"/);
     expect(apHtml).toMatch(/data-action="untagged"/);
+  });
+
+  it('AP inspector has SSID and VLAN controls per ap-mode wireless function (#152)', () => {
+    let state = addPreset(initialState, 'access-point');
+    const ap = state.topology.devices[0]!.id;
+    const html = renderInspector(select(state, ap));
+    expect(html).toMatch(/data-action="wireless-ssid"/);
+    expect(html).toMatch(/data-action="wireless-vlan"/);
+    expect(html).toMatch(/data-fn="wlan"/);
+    expect(html).toMatch(/data-action="wireless-ssid"[^>]*value="main"/);
+    expect(html).toMatch(/data-action="wireless-vlan"[^>]*value="10"/);
+    state = setWirelessAp(state, ap, 'wlan', { ssid: 'guest', vlan: 30 });
+    const edited = renderInspector(select(state, ap));
+    expect(edited).toMatch(/data-action="wireless-ssid"[^>]*value="guest"/);
+    expect(edited).toMatch(/data-action="wireless-vlan"[^>]*value="30"/);
+  });
+
+  it('after inspector VLAN 30, a wifi client classifies ssid-vlan as 30 (#152)', () => {
+    let state = addPreset(initialState, 'host');
+    state = addPreset(state, 'access-point');
+    const [h1, ap] = state.topology.devices.map((d) => d.id);
+    state = startLink(state, h1!, '1');
+    state = completeLink(state, ap!, 'wifi');
+    state = setWirelessAp(state, ap!, 'wlan', { vlan: 30 });
+    const trace = runTrace(state.topology, { from: h1!, dstIp: '192.168.1.1' });
+    const classify = trace.requestHops.find(
+      (hop) => hop.device === ap && hop.step === 'ssid-vlan',
+    );
+    expect(classify?.vlan).toBe(30);
+    expect(classify?.reasonCode).toBe('ssid-vlan:classified');
   });
 
   it('an access port living only in a second bridging function renders its controls (#89)', () => {

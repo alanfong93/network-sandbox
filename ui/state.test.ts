@@ -18,6 +18,7 @@ import {
   setStpPriority,
   setSwitchPortCount,
   setUntaggedVlans,
+  setWirelessAp,
   startLink,
   type EditorState,
 } from './state';
@@ -748,5 +749,38 @@ describe('setRouterPortCount (#124)', () => {
         .find((d) => d.id === ids[0])!
         .ports.some((p) => p.id === 'lan2' || p.id === 'lan3'),
     ).toBe(false);
+  });
+});
+
+describe('AP SSID VLAN mapping (#152)', () => {
+  it('setWirelessAp writes SSID and VLAN and keeps the wifi member in sync', () => {
+    let state = addPreset(initialState, 'access-point');
+    const ap = state.topology.devices[0]!.id;
+    state = setWirelessAp(state, ap, 'wlan', { ssid: 'guest', vlan: 30 });
+    const chassis = state.topology.devices[0]!;
+    const wlan = chassis.functions.find((fn) => fn.kind === 'wireless');
+    expect(wlan && wlan.kind === 'wireless' ? wlan.ssid : null).toBe('guest');
+    expect(wlan && wlan.kind === 'wireless' ? wlan.vlan : null).toBe(30);
+    const br = chassis.functions.find((fn) => fn.kind === 'bridging');
+    const wifi = br && br.kind === 'bridging'
+      ? br.members.find((m) => m.port === 'wifi')
+      : undefined;
+    expect(wifi?.pvid).toBe(30);
+    expect(wifi ? [...wifi.untaggedVlans] : []).toEqual([30]);
+    const up = br && br.kind === 'bridging'
+      ? br.members.find((m) => m.port === 'up')
+      : undefined;
+    expect(up?.taggedVlans.has(10)).toBe(true);
+  });
+
+  it('setWirelessAp rejects a non-AP wireless function and an out-of-range VLAN', () => {
+    let state = addPreset(initialState, 'access-point');
+    const ap = state.topology.devices[0]!.id;
+    const before = state.topology;
+    state = setWirelessAp(state, ap, 'wlan', { vlan: 0 });
+    expect(state.notice).toMatch(/invalid/i);
+    expect(state.topology).toBe(before);
+    state = setWirelessAp({ ...state, notice: null }, ap, 'br', { ssid: 'x' });
+    expect(state.notice).toMatch(/AP wireless/i);
   });
 });

@@ -206,6 +206,19 @@ export function renderInspector(state: EditorState): string {
         `<input type="number" data-action="isp-vlan-tag" value="${isp.vlanTag ?? ''}"></label>`,
     );
   }
+  for (const fn of chassis.functions) {
+    if (fn.kind !== 'wireless' || fn.mode !== 'ap') continue;
+    parts.push(
+      `<fieldset class="ssid-map"><legend>SSID (${esc(fn.id)})</legend>` +
+        `<label>SSID ` +
+        `<input type="text" data-action="wireless-ssid" data-fn="${esc(fn.id)}" ` +
+        `value="${esc(fn.ssid)}"></label>` +
+        `<label>VLAN ` +
+        `<input type="number" data-action="wireless-vlan" data-fn="${esc(fn.id)}" ` +
+        `value="${fn.vlan ?? ''}"></label>` +
+        `</fieldset>`,
+    );
+  }
   // STP priority renders only for a chassis that HAS an stp function -
   // function presence, not preset id (#69). An unmanaged switch has no stp
   // function and stays bare (#67).
