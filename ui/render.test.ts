@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { addPreset, addFirewallRule, addResolverRecord, completeLink, initialState, removeResolverRecord, select, setHostAddress, setIspHandoff, setPortAcceptable, setPvid, setResolverRecord, setRouterIfaceVlan, setRouterPortCount, setUntaggedVlans, setWirelessAp, startLink } from './state';
+import { addPreset, addFirewallRule, addResolverRecord, completeLink, initialState, removeResolverRecord, select, setHostAddress, setIspHandoff, setNatOn, setPortAcceptable, setPvid, setResolverRecord, setRouterIfaceVlan, setRouterPortCount, setUntaggedVlans, setWirelessAp, startLink } from './state';
 import { renderInspector, renderTrace } from './render';
 import { COLD_TRACE_NOTICE, runTrace } from './trace';
 
@@ -286,6 +286,43 @@ describe('inspector', () => {
         (hop) => hop.step === 'delivery' && hop.action === 'delivered' && hop.device === h1,
       ),
     ).toBe(true);
+  });
+
+  it('router inspector has a NAT checkbox, checked by default (#150)', () => {
+    let state = addPreset(initialState, 'router');
+    const rtr = state.topology.devices[0]!.id;
+    const html = renderInspector(select(state, rtr));
+    expect(html).toMatch(/data-action="nat-on"/);
+    expect(html).toMatch(/data-action="nat-on"[^>]*checked|checked[^>]*data-action="nat-on"/);
+    state = setNatOn(state, rtr, false);
+    const off = renderInspector(select(state, rtr));
+    expect(off).toMatch(/data-action="nat-on"/);
+    expect(off).not.toMatch(/data-action="nat-on"[^>]*checked/);
+  });
+
+  it('turning NAT off removes masquerade hops; a new router still has NAT (#150)', () => {
+    let state = initialState;
+    state = addPreset(state, 'router');
+    state = addPreset(state, 'host');
+    state = addPreset(state, 'host');
+    const [rtr, h1, wanHost] = state.topology.devices.map((d) => d.id);
+    state = setRouterIfaceVlan(state, rtr!, 'wan', undefined);
+    state = startLink(state, h1!, '1');
+    state = completeLink(state, rtr!, 'lan');
+    state = startLink(state, wanHost!, '1');
+    state = completeLink(state, rtr!, 'wan');
+    state = setHostAddress(state, wanHost!, {
+      ip: '203.0.113.1',
+      prefix: 24,
+      gateway: '203.0.113.2',
+    });
+    const withNat = runTrace(state.topology, { from: h1!, dstIp: '203.0.113.1' });
+    expect(withNat.requestHops.some((hop) => hop.step === 'nat')).toBe(true);
+    state = setNatOn(state, rtr!, false);
+    const without = runTrace(state.topology, { from: h1!, dstIp: '203.0.113.1' });
+    expect(without.requestHops.some((hop) => hop.step === 'nat')).toBe(false);
+    state = addPreset(state, 'router');
+    expect(state.topology.devices[3]!.functions.some((fn) => fn.kind === 'nat')).toBe(true);
   });
 
   it('router inspector has a WAN VLAN control, not Native VLAN (PVID)', () => {

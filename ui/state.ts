@@ -579,6 +579,34 @@ function firewallActionOk(
   return action === undefined || action === 'allow' || action === 'deny';
 }
 
+export function setNatOn(
+  state: EditorState,
+  deviceId: DeviceId,
+  on: boolean,
+): EditorState {
+  const chassis = deviceOf(state.topology, deviceId);
+  const routing = chassis?.functions.find((fn) => fn.kind === 'routing');
+  if (!chassis || !routing || routing.kind !== 'routing') {
+    return { ...state, notice: 'NAT needs a routing function' };
+  }
+  const hasNat = chassis.functions.some((fn) => fn.kind === 'nat');
+  if (on === hasNat) return { ...state, notice: null };
+  if (!on) {
+    return withChassis(state, deviceId, (box) => ({
+      ...box,
+      functions: box.functions.filter((fn) => fn.kind !== 'nat'),
+    }));
+  }
+  const rtId = routing.id;
+  return withChassis(state, deviceId, (box) => ({
+    ...box,
+    functions: [
+      ...box.functions,
+      { kind: 'nat', id: 'nat', on: rtId, portForwards: [] },
+    ],
+  }));
+}
+
 export function addFirewallRule(
   state: EditorState,
   deviceId: DeviceId,
