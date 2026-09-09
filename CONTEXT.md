@@ -451,3 +451,12 @@ recursion, or NXDOMAIN engine. The UI label is "DNS server"; the word
 - **Do not call it:** *dns*, *DNS server* in code, a *zone*.
 - **Placement is topology.** The same function on a LAN box or beyond the
   WAN; a router may carry it. There is no second "public" kind.
+
+### Hosted UI
+
+The GitHub Pages copy of `ui/dist` at
+https://alanfong93.github.io/network-sandbox/ ([ADR 0032](docs/adr/0032-host-the-static-ui-on-github-pages.md)).
+Static files only. The source of that copy is this repository.
+
+- **Do not call it:** *the server*, *SaaS*, *the backend*.
+- Sharing a downloaded topology is still [#65](https://github.com/alanfong93/network-sandbox/issues/65).

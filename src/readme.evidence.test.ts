@@ -69,7 +69,7 @@ describe('README evidence (characterisation)', () => {
     expect(readme).toContain('npm run typecheck');
     expect(readme).toContain('npm run ui:dev');
     expect(readme).toContain('http://localhost:5173');
-    expect(readme).toMatch(/no hosted demo/i);
+    expect(readme).toContain('https://alanfong93.github.io/network-sandbox/');
     expect(readme).toContain('build_container.ps1');
     expect(readme).toContain('#65');
     expect(readme).toMatch(/private/);
