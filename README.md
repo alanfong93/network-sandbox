@@ -93,7 +93,7 @@ Palette labels come from `ui/presets.ts`. **Engine** means the TypeScript librar
 | Host | yes | palette | |
 | Managed switch (bridge + STP) | yes | palette; mode, PVID (ingress), untagged/tagged VLANs, STP priority | |
 | Unmanaged switch | yes | palette; VLAN membership controls hidden | |
-| Router (routing, NAT, DHCP, firewall) | yes | palette; LAN/WAN jack counts, iface VLAN, NAT on/off, inter-VLAN firewall | |
+| Router (routing, NAT, DHCP, firewall) | yes | palette; LAN/WAN jack counts, iface VLAN, NAT on/off, inter-VLAN firewall, dhcp-server | |
 | L3 switch | yes | palette; SVI VLAN is not an independent inspector control | |
 | Access point (SSID → VLAN) | yes | palette; SSID, VLAN | |
 | Extender (ap+client on one radio) | yes | palette | |

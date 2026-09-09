@@ -113,6 +113,7 @@ describe('presets', () => {
       ]),
     );
     expect(chassis?.functions.some((fn) => fn.kind === 'nat')).toBe(true);
+    expect(chassis?.functions.some((fn) => fn.kind === 'dhcp-server')).toBe(true);
   });
 
   it('router LAN is a bridge plus one SVI - extra jacks stay one network (#124)', () => {
@@ -190,6 +191,7 @@ describe('presets', () => {
       true,
     );
     expect(chassis?.functions.some((fn) => fn.kind === 'stp')).toBe(true);
+    expect(chassis?.functions.some((fn) => fn.kind === 'dhcp-server')).toBe(false);
     const routing = chassis?.functions.find((fn) => fn.kind === 'routing');
     expect(routing).toBeDefined();
     if (routing?.kind !== 'routing') return;

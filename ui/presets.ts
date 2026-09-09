@@ -198,8 +198,27 @@ export const PRESETS: PresetDef[] = [
             firewall: [],
           },
           { kind: 'nat', id: 'nat', on: 'rt', portForwards: [] },
+          {
+            kind: 'dhcp-server',
+            id: 'dhcp',
+            scopes: [
+              {
+                vlan: defaults.pvid,
+                poolStart: '192.168.1.100',
+                poolEnd: '192.168.1.199',
+                gateway: '192.168.1.1',
+                resolver: '192.168.1.1',
+              },
+            ],
+          },
         ],
-        { internal: [{ from: 'rt', to: 'br' }] },
+        {
+          internal: [{ from: 'rt', to: 'br' }],
+          mac: mac(seq),
+          ip: '192.168.1.1',
+          prefix: 24,
+          vlan: defaults.pvid,
+        },
       ),
   },
   {
