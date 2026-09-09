@@ -9,6 +9,7 @@ import { renderDeviceList, renderInspector, renderTrace } from './render';
 import { autoPlace } from './layout';
 import { allHops, stepIndex, tokenMarks } from './replay';
 import {
+  addFirewallRule,
   addPreset,
   addResolverRecord,
   cancelLink,
@@ -30,6 +31,8 @@ import {
   setStpPriority,
   setSwitchPortCount,
   setTaggedVlans,
+  removeFirewallRule,
+  setFirewallRule,
   setUntaggedVlans,
   setWirelessAp,
   startLink,
@@ -324,6 +327,16 @@ function onClick(event: MouseEvent): void {
     case 'record-add':
       if (device) state = addResolverRecord(state, device);
       break;
+    case 'firewall-add':
+      if (device) state = addFirewallRule(state, device);
+      break;
+    case 'firewall-remove': {
+      const rule = target.dataset.rule;
+      if (device && rule !== undefined) {
+        state = removeFirewallRule(state, device, Number(rule));
+      }
+      break;
+    }
     case 'record-remove': {
       const record = target.dataset.record;
       if (device && record !== undefined) {
@@ -465,6 +478,25 @@ function onChange(event: Event): void {
       const raw = input.value.trim();
       if (fn && raw !== '') {
         state = setWirelessAp(state, device, fn, { vlan: Number(raw) });
+      }
+      break;
+    }
+    case 'firewall-from':
+    case 'firewall-to':
+    case 'firewall-action': {
+      const rule = input.dataset.rule;
+      const raw = input.value.trim();
+      if (device && rule !== undefined && raw !== '') {
+        const index = Number(rule);
+        if (action === 'firewall-action') {
+          state = setFirewallRule(state, device, index, {
+            action: raw as 'allow' | 'deny',
+          });
+        } else if (action === 'firewall-from') {
+          state = setFirewallRule(state, device, index, { from: Number(raw) });
+        } else {
+          state = setFirewallRule(state, device, index, { to: Number(raw) });
+        }
       }
       break;
     }

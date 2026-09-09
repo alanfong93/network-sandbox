@@ -19,6 +19,9 @@ import {
   setSwitchPortCount,
   setUntaggedVlans,
   setWirelessAp,
+  addFirewallRule,
+  removeFirewallRule,
+  setFirewallRule,
   startLink,
   type EditorState,
 } from './state';
@@ -749,6 +752,33 @@ describe('setRouterPortCount (#124)', () => {
         .find((d) => d.id === ids[0])!
         .ports.some((p) => p.id === 'lan2' || p.id === 'lan3'),
     ).toBe(false);
+  });
+});
+
+describe('inter-VLAN firewall editor (#151)', () => {
+  it('add/set/remove firewall rules on a routing chassis', () => {
+    let state = addPreset(initialState, 'l3-switch');
+    const id = state.topology.devices[0]!.id;
+    const rules = (s: EditorState) => {
+      const fn = s.topology.devices[0]!.functions.find((f) => f.kind === 'routing');
+      return fn && fn.kind === 'routing' ? fn.firewall : [];
+    };
+    expect(rules(state)).toEqual([]);
+    state = addFirewallRule(state, id, { from: 20, to: 10, action: 'deny' });
+    expect(rules(state)).toEqual([{ from: 20, to: 10, action: 'deny' }]);
+    state = setFirewallRule(state, id, 0, { action: 'allow' });
+    expect(rules(state)[0]?.action).toBe('allow');
+    state = removeFirewallRule(state, id, 0);
+    expect(rules(state)).toEqual([]);
+  });
+
+  it('rejects an invalid VLAN or action and preserves state', () => {
+    let state = addPreset(initialState, 'router');
+    const id = state.topology.devices[0]!.id;
+    const before = state.topology;
+    state = addFirewallRule(state, id, { from: 0, to: 10, action: 'deny' });
+    expect(state.notice).toMatch(/invalid/i);
+    expect(state.topology).toBe(before);
   });
 });
 

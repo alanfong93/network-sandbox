@@ -185,6 +185,29 @@ export function renderInspector(state: EditorState): string {
       );
     }
   }
+  const routingFn = chassis.functions.find((fn) => fn.kind === 'routing');
+  if (routingFn && routingFn.kind === 'routing') {
+    const rows = routingFn.firewall
+      .map(
+        (rule, index) =>
+          `<div class="firewall-row">` +
+          `<label>From VLAN <input type="number" data-action="firewall-from" data-rule="${index}" value="${rule.from}"></label> ` +
+          `<label>To VLAN <input type="number" data-action="firewall-to" data-rule="${index}" value="${rule.to}"></label> ` +
+          `<label>Action <select data-action="firewall-action" data-rule="${index}">` +
+          `<option value="allow"${rule.action === 'allow' ? ' selected' : ''}>allow</option>` +
+          `<option value="deny"${rule.action === 'deny' ? ' selected' : ''}>deny</option>` +
+          `</select></label> ` +
+          `<button type="button" data-action="firewall-remove" data-rule="${index}">Remove</button>` +
+          `</div>`,
+      )
+      .join('\n');
+    parts.push(
+      `<fieldset class="firewall"><legend>Inter-VLAN firewall</legend>` +
+        (rows === '' ? '<p class="hint">Empty is allow.</p>' : rows) +
+        `<button type="button" data-action="firewall-add">Add rule</button>` +
+        `</fieldset>`,
+    );
+  }
   const isp = chassis.functions.find((fn) => fn.kind === 'isp-handoff');
   if (isp && isp.kind === 'isp-handoff') {
     // The requirement is the ISP's; the customer side matches it via the
