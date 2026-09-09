@@ -1,0 +1,3 @@
+id=sw-fixture
+hostname=SW-fixture
+pvid=20

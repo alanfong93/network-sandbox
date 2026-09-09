@@ -41,6 +41,7 @@ export interface Chassis {
   /** Advertised resolver address. An IP, not an engine (ADR 0030). */
   resolver?: string;
   vlan?: VlanId;
+  provenance?: { profile: string; version: string; fields: string[] };
 }
 
 export interface Port {

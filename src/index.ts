@@ -152,3 +152,13 @@ export { lookupRecord, matchRecord } from './resolver';
 
 export type { FlowArgs, FlowObservation, FlowResult } from './flow';
 export { flowObservationAsFormatInput, runFlow } from './flow';
+
+export {
+  GRAMMAR_FORMAT,
+  GRAMMAR_VERSION,
+  UnknownGrammarFormatError,
+  UnknownMappingTargetError,
+  UnparseableConfigError,
+  UnsupportedGrammarVersionError,
+  importConfig,
+} from './config-grammar';

@@ -1,0 +1,11 @@
+{
+  "format": "network-sandbox-config-grammar",
+  "version": 1,
+  "id": "fixture-kv-switch",
+  "grammarVersion": "1",
+  "keys": {
+    "id": "chassis.id",
+    "hostname": "chassis.label",
+    "pvid": "access.pvid"
+  }
+}
