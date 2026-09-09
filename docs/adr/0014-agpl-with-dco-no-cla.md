@@ -76,3 +76,14 @@ the maintainer.** That is the point, not a side effect.
   [ADR 0012](0012-profiles-are-data-the-engine-is-the-only-executor.md) profiles are
   data written by third parties, and this licence does not claim them. That needs
   stating plainly wherever profiles are published.
+
+## Clarification (2026-09-09)
+
+AGPL-3.0-or-later governs **use and source obligations**, including the network
+clause. There is no CLA, so the maintainer has no extra right to relicense another
+contributor's work. Relicensing the whole project requires every relevant copyright
+holder.
+
+AGPL does not make private modification categorically impossible. The duty to publish
+arises on conveyance, or when a modified version is offered for network interaction.
+The original decision text above is unchanged.
