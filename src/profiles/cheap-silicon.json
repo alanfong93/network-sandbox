@@ -1,0 +1,10 @@
+{
+  "format": "network-sandbox-profile",
+  "version": 1,
+  "profile": {
+    "id": "cheap-silicon",
+    "version": "1",
+    "unmanagedTag": "strip",
+    "capabilities": {}
+  }
+}

@@ -1,4 +1,9 @@
-import { builtinProfile, defaults, type EngineProfile } from './defaults';
+import { defaults, type EngineProfile } from './defaults';
+import {
+  createProfileRegistry,
+  resolveProfile,
+  type ProfileRegistry,
+} from './profile';
 import type { WarningInput } from './format';
 import type {
   DeviceId,
@@ -84,12 +89,14 @@ export interface RunContext {
  */
 export function createRunContext(
   topology: Topology,
-  profile: EngineProfile = builtinProfile,
+  profile?: EngineProfile,
+  registry: ProfileRegistry = createProfileRegistry(),
 ): RunContext {
+  const resolved = resolveProfile(topology.profiles, registry, profile);
   const stp = computeStp(topology);
   return {
     topology,
-    profile,
+    profile: resolved,
     hopsLeft: defaults.maxHops,
     fdb: new Map(),
     resolvedMacs: new Map(),

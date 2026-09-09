@@ -382,6 +382,18 @@ error. `layout` is an optional UI sidecar; missing is valid. Version stays 1.
 - **Do not call it:** *vendor config*, *export* as if it were CLI to paste,
   a `$set`-tagged blob. Canvas `x,y` is not Topology.
 
+### Profile JSON
+
+A separate version-1 envelope `{format:'network-sandbox-profile', version:1, profile}`
+for a shareable profile *document* ([ADR 0012](docs/adr/0012-profiles-are-data-the-engine-is-the-only-executor.md)).
+`toProfileJson` / `fromProfileJson` round-trip it. Sandbox JSON still stores only
+`profiles: string[]` ids; the engine resolves those ids against a caller-supplied
+registry before any hop. `ieee-defaults` is always registered. Empty `capabilities`
+is the day-one schema; an unknown capability key fails by name.
+
+- **Do not call it:** *sandbox JSON*, *vendor config*, embed the body in the
+  sandbox envelope. Do not silently default an unknown id to `ieee-defaults`.
+
 ### Canvas
 
 The vanilla-SVG view of the topology that is both the **builder** (drop,

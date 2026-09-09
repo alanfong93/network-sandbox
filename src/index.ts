@@ -57,6 +57,24 @@ export {
 export type { EngineProfile, UnmanagedTag } from './defaults';
 export { builtinProfile, defaults, usableMtu } from './defaults';
 
+export type { ProfileDocument, ProfileEnvelope, ProfileRegistry } from './profile';
+export {
+  InvalidProfileError,
+  MissingProfileIdError,
+  MultipleNonBuiltinProfilesError,
+  PROFILE_FORMAT,
+  PROFILE_VERSION,
+  ProfileMismatchError,
+  UnknownCapabilityError,
+  UnknownProfileFormatError,
+  UnregisteredProfileError,
+  UnsupportedProfileVersionError,
+  createProfileRegistry,
+  fromProfileJson,
+  resolveProfile,
+  toProfileJson,
+} from './profile';
+
 export type {
   Estimate,
   FlowInput,

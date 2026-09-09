@@ -1,13 +1,12 @@
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { CATALOGUE } from './catalogue';
-import {
-  builtinProfile,
-  defaults,
-  usableMtu,
-  type EngineProfile,
-} from './defaults';
+import { builtinProfile, defaults, usableMtu } from './defaults';
 import { format } from './format';
 import type { MacAddr, Topology, VlanId } from './model';
+import { createProfileRegistry, fromProfileJson } from './profile';
 import { createRunContext } from './run';
 import { send } from './send';
 import { observationAsFormatInput, walkFrame } from './walk';
@@ -62,11 +61,12 @@ function failoverScenario(opts?: {
   return topology;
 }
 
-const stripProfile: EngineProfile = {
-  id: 'cheap-silicon',
-  version: '1',
-  unmanagedTag: 'strip',
-};
+const stripProfile = fromProfileJson(
+  readFileSync(
+    join(dirname(fileURLToPath(import.meta.url)), 'profiles', 'cheap-silicon.json'),
+    'utf8',
+  ),
+);
 
 const row5 = CATALOGUE.find((row) => row.id === 5);
 const row20 = CATALOGUE.find((row) => row.id === 20);
@@ -277,7 +277,11 @@ describe('profile seam', () => {
   it('a fixture profile that strips tags changes the trace and populates Hop.provenance', () => {
     const topology = referenceScenario();
     topology.profiles = [stripProfile.id];
-    const ctx = createRunContext(topology, stripProfile);
+    const ctx = createRunContext(
+      topology,
+      undefined,
+      createProfileRegistry([stripProfile]),
+    );
     const result = walkFrame(ctx, {
       device: 'USW',
       inPort: '2',

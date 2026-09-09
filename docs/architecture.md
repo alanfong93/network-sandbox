@@ -11,7 +11,7 @@ function, the topology walk that follows links, L3: hosts, ARP, routing
 and the inter-VLAN firewall, the flow driver that traces a request
 and its reply against one run context, NAT (masquerade plus port
 forwards), DHCP as a message exchange (no leases), the ISP handoff
-(PPPoE and a tagged WAN), a fixture profile seam, the reference
+(PPPoE and a tagged WAN), a versioned profile document and registry, the reference
 scenario (SPEC.md §9, including AP, mesh and a second WAN), wireless
 dispatch: classify at `ssid-vlan`,
 then follow `InternalEdge` onto the chassis bridge, a tagged AP
@@ -32,9 +32,11 @@ flowchart LR
     M --> J[json.ts<br>v1 sandbox envelope]
     R[reasons.ts<br>step x outcome] --> F
     F --> C[catalogue.ts<br>25 rows]
-    D[defaults.ts<br>built-in profile] --> S[stp.ts]
+    D[defaults.ts<br>built-in profile] --> PF[profile.ts<br>v1 profile envelope]
+    PF --> U[run.ts<br>one context per run]
+    D --> S[stp.ts]
     M --> S
-    S --> U[run.ts<br>one context per run]
+    S --> U
     U --> B[bridge.ts<br>802.1Q one hop]
     U --> W[walk.ts<br>dispatch and flood tree]
     U --> O[route.ts<br>L3 and firewall]
@@ -66,6 +68,7 @@ flowchart LR
     style F color:#000
     style C color:#000
     style D color:#000
+    style PF color:#000
     style S color:#000
     style U color:#000
     style B color:#000
@@ -86,10 +89,11 @@ flowchart LR
 | `src/json.ts` | Version-1 sandbox envelope `{format, version, topology}`. `taggedVlans` / `untaggedVlans` encode as number arrays. `fdb` and `stp.state` are omitted on write and empty Maps on parse. Extra envelope keys (a later `layout` sidecar) are ignored on parse, so they never become Topology (ADR 0029). Unknown `fn.kind` and unsupported versions fail by name (`UnknownFunctionKindError`, `UnsupportedSandboxVersionError`). No AJV, no `$set` markers (ADR 0026). |
 | `src/reasons.ts` | `PIPELINE_STEPS`, `OUTCOMES`, `ReasonCode` as their product. |
 | `src/defaults.ts` | Every tunable the engine will read, including encapsulation overheads. Named `ieee-defaults` v1 (ADR 0012). `unmanagedTag: 'pass'` is the built-in capability; a fixture profile may select `'strip'`. Usable MTU is computed, never stored. |
+| `src/profile.ts` | Version-1 profile envelope `{format:'network-sandbox-profile', version:1, profile}` separate from sandbox JSON (ADR 0012, ADR 0026). `toProfileJson` / `fromProfileJson` round-trip `{id, version, unmanagedTag, capabilities:{}}`. Empty `capabilities` is valid; an unknown capability key fails by name. A caller-supplied registry always includes `ieee-defaults`; `createRunContext` resolves `topology.profiles` against it before any hop. Unknown format, version, missing id, unregistered id, more than one non-builtin id, and a second-argument mismatch fail by named errors. Direct object injection remains only when the id list is empty. No AJV. The strip fixture is `src/profiles/cheap-silicon.json`. |
 | `src/format.ts` | Turns a structured hop, trace, flow or warning into a sentence. An `Estimate` (`kind: 'estimate'`, non-empty `assumptions`) is not a `FormatInput` and never passes through `format` — `formatEstimate` renders it, naming itself and listing its assumptions (ADR 0024). |
 | `src/catalogue.ts` | The 26-row table. Row 20 is Stage 2; rows 24-26 are Stage 3. |
 | `src/stp.ts` | Converged 802.1D: root, root port, designated port, else blocking. Single instance. ADR 0011 warning. An SVI bridging member (its port owned by the routing function) is not an STP port — port roles belong to link attachments only, and the SVI is the bridge's internal interface to the route processor. |
-| `src/run.ts` | One context per run: FDB, resolved MACs, pending L3 sends, NAT sessions, hop budget, STP map, warnings, the active profile. Discarded when the run ends. |
+| `src/run.ts` | One context per run: FDB, resolved MACs, pending L3 sends, NAT sessions, hop budget, STP map, warnings, the active profile resolved from `topology.profiles` plus a registry. Discarded when the run ends. |
 | `src/bridge.ts` | One pass through one bridging function: STP ingress, acceptable frames, PVID, ingress filtering, learn, lookup, STP egress, membership, tagging. `canTag: false` keeps the classified VLAN and emits untagged. |
 | `src/walk.ts` | Dispatcher: read `Port.ownedBy`, hand the frame to that function's executor. A `wireless` function classifies at `ssid-vlan` and the walk follows `InternalEdge` onto the chassis bridge — still dispatch on the function, never `device.kind`. Floods are a tree. `hopsLeft` is one budget across every branch. Hosts with addressing answer ARP and take delivery. The fallback dispatch also answers a same-VLAN DHCP DISCOVER on a chassis whose `dhcp-server` function has a matching scope (classified VLAN is the frame's tag, else the chassis' addressing VLAN) — the OFFER leaves the arrival port; a routing chassis never runs this branch (its ports dispatch to `routing`, which keeps `decideDhcp`). A bridge-embedded DHCP server (issue #79) answers too: after bridge ingress classification, the same post-classification seam as the SVI composition consults the co-resident server — the OFFER fires while the DISCOVER still floods to every other member port (flood + answer, never answer-instead-of-flood; the predicate stays `standaloneDhcpDecision`'s narrow conditions, so the answer never steals frames the server would not take). SVI composition (issue #71): after bridge ingress classification, a chassis routing function is reachable from the bridging ports for exactly two frame shapes — an ARP for a routing iface's IP on that iface's VLAN, and a frame addressed to a routing iface's MAC; the first answers with the SVI's MAC, the second hands the frame to `routeFrame` at the SVI port (the frame carries the bridge-classified VLAN), and routed egress out an SVI re-enters the chassis bridge through the `rt`→`br` InternalEdge. Every other frame bridges exactly as before. After a bridging `destination-lookup` drop, a chassis whose host addressing is on that VLAN still takes `arp`/`delivery` — not a management step. An arrival whose `ownedBy` cannot handle the frame is named as a hop on that chassis, not swallowed. Observations are keyed by name and facts, so two VLAN leaks on one walk both surface. When the previous device classified at `ssid-vlan`, its bridging function has `canTag: false`, and the far end's PVID differs, the observation is `ssid-untagged` (mapped vs landed VLAN), not `vlan-leak`. `stp-root` is the blocked STP link plus the elected root the walk transited, not BFS hop order. Egress toward an `isp-handoff` in `pppoe` mode adds that layer; a frame larger than `usableMtu` drops at `mtu`. `peerOf` returns no peer across a link marked `up: false`, so no frame traverses a down link (ADR 0020). |
 | `src/ip.ts` | IPv4 parse, subnet membership, longest-prefix match. No library. |
@@ -116,7 +120,8 @@ STP box on the way in does not hide an unmanaged cycle.
 
 ```mermaid
 flowchart TD
-    A[createRunContext topology] --> B[Collect chassis that have an stp function]
+    A[createRunContext topology] --> P[Resolve topology.profiles against the registry]
+    P --> B[Collect chassis that have an stp function]
     B --> C[Elect a root per connected component]
     C --> D[Root port by lowest path cost]
     D --> E[Designated port per segment]
@@ -294,4 +299,6 @@ there as well as in `src/mesh.test.ts`. Tagged AP uplink and
 management VLAN (issue #30, no catalogue row) are `src/ap.test.ts`.
 Sandbox JSON round-trip is `src/json.test.ts`: Sets survive as arrays,
 Maps stay out of the file, unknown kinds and unsupported versions fail
-by name, and the §9 fixture's `send` hops match after parse.
+by name, and the §9 fixture's `send` hops match after parse. Profile
+JSON is a separate envelope (`src/profile.test.ts`): `topology.profiles`
+stays an id list; the body lives in a profile document.
