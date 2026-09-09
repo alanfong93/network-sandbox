@@ -130,6 +130,24 @@ describe('presets', () => {
     expect(chassis?.functions.some((fn) => fn.kind === 'nat')).toBe(true);
   });
 
+  it('extender writes ap+client wireless functions on one radio (#149)', () => {
+    const chassis = PRESETS.find((p) => p.id === 'extender')?.build('ext1', 1);
+    expect(chassis).toBeDefined();
+    const wireless = (chassis?.functions ?? []).filter((fn) => fn.kind === 'wireless');
+    expect(wireless).toHaveLength(2);
+    const modes = wireless
+      .map((fn) => (fn.kind === 'wireless' ? fn.mode : null))
+      .sort();
+    expect(modes).toEqual(['ap', 'client']);
+    const radios = new Set(
+      wireless.map((fn) => (fn.kind === 'wireless' ? fn.radio : '')),
+    );
+    expect(radios.size).toBe(1);
+    expect(chassis?.radios).toHaveLength(1);
+    expect(chassis?.radios[0]?.id).toBe([...radios][0]);
+    expect(JSON.stringify(chassis)).not.toMatch(/throughput|phyRate|airtime|coverage/i);
+  });
+
   it('access point writes a radio, a wireless function, and a bridge', () => {
     const chassis = PRESETS.find((p) => p.id === 'access-point')?.build(
       'ap1',

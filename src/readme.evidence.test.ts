@@ -35,6 +35,7 @@ describe('README evidence (characterisation)', () => {
       'unmanaged-switch',
       'router',
       'access-point',
+      'extender',
       'modem',
       'l3-switch',
       'resolver',

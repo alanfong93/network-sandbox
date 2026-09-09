@@ -641,6 +641,20 @@ describe('inspector', () => {
     expect(edited).toMatch(/data-action="wireless-vlan"[^>]*value="30"/);
   });
 
+  it('a host joining an extender AP side classifies as an ordinary wifi client (#149)', () => {
+    let state = addPreset(initialState, 'host');
+    state = addPreset(state, 'extender');
+    const [h1, ext] = state.topology.devices.map((d) => d.id);
+    state = startLink(state, h1!, '1');
+    state = completeLink(state, ext!, 'wifi');
+    const trace = runTrace(state.topology, { from: h1!, dstIp: '192.168.1.1' });
+    const classify = trace.requestHops.find(
+      (hop) => hop.device === ext && hop.step === 'ssid-vlan',
+    );
+    expect(classify?.reasonCode).toBe('ssid-vlan:classified');
+    expect(classify?.vlan).toBe(10);
+  });
+
   it('after inspector VLAN 30, a wifi client classifies ssid-vlan as 30 (#152)', () => {
     let state = addPreset(initialState, 'host');
     state = addPreset(state, 'access-point');
