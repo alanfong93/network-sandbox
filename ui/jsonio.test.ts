@@ -125,7 +125,7 @@ describe('sandbox JSON import/export (#57 envelope)', () => {
       wan.ip = '192.168.20.1';
     }
     rtr.functions = [
-      ...rtr.functions,
+      ...rtr.functions.filter((fn) => fn.kind !== 'dhcp-server'),
       {
         kind: 'dhcp-server' as const,
         id: 'dhcp',
@@ -162,7 +162,7 @@ describe('sandbox JSON import/export (#57 envelope)', () => {
     const wan = rt.ifaces.find((iface) => iface.id === 'wan');
     if (wan) wan.vlan = 500;
     rtr.functions = [
-      ...rtr.functions,
+      ...rtr.functions.filter((fn) => fn.kind !== 'dhcp-server'),
       {
         kind: 'dhcp-server' as const,
         id: 'dhcp',
@@ -192,7 +192,7 @@ describe('sandbox JSON import/export (#57 envelope)', () => {
     const wan = rt.ifaces.find((iface) => iface.id === 'wan');
     if (wan) wan.vlan = 500;
     rtr.functions = [
-      ...rtr.functions,
+      ...rtr.functions.filter((fn) => fn.kind !== 'dhcp-server'),
       {
         kind: 'dhcp-server' as const,
         id: 'dhcp',
@@ -228,7 +228,7 @@ describe('sandbox JSON import/export (#57 envelope)', () => {
     // Only the lan iface serves VLAN 10; the wan iface keeps VLAN 500 -
     // nothing routes VLAN 20.
     rtr.functions = [
-      ...rtr.functions,
+      ...rtr.functions.filter((fn) => fn.kind !== 'dhcp-server'),
       {
         kind: 'dhcp-server' as const,
         id: 'dhcp',

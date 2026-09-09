@@ -288,6 +288,22 @@ describe('inspector', () => {
     ).toBe(true);
   });
 
+  it('a LAN host DISCOVER gets an OFFER from the placed router (#147)', () => {
+    let state = addPreset(initialState, 'router');
+    state = addPreset(state, 'host');
+    const [rtr, h1] = state.topology.devices.map((d) => d.id);
+    state = startLink(state, h1!, '1');
+    state = completeLink(state, rtr!, 'lan');
+    const html = renderInspector(select(state, rtr!));
+    expect(html).toMatch(/data-action="scope-field"/);
+    const trace = runTrace(state.topology, { from: h1!, kind: 'dhcp-discover' });
+    expect(
+      trace.requestHops.some(
+        (hop) => hop.device === rtr && hop.step === 'dhcp-server' && hop.reasonCode === 'dhcp-server:forwarded',
+      ),
+    ).toBe(true);
+  });
+
   it('router inspector has a NAT checkbox, checked by default (#150)', () => {
     let state = addPreset(initialState, 'router');
     const rtr = state.topology.devices[0]!.id;
