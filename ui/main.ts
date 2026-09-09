@@ -2,6 +2,7 @@ import type { DeviceId } from '../src/index';
 import { parseIpv4 } from '../src/index';
 import { divergentScopeWarning, exportSandbox, importSandbox } from './jsonio';
 import { PRESETS } from './presets';
+import { missingReturnRoute } from './starters';
 import { fitContent, panCamera, screenDeltaToWorld, zoomAt, type Camera } from './camera';
 import { contentSize, renderCanvas } from './canvas';
 import { renderDeviceList, renderInspector, renderTrace } from './render';
@@ -13,6 +14,7 @@ import {
   cancelLink,
   completeLink,
   initialState,
+  loadTopology,
   removeResolverRecord,
   select,
   setDhcpScope,
@@ -161,6 +163,7 @@ function render(): void {
     '<div id="trace-out"></div>' +
     '<h2>Sandbox JSON</h2>' +
     '<button type="button" data-action="export">Export file</button> ' +
+    '<button type="button" data-action="load-starter">Load missing-return-route starter</button> ' +
     '<label class="file">Import <input type="file" id="import-file" accept=".json,application/json"></label>' +
     '<textarea id="json-view" readonly placeholder="Exported sandbox JSON appears here"></textarea>';
 
@@ -231,19 +234,6 @@ function exportJson(): void {
   if (view) view.value = text;
 }
 
-function maxSuffix(topology: EditorState['topology']): number {
-  let max = 0;
-  for (const device of topology.devices) {
-    const match = /(\d+)$/.exec(device.id);
-    if (match) max = Math.max(max, Number(match[1]));
-  }
-  for (const link of topology.links) {
-    const match = /^l(\d+)$/.exec(link.id);
-    if (match) max = Math.max(max, Number(match[1]));
-  }
-  return max;
-}
-
 async function importJson(file: File): Promise<void> {
   try {
     const imported = importSandbox(await file.text());
@@ -252,13 +242,7 @@ async function importJson(file: File): Promise<void> {
     // multi-scope chassis answers on chassis.vlan only. Warn, never
     // reject - the topology is legal.
     const warning = divergentScopeWarning(imported.topology);
-    state = {
-      ...initialState,
-      topology: imported.topology,
-      layout: imported.layout,
-      seq: maxSuffix(imported.topology),
-      notice: warning ?? null,
-    };
+    state = loadTopology(imported.topology, imported.layout, warning);
     lastTrace = null;
     stopReplay();
     sendFrom = null;
@@ -354,6 +338,12 @@ function onClick(event: MouseEvent): void {
     case 'export':
       exportJson();
       return;
+    case 'load-starter':
+      state = loadTopology(missingReturnRoute());
+      lastTrace = null;
+      stopReplay();
+      sendFrom = null;
+      break;
     case 'replay-step':
       if (lastTrace) {
         replayIndex = stepIndex(allHops(lastTrace).length, replayIndex, 1);

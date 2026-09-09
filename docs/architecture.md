@@ -205,7 +205,9 @@ cursor, empty-drag pan, Fit) is a view transform only — it is not `layout`
 and is not in the sandbox file. Forms UI stays
 (ADR 0029). Layout is a sandbox-envelope
 sibling `{deviceId: {x,y}}`, never fields on Topology or Chassis. Missing
-layout is valid — the later UI auto-places. `ui/jsonio.ts` round-trips
+layout is valid — the later UI auto-places. `ui/starters.ts` plus `ui/starters/missing-return-route.json` is the ADR 0005
+starter (NAT off, return route missing; catalogue row 13). Newly placed
+routers still write a `nat` function. `ui/jsonio.ts` round-trips
 optional `layout` as an envelope sibling (`exportSandbox(topology, layout?)`,
 `importSandbox` returns `{topology, layout}`); engine `fromJson` still
 receives topology only and ignores extra keys.

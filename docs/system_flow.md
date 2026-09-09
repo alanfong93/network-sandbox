@@ -133,7 +133,7 @@ flowchart TD
 ## UI loop
 
 The browser UI runs the same engine, driven by clicks. The shipped loop is:
-place a preset box, set its jack counts — a market-SKU port count on a pure
+place a preset box, or load the missing-return-route starter (ADR 0005 content), set its jack counts — a market-SKU port count on a pure
 managed or unmanaged switch, LAN count and WAN count on a router (the LAN
 jacks join one bridge, extra WANs are routed uplinks, ADR 0031) — link two
 free ports, edit in the inspector, send, read
@@ -152,6 +152,7 @@ sandbox JSON file (optional `layout` sidecar).
 ```mermaid
 flowchart TD
     PA[Click a palette box<br>or drop on canvas] --> AP[addPreset writes a chassis<br>plus functions]
+    STT[Load missing-return-route starter] --> SE
     AP --> DR[Drag places the box<br>layout sidecar only]
     DR --> SE{Link pending?}
     SE -->|yes| CL[completeLink joins<br>an explicit free port]
