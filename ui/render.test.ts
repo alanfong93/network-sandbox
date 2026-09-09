@@ -641,6 +641,32 @@ describe('inspector', () => {
     expect(edited).toMatch(/data-action="wireless-vlan"[^>]*value="30"/);
   });
 
+  it('two mesh nodes link wirelessly and guest SSID lands untagged (#148)', () => {
+    let state = addPreset(initialState, 'mesh-node');
+    state = addPreset(state, 'mesh-node');
+    state = addPreset(state, 'host');
+    const [m1, m2, h1] = state.topology.devices.map((d) => d.id);
+    state = startLink(state, m1!, 'bh');
+    state = completeLink(state, m2!, 'bh');
+    expect(state.topology.links[0]?.medium).toBe('wireless');
+    state = startLink(state, h1!, '1');
+    state = completeLink(state, m1!, 'wifi');
+    const mesh = state.topology.devices.find((d) => d.id === m1)!;
+    const wlan = mesh.functions.find((fn) => fn.kind === 'wireless');
+    if (wlan && wlan.kind === 'wireless') wlan.vlan = 30;
+    const br = mesh.functions.find((fn) => fn.kind === 'bridging');
+    if (br && br.kind === 'bridging') {
+      const wifi = br.members.find((m) => m.port === 'wifi');
+      if (wifi) {
+        wifi.pvid = 30;
+        wifi.untaggedVlans = new Set([30]);
+      }
+    }
+    const trace = runTrace(state.topology, { from: h1!, dstIp: '192.168.1.1' });
+    expect(trace.requestHops.some((hop) => hop.step === 'ssid-vlan' && hop.vlan === 30)).toBe(true);
+    expect(br && br.kind === 'bridging' ? br.canTag : undefined).toBe(false);
+  });
+
   it('a host joining an extender AP side classifies as an ordinary wifi client (#149)', () => {
     let state = addPreset(initialState, 'host');
     state = addPreset(state, 'extender');

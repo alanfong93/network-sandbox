@@ -130,6 +130,22 @@ describe('presets', () => {
     expect(chassis?.functions.some((fn) => fn.kind === 'nat')).toBe(true);
   });
 
+  it('mesh node writes mesh wireless, canTag false, VLAN 10 untagged (#148)', () => {
+    const chassis = PRESETS.find((p) => p.id === 'mesh-node')?.build('mesh1', 1);
+    expect(chassis).toBeDefined();
+    const wlan = chassis?.functions.find((fn) => fn.kind === 'wireless');
+    expect(wlan && wlan.kind === 'wireless' ? wlan.mode : null).toBe('mesh');
+    expect(wlan && wlan.kind === 'wireless' ? wlan.vlan : null).toBe(10);
+    const br = chassis?.functions.find((fn) => fn.kind === 'bridging');
+    expect(br && br.kind === 'bridging' ? br.canTag : undefined).toBe(false);
+    const wifi = br && br.kind === 'bridging'
+      ? br.members.find((m) => m.port === 'wifi')
+      : undefined;
+    expect(wifi?.pvid).toBe(10);
+    expect(wifi ? [...wifi.untaggedVlans] : []).toEqual([10]);
+    expect(JSON.stringify(chassis)).not.toMatch(/throughput|phyRate|airtime|coverage/i);
+  });
+
   it('extender writes ap+client wireless functions on one radio (#149)', () => {
     const chassis = PRESETS.find((p) => p.id === 'extender')?.build('ext1', 1);
     expect(chassis).toBeDefined();

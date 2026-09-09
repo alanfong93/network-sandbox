@@ -280,6 +280,40 @@ export const PRESETS: PresetDef[] = [
       ),
   },
   {
+    id: 'mesh-node',
+    label: 'Mesh node',
+    build: (id, seq) =>
+      base(
+        id,
+        `Mesh node ${seq}`,
+        'mesh-node',
+        seq,
+        [port('wifi', 'wlan'), port('bh', 'wlan')],
+        [
+          {
+            kind: 'wireless',
+            id: 'wlan',
+            radio: 'radio0',
+            mode: 'mesh',
+            ssid: 'mesh',
+            vlan: 10,
+          },
+          {
+            kind: 'bridging',
+            id: 'br',
+            vlanAware: true,
+            canTag: false,
+            members: [access('wifi', 10), access('bh', 10)],
+            fdb: new Map(),
+          },
+        ],
+        {
+          radios: [{ id: 'radio0', band: '5' }],
+          internal: [{ from: 'wlan', to: 'br' }],
+        },
+      ),
+  },
+  {
     id: 'modem',
     label: 'ISP modem',
     build: (id, seq) =>
