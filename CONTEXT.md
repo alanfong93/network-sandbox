@@ -460,3 +460,28 @@ Static files only. The source of that copy is this repository.
 
 - **Do not call it:** *the server*, *SaaS*, *the backend*.
 - Sharing a downloaded topology is still [#65](https://github.com/alanfong93/network-sandbox/issues/65).
+
+### AI config file
+
+The version-1 envelope `{format:'network-sandbox-ai', version:1, endpoint,
+model, key}` a user keeps **beside** their sandbox JSON
+([ADR 0033](docs/adr/0033-ai-advice-sits-beside-the-engine.md)). It loads and
+saves like sandbox JSON but is never merged into it: `exportSandbox` has no
+key field, and Unload drops the key from the tab. A blank file is a valid
+template (empty strings parse; use fails by name).
+
+- **Do not call it:** *AI settings in the sandbox file*, *the key file* as
+  if topology export could carry it. Two files, two formats, one rule:
+  sandbox JSON is topology; the AI file is credentials.
+
+### Advice
+
+The AI panel's output: prose beside the trace, labelled "AI advice — not a
+trace" ([ADR 0033](docs/adr/0033-ai-advice-sits-beside-the-engine.md)).
+It cannot mutate the topology (no write path exists), it is not produced by
+`format()`, and it never renders in the hop list's visual language
+(ADR 0002). Follow-up chat is frozen to the reviewed snapshot; a topology
+edit blocks chat until Review runs again.
+
+- **Do not call it:** *trace*, *verdict*, *report*, *diagnosis*, a *hop*.
+  Those words belong to the engine's outputs.

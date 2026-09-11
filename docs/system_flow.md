@@ -175,6 +175,36 @@ flowchart TD
     style DR fill:#fff3cd,color:#000
 ```
 
+## Optional AI review
+
+The AI path is opt-in and user-triggered ([ADR 0033](adr/0033-ai-advice-sits-beside-the-engine.md)).
+Nothing leaves the tab until a config is loaded **and** a preview is confirmed.
+The payload is allowlist-built in `ui/ai.ts`: `isp-handoff` credentials have no
+encoder line, so they cannot be serialized out. Catalogue rows ride along only
+when the last trace supports them (hop step+action, or an observation/warning
+code); a topology-only review carries none. The reply renders in its own panel,
+labelled advice — never in the hop list's language. Failures are named
+(CORS-or-network, 401, HTTP status); no vendor CORS matrix is claimed anywhere.
+
+```mermaid
+flowchart TD
+    LC[Load network-sandbox-ai file] --> EP[Endpoint and model shown<br>before any request]
+    EP --> RV[Review with AI]
+    RV --> PV[Preview the exact outbound JSON<br>credentials stripped, key absent]
+    PV -->|Cancel| EP
+    PV -->|Confirm and send| POST[fetch chat/completions<br>to the user endpoint]
+    POST -->|CORS or network / 401 / HTTP n| ERR[Named error<br>nothing retried silently]
+    POST -->|reply| AD[AI advice panel<br>not a trace, no write path]
+    AD --> CH{Topology edited<br>since the review?}
+    CH -->|no| ASK[Follow-up chat<br>against the frozen snapshot]
+    CH -->|yes| BLK[Chat blocked<br>Review again]
+    ASK --> CH
+    style POST fill:#fff3cd,color:#000
+    style AD fill:#d7f5d7,color:#000
+    style ERR fill:#ffd7d7,color:#000
+    style BLK fill:#ffd7d7,color:#000
+```
+
 ## Opening the sandbox
 
 A visitor opens the README URL. Local Node and optional Docker remain clone

@@ -43,6 +43,14 @@ export interface TraceRender {
   flowNotes: string[];
   notices: string[];
   outcome: Flow['outcome'];
+  /**
+   * Machine codes behind the sentences (#162): walk/flow observation codes
+   * and run-context warning codes, so the AI payload can gate failure
+   * catalogue rows on what the run actually produced instead of matching
+   * prose. Sentences stay the only human surface.
+   */
+  observationCodes: string[];
+  warningCodes: string[];
 }
 
 /**
@@ -123,6 +131,10 @@ export function runTrace(
     reply: replyHops.map((hop) => hop.reason),
     replyHops,
     flowNotes,
+    observationCodes: result.observations.map(
+      (entry) => entry.observation.observation,
+    ),
+    warningCodes: ctx.warnings.map((warning) => warning.observation),
     notices: [
       // The action token leads every formatted hop sentence, so 'flooded'
       // at line-start is a real flood; a device id merely CONTAINING

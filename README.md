@@ -106,6 +106,7 @@ Palette labels come from `ui/presets.ts`. **Engine** means the TypeScript librar
 | Sandbox JSON import/export | yes | Export file / Import | |
 | Profile document + registry | yes (`fromProfileJson`) | no picker | vendor/ISP content, UI picker |
 | Radio coverage | estimate seam + `Radio.channel` only | channel is config | coverage UI |
+| Optional AI review | — (not engine; [ADR 0033](docs/adr/0033-ai-advice-sits-beside-the-engine.md)) | Load config, Review, confirm, chat | |
 | Share-safe export | credentials kept in the file | same | [#65](https://github.com/alanfong93/network-sandbox/issues/65) |
 
 Routers are **one device type placed at any depth**. "Sub-router" is a position, not a kind of box.
@@ -115,6 +116,8 @@ Routers are **one device type placed at any depth**. "Sub-router" is a position,
 Sandbox JSON (`format: 'network-sandbox'`, version 1) is the file you keep. It round-trips the topology, including `isp-handoff` **credentials**. Check a file before you share it. That policy is a standing guard, not a feature request: [#65](https://github.com/alanfong93/network-sandbox/issues/65). Canvas `x,y` is an optional envelope sibling, not Topology.
 
 Vendor and ISP **profile content** is not shipped. The engine can load a version-1 profile document; the UI does not pick files yet.
+
+**Optional AI review** ([ADR 0033](docs/adr/0033-ai-advice-sits-beside-the-engine.md)) is an optional path, off by default: load your own `network-sandbox-ai` config file (endpoint, model, key — yours, never part of sandbox JSON), press **Review with AI**, confirm the previewed payload, and read the reply as labelled **advice beside the engine, never a trace**. The payload is built from an allowlist — ISP credentials have no encoder line, so they cannot leave — and the API key is never in it. Nothing is sent anywhere until you confirm. Endpoint failures are named (CORS-or-network, 401, HTTP status); whether a given provider allows browser calls is a property of your endpoint, not a claim this tool makes.
 
 ## Roadmap
 
