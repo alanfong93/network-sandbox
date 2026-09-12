@@ -45,6 +45,17 @@ import {
 } from './state';
 import { runTrace, type TraceRender } from './trace';
 import { traceFromId } from './tracefrom';
+import {
+  blankAiConfig,
+  buildAiPayload,
+  buildReviewMessages,
+  fromAiJson,
+  postChat,
+  toAiJson,
+  topologyFingerprint,
+  type AiConfig,
+  type AiMessage,
+} from './ai';
 
 let state: EditorState = initialState;
 let didDrag = false;
@@ -70,6 +81,23 @@ let lastDst = '192.168.1.11';
 // records successful sends.
 let dstIpDraft: string | null = null;
 let sendKind: 'icmp' | 'dhcp-discover' = 'icmp';
+// The optional AI review path (#162, ADR 0033). aiConfig lives in this tab
+// only, never in sandbox JSON; aiPreview holds the exact outbound payload
+// between Review and Confirm; aiConversation is the frozen snapshot chat
+// (the payload message is turn 1 and never changes); aiReviewedFingerprint
+// blocks chat after any topology edit until Review runs again.
+let aiConfig: AiConfig | null = null;
+let aiPreview: { text: string; messages: AiMessage[]; fingerprint: string } | null = null;
+let aiConversation: AiMessage[] | null = null;
+let aiReviewedFingerprint: string | null = null;
+let aiBusy = false;
+// The unsent chat draft survives re-renders (the dstIp precedent): render()
+// rebuilds the form, so without this a canvas drag would empty the field.
+let aiMsgDraft: string | null = null;
+// Which topology produced lastTrace. Ordinary edits do not clear the trace
+// panel (existing behaviour), but a trace from another topology is not
+// evidence about this one - Review pairs them only on a fingerprint match.
+let traceFingerprint: string | null = null;
 
 function renderLinks(state: EditorState): string {
   if (state.topology.links.length === 0) {
@@ -91,6 +119,102 @@ function esc(text: string): string {
     .replaceAll('<', '&lt;')
     .replaceAll('>', '&gt;')
     .replaceAll('"', '&quot;');
+}
+
+function downloadText(filename: string, text: string): void {
+  const blob = new Blob([text], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = filename;
+  anchor.click();
+  URL.revokeObjectURL(url);
+}
+
+function aiErrorText(error: unknown): string {
+  if (error instanceof Error && error.name !== 'Error') {
+    return `${error.name} — ${error.message}`;
+  }
+  return error instanceof Error ? error.message : String(error);
+}
+
+/**
+ * The optional AI panel. Advice is visually and semantically separate from
+ * the hop trace (ADR 0002, ADR 0033): its own heading, its own styling, and
+ * a label that says what it is. Nothing here renders before a config is
+ * loaded, and the endpoint is shown on load — before any request could use
+ * the key (#162 Watch lines).
+ */
+function renderAiPanel(): string {
+  const head = '<h2>AI review (optional)</h2>';
+  if (!aiConfig) {
+    return (
+      head +
+      '<p class="hint">Optional. Nothing is sent anywhere until you load an ' +
+      'AI config and confirm a review. The config file holds your own ' +
+      'endpoint, model and key — it is never part of sandbox JSON.</p>' +
+      '<button type="button" data-action="ai-template">Download blank AI config</button> ' +
+      '<label class="file">Load AI config <input type="file" id="ai-file" accept=".json,application/json"></label>'
+    );
+  }
+  let body =
+    head +
+    `<p class="ai-loaded">Loaded — endpoint <code>${esc(aiConfig.endpoint || '(empty)')}</code>` +
+    `, model <code>${esc(aiConfig.model || '(empty)')}</code></p>` +
+    '<button type="button" data-action="ai-export">Save AI config</button> ' +
+    '<button type="button" data-action="ai-unload">Unload (drops the key)</button> ' +
+    '<button type="button" data-action="ai-review">Review with AI</button>';
+  if (aiBusy) {
+    body += '<p class="notice">Contacting the endpoint…</p>';
+  }
+  if (aiPreview) {
+    body +=
+      '<p class="hint">Preview — Confirm sends this payload to the endpoint ' +
+      'as the chat message, wrapped with the advisory system prompt; your ' +
+      'key travels only in the request header. ISP credentials are ' +
+      'stripped; the API key is not in the payload.</p>' +
+      `<textarea id="ai-preview" readonly>${esc(aiPreview.text)}</textarea>` +
+      '<button type="button" data-action="ai-confirm">Confirm and send</button> ' +
+      '<button type="button" data-action="ai-cancel">Cancel</button>';
+  }
+  if (aiConversation) {
+    const stale =
+      aiReviewedFingerprint !== null &&
+      aiReviewedFingerprint !== topologyFingerprint(state.topology);
+    const turns = aiConversation
+      .filter((message) => message.role !== 'system')
+      .map((message, index) => {
+        // Turn 0 is the reviewed payload itself: a summary line, not the
+        // multi-KB blob - the user already consented to it at preview.
+        if (index === 0) {
+          return (
+            '<div class="ai-turn"><span class="ai-who">You (snapshot)</span>' +
+            'Reviewed topology snapshot — the exact payload shown at preview.</div>'
+          );
+        }
+        const who = message.role === 'user' ? 'You' : 'AI advice';
+        return `<div class="ai-turn"><span class="ai-who">${who}</span>${esc(message.content)}</div>`;
+      })
+      .join('\n');
+    body +=
+      '<div class="ai-advice">' +
+      '<h3>AI advice — not a trace</h3>' +
+      turns +
+      '</div>';
+    if (stale) {
+      body +=
+        '<p class="notice">Topology changed since the review — Review with ' +
+        'AI again before asking more.</p>';
+    } else {
+      body +=
+        '<form id="ai-chat-form"><input type="text" name="msg" ' +
+        `placeholder="Ask about the reviewed topology" autocomplete="off" value="${esc(aiMsgDraft ?? '')}">` +
+        '<button type="submit">Ask</button></form>' +
+        '<p class="hint">Follow-ups use the reviewed snapshot. Editing the ' +
+        'topology blocks chat until Review again.</p>';
+    }
+  }
+  return body;
 }
 
 function render(): void {
@@ -170,7 +294,8 @@ function render(): void {
     '<button type="button" data-action="export">Export file</button> ' +
     '<button type="button" data-action="load-starter">Load missing-return-route starter</button> ' +
     '<label class="file">Import <input type="file" id="import-file" accept=".json,application/json"></label>' +
-    '<textarea id="json-view" readonly placeholder="Exported sandbox JSON appears here"></textarea>';
+    '<textarea id="json-view" readonly placeholder="Exported sandbox JSON appears here"></textarea>' +
+    renderAiPanel();
 
   const out = document.querySelector<HTMLDivElement>('#trace-out');
   if (out && lastTrace) {
@@ -221,6 +346,9 @@ function send(event: Event): void {
     );
   }
   replayIndex = 0;
+  // The trace the panel now shows was produced by exactly this topology —
+  // Review later pairs the two by comparing fingerprints.
+  traceFingerprint = topologyFingerprint(state.topology);
   render();
   const out = document.querySelector<HTMLDivElement>('#trace-out');
   out?.scrollIntoView({ behavior: 'smooth' });
@@ -228,13 +356,7 @@ function send(event: Event): void {
 
 function exportJson(): void {
   const text = exportSandbox(state.topology, state.layout);
-  const blob = new Blob([text], { type: 'application/json' });
-  const url = URL.createObjectURL(blob);
-  const anchor = document.createElement('a');
-  anchor.href = url;
-  anchor.download = 'sandbox.json';
-  anchor.click();
-  URL.revokeObjectURL(url);
+  downloadText('sandbox.json', text);
   const view = document.querySelector<HTMLTextAreaElement>('#json-view');
   if (view) view.value = text;
 }
@@ -249,6 +371,7 @@ async function importJson(file: File): Promise<void> {
     const warning = divergentScopeWarning(imported.topology);
     state = loadTopology(imported.topology, imported.layout, warning);
     lastTrace = null;
+    traceFingerprint = null;
     stopReplay();
     sendFrom = null;
     render();
@@ -257,6 +380,127 @@ async function importJson(file: File): Promise<void> {
       ...state,
       notice: `Import failed: ${error instanceof Error ? error.message : String(error)}`,
     };
+    render();
+  }
+}
+
+async function importAiConfig(file: File): Promise<void> {
+  if (aiBusy) return;
+  try {
+    aiConfig = fromAiJson(await file.text());
+    // The endpoint is in front of the user before any request can use the
+    // key (#162 Watch) — a swapped or hostile config file is visible now.
+    aiPreview = null;
+    aiConversation = null;
+    aiReviewedFingerprint = null;
+  } catch (error) {
+    state = {
+      ...state,
+      notice: `AI config rejected: ${aiErrorText(error)}` +
+        (aiConfig ? ' — previous config still loaded' : ''),
+    };
+  }
+  render();
+}
+
+/** Review = build the share-safe payload and show it. No network yet. */
+function aiReview(): void {
+  if (!aiConfig || aiBusy) return;
+  const current = topologyFingerprint(state.topology);
+  // A trace from an earlier topology is not evidence about this one: the
+  // payload carries the last Send only when the topology still matches,
+  // else the review is topology-only and the notice says why.
+  const traceUsable = lastTrace !== null && traceFingerprint === current;
+  if (lastTrace !== null && !traceUsable) {
+    state = {
+      ...state,
+      notice: 'Trace is from an earlier topology — the review covers the topology only',
+    };
+  }
+  const payload = buildAiPayload(state.topology, traceUsable ? lastTrace : null);
+  const messages = buildReviewMessages(payload);
+  aiPreview = {
+    text: JSON.stringify(payload, null, 2),
+    messages,
+    fingerprint: current,
+  };
+  // A new review invalidates the old conversation: the snapshot it froze
+  // is no longer the one on screen.
+  aiConversation = null;
+  aiReviewedFingerprint = null;
+  render();
+}
+
+async function aiConfirm(): Promise<void> {
+  if (!aiConfig || !aiPreview || aiBusy) return;
+  // Capture what this reply belongs to. Module state can change while the
+  // POST is in flight (a second Review, Cancel, Unload, a new config) and
+  // a reply must never land on a snapshot it was not requested for.
+  const config = aiConfig;
+  const preview = aiPreview;
+  aiBusy = true;
+  render();
+  try {
+    const reply = await postChat(config, preview.messages);
+    if (aiConfig !== config || aiPreview !== preview) {
+      state = {
+        ...state,
+        notice: 'AI reply discarded — the review changed while it was in flight',
+      };
+      return;
+    }
+    aiConversation = [...preview.messages, { role: 'assistant', content: reply }];
+    aiReviewedFingerprint = preview.fingerprint;
+    aiPreview = null;
+  } catch (error) {
+    state = { ...state, notice: aiErrorText(error) };
+  } finally {
+    aiBusy = false;
+    render();
+  }
+}
+
+async function aiChatSend(form: HTMLFormElement): Promise<void> {
+  if (!aiConfig || !aiConversation || aiBusy) return;
+  const config = aiConfig;
+  const input = form.elements.namedItem('msg') as HTMLInputElement;
+  const text = input.value.trim();
+  if (!text) return;
+  if (topologyFingerprint(state.topology) !== aiReviewedFingerprint) {
+    state = {
+      ...state,
+      notice: 'Topology changed since the review — Review with AI again',
+    };
+    render();
+    return;
+  }
+  const next: AiMessage[] = [...aiConversation, { role: 'user', content: text }];
+  aiBusy = true;
+  input.value = '';
+  aiMsgDraft = null;
+  aiConversation = next;
+  render();
+  try {
+    const reply = await postChat(config, next);
+    if (aiConfig !== config || aiConversation !== next) {
+      state = {
+        ...state,
+        notice: 'AI reply discarded — the conversation changed while it was in flight',
+      };
+      return;
+    }
+    aiConversation = [...next, { role: 'assistant', content: reply }];
+  } catch (error) {
+    // The turn failed: drop exactly the failed trailing turn — by
+    // position, never by content, so an earlier identical question that
+    // DID succeed survives with its answer — and give the question back
+    // to the input, unless the user typed a newer draft while this
+    // request was in flight (the newer text wins).
+    if (aiConversation === next) aiConversation = next.slice(0, -1);
+    if (aiMsgDraft === null) aiMsgDraft = text;
+    state = { ...state, notice: aiErrorText(error) };
+  } finally {
+    aiBusy = false;
     render();
   }
 }
@@ -353,9 +597,39 @@ function onClick(event: MouseEvent): void {
     case 'export':
       exportJson();
       return;
+    case 'ai-template':
+      downloadText('network-sandbox-ai.json', toAiJson(blankAiConfig()));
+      return;
+    case 'ai-export':
+      if (aiConfig) downloadText('network-sandbox-ai.json', toAiJson(aiConfig));
+      return;
+    case 'ai-unload':
+      // Not while a request is in flight: the reply-discard rule in
+      // aiConfirm/aiChatSend owns that window.
+      if (aiBusy) break;
+      aiConfig = null;
+      aiPreview = null;
+      aiConversation = null;
+      aiReviewedFingerprint = null;
+      state = { ...state, notice: 'AI config unloaded — the key is dropped from this tab' };
+      break;
+    case 'ai-review':
+      aiReview();
+      return;
+    case 'ai-confirm':
+      void aiConfirm();
+      return;
+    case 'ai-cancel':
+      // Always clears the preview. During an in-flight confirm this is
+      // what makes the capture-and-compare discard rule fire: the reply
+      // lands on a preview that no longer exists, so it is dropped with
+      // a named notice instead of populating a cancelled review.
+      aiPreview = null;
+      break;
     case 'load-starter':
       state = loadTopology(missingReturnRoute());
       lastTrace = null;
+      traceFingerprint = null;
       stopReplay();
       sendFrom = null;
       break;
@@ -592,6 +866,10 @@ document.addEventListener('click', onClick);
 document.addEventListener('change', onChange);
 document.addEventListener('submit', (event) => {
   if ((event.target as HTMLElement).id === 'send-form') send(event);
+  if ((event.target as HTMLElement).id === 'ai-chat-form') {
+    event.preventDefault();
+    void aiChatSend(event.target as HTMLFormElement);
+  }
 });
 document.addEventListener('change', (event) => {
   const target = event.target as HTMLInputElement;
@@ -607,14 +885,19 @@ document.addEventListener('change', (event) => {
   if (target.id === 'import-file' && target.files?.[0]) {
     void importJson(target.files[0]);
   }
+  if (target.id === 'ai-file' && target.files?.[0]) {
+    void importAiConfig(target.files[0]);
+  }
 });
 
 // Preserve the unsent destination draft across form re-renders: render()
 // rebuilds the input, so without this the send-kind toggle (or any other
 // re-render) would silently revert the field to the last SENT value.
+// The AI chat input carries the same rule (aiMsgDraft).
 document.addEventListener('input', (event) => {
   const target = event.target as HTMLInputElement;
   if (target.name === 'dstIp') dstIpDraft = target.value;
+  if (target.name === 'msg') aiMsgDraft = target.value;
 });
 
 function clientToSvg(

@@ -177,6 +177,18 @@
         background: #16352f;
         box-shadow: inset 3px 0 0 var(--accent);
       }
+      /* The AI advice panel deliberately borrows nothing from the hop list
+         (ADR 0002, ADR 0033): no monospace, no accent bar, its own border —
+         prose beside the trace, never dressed as engine output. */
+      .ai-loaded { background: #1d2735; padding: 0.4rem; border-radius: 4px; font-size: 0.82rem; overflow-wrap: anywhere; }
+      .ai-loaded code { font-family: ui-monospace, monospace; font-size: 0.78rem; }
+      #ai-preview { width: 100%; min-height: 9rem; margin-top: 0.5rem; font-family: ui-monospace, monospace; font-size: 0.78rem; }
+      .ai-advice { border: 1px solid #4a3f6b; background: #171a2b; padding: 0.55rem; border-radius: 6px; margin: 0.6rem 0; }
+      .ai-advice h3 { margin: 0 0 0.4rem; color: #b9a7e8; }
+      .ai-turn { margin: 0.4rem 0; white-space: pre-wrap; font-size: 0.86rem; }
+      .ai-who { display: block; color: #b9a7e8; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 0.15rem; }
+      #ai-chat-form { display: flex; gap: 0.35rem; margin-top: 0.5rem; }
+      #ai-chat-form input { flex: 1; }
       .replay { display: flex; flex-wrap: wrap; gap: 0.35rem; margin: 0.5rem 0 0.75rem; }
       #send-form { display: grid; gap: 0.35rem; margin-bottom: 0.75rem; }
       @media (max-width: 70rem) {

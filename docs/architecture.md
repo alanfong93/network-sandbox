@@ -217,7 +217,15 @@ starter (NAT off, return route missing; catalogue row 13). Newly placed
 routers still write a `nat` function. `ui/jsonio.ts` round-trips
 optional `layout` as an envelope sibling (`exportSandbox(topology, layout?)`,
 `importSandbox` returns `{topology, layout}`); engine `fromJson` still
-receives topology only and ignores extra keys.
+receives topology only and ignores extra keys. Beside the Sandbox JSON
+section sits the optional AI review panel (`ui/ai.ts`, ADR 0033): a
+`network-sandbox-ai` v1 config file (endpoint, model, key) loaded in-tab,
+an allowlist-built share-safe payload previewed then confirmed to the
+user's own endpoint via `fetch`, and a labelled advice panel with
+snapshot-frozen follow-up chat. Failure catalogue rows join the payload
+only when the last trace supports them (`TraceRender.observationCodes` /
+`warningCodes` / hop step+action). Without a loaded config the sandbox is
+unchanged.
 
 ```mermaid
 flowchart LR
@@ -232,14 +240,42 @@ flowchart LR
     S --> LY[layout sidecar<br>device id to x,y]
     LY --> J
     LY --> R
-    R --> M[main.ts<br>DOM wiring]
+    R --> M
     T --> E[engine src/<br>topology only]
     J --> E
     P --> E
+    AI[ai.ts<br>optional AI review] --> E
+    AI --> T
+    M --> AI
     style E fill:#d7f5d7,color:#000
     style M fill:#d7f5d7,color:#000
     style LY fill:#fff3cd,color:#000
     style CV fill:#fff3cd,color:#000
+    style AI fill:#fff3cd,color:#000
+```
+
+### Optional AI review (sequence)
+
+`ui/ai.ts` is UI-side only; the engine never imports it (ADR 0033). The one
+network interaction in the whole product is the tab POSTing to **the user's
+own endpoint** — this system has no server on either end of that arrow.
+
+```mermaid
+sequenceDiagram
+    participant U as User
+    participant Tab as Browser tab
+    participant E as User's endpoint
+    U->>Tab: Load network-sandbox-ai file
+    Tab-->>U: Shows endpoint + model (key never echoed)
+    U->>Tab: Review with AI
+    Tab-->>U: Preview: the exact allowlist payload (no ISP credentials, no key)
+    U->>Tab: Confirm and send
+    Tab->>E: POST /chat/completions (Bearer key)
+    E-->>Tab: Reply text, or CORS/network, 401, HTTP n (named)
+    Tab-->>U: Advice panel — not a trace, no write path
+    U->>Tab: Follow-up chat (frozen snapshot)
+    Tab->>E: POST with the conversation
+    Note over Tab: Topology edit blocks chat until Review again
 ```
 
 ## Data model
