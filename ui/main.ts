@@ -493,8 +493,10 @@ async function aiChatSend(form: HTMLFormElement): Promise<void> {
   } catch (error) {
     // The turn failed: drop exactly the failed trailing turn — by
     // position, never by content, so an earlier identical question that
-    // DID succeed survives with its answer.
+    // DID succeed survives with its answer — and give the question back
+    // to the input rather than silently eating it.
     if (aiConversation === next) aiConversation = next.slice(0, -1);
+    aiMsgDraft = text;
     state = { ...state, notice: aiErrorText(error) };
   } finally {
     aiBusy = false;
