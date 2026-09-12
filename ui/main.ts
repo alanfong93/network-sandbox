@@ -91,6 +91,13 @@ let aiPreview: { text: string; messages: AiMessage[]; fingerprint: string } | nu
 let aiConversation: AiMessage[] | null = null;
 let aiReviewedFingerprint: string | null = null;
 let aiBusy = false;
+// The unsent chat draft survives re-renders (the dstIp precedent): render()
+// rebuilds the form, so without this a canvas drag would empty the field.
+let aiMsgDraft: string | null = null;
+// Which topology produced lastTrace. Ordinary edits do not clear the trace
+// panel (existing behaviour), but a trace from another topology is not
+// evidence about this one - Review pairs them only on a fingerprint match.
+let traceFingerprint: string | null = null;
 
 function renderLinks(state: EditorState): string {
   if (state.topology.links.length === 0) {
@@ -162,8 +169,10 @@ function renderAiPanel(): string {
   }
   if (aiPreview) {
     body +=
-      '<p class="hint">Preview — Confirm sends exactly this JSON to the ' +
-      'endpoint. ISP credentials are stripped; the API key is not in it.</p>' +
+      '<p class="hint">Preview — Confirm sends this payload to the endpoint ' +
+      'as the chat message, wrapped with the advisory system prompt; your ' +
+      'key travels only in the request header. ISP credentials are ' +
+      'stripped; the API key is not in the payload.</p>' +
       `<textarea id="ai-preview" readonly>${esc(aiPreview.text)}</textarea>` +
       '<button type="button" data-action="ai-confirm">Confirm and send</button> ' +
       '<button type="button" data-action="ai-cancel">Cancel</button>';
@@ -174,8 +183,16 @@ function renderAiPanel(): string {
       aiReviewedFingerprint !== topologyFingerprint(state.topology);
     const turns = aiConversation
       .filter((message) => message.role !== 'system')
-      .map((message) => {
-        const who = message.role === 'user' ? 'You (snapshot)' : 'AI advice';
+      .map((message, index) => {
+        // Turn 0 is the reviewed payload itself: a summary line, not the
+        // multi-KB blob - the user already consented to it at preview.
+        if (index === 0) {
+          return (
+            '<div class="ai-turn"><span class="ai-who">You (snapshot)</span>' +
+            'Reviewed topology snapshot — the exact payload shown at preview.</div>'
+          );
+        }
+        const who = message.role === 'user' ? 'You' : 'AI advice';
         return `<div class="ai-turn"><span class="ai-who">${who}</span>${esc(message.content)}</div>`;
       })
       .join('\n');
@@ -191,7 +208,7 @@ function renderAiPanel(): string {
     } else {
       body +=
         '<form id="ai-chat-form"><input type="text" name="msg" ' +
-        'placeholder="Ask about the reviewed topology" autocomplete="off">' +
+        `placeholder="Ask about the reviewed topology" autocomplete="off" value="${esc(aiMsgDraft ?? '')}">` +
         '<button type="submit">Ask</button></form>' +
         '<p class="hint">Follow-ups use the reviewed snapshot. Editing the ' +
         'topology blocks chat until Review again.</p>';
@@ -329,6 +346,9 @@ function send(event: Event): void {
     );
   }
   replayIndex = 0;
+  // The trace the panel now shows was produced by exactly this topology —
+  // Review later pairs the two by comparing fingerprints.
+  traceFingerprint = topologyFingerprint(state.topology);
   render();
   const out = document.querySelector<HTMLDivElement>('#trace-out');
   out?.scrollIntoView({ behavior: 'smooth' });
@@ -351,6 +371,7 @@ async function importJson(file: File): Promise<void> {
     const warning = divergentScopeWarning(imported.topology);
     state = loadTopology(imported.topology, imported.layout, warning);
     lastTrace = null;
+    traceFingerprint = null;
     stopReplay();
     sendFrom = null;
     render();
@@ -364,6 +385,7 @@ async function importJson(file: File): Promise<void> {
 }
 
 async function importAiConfig(file: File): Promise<void> {
+  if (aiBusy) return;
   try {
     aiConfig = fromAiJson(await file.text());
     // The endpoint is in front of the user before any request can use the
@@ -372,20 +394,35 @@ async function importAiConfig(file: File): Promise<void> {
     aiConversation = null;
     aiReviewedFingerprint = null;
   } catch (error) {
-    state = { ...state, notice: `AI config rejected: ${aiErrorText(error)}` };
+    state = {
+      ...state,
+      notice: `AI config rejected: ${aiErrorText(error)}` +
+        (aiConfig ? ' — previous config still loaded' : ''),
+    };
   }
   render();
 }
 
 /** Review = build the share-safe payload and show it. No network yet. */
 function aiReview(): void {
-  if (!aiConfig) return;
-  const payload = buildAiPayload(state.topology, lastTrace);
+  if (!aiConfig || aiBusy) return;
+  const current = topologyFingerprint(state.topology);
+  // A trace from an earlier topology is not evidence about this one: the
+  // payload carries the last Send only when the topology still matches,
+  // else the review is topology-only and the notice says why.
+  const traceUsable = lastTrace !== null && traceFingerprint === current;
+  if (lastTrace !== null && !traceUsable) {
+    state = {
+      ...state,
+      notice: 'Trace is from an earlier topology — the review covers the topology only',
+    };
+  }
+  const payload = buildAiPayload(state.topology, traceUsable ? lastTrace : null);
   const messages = buildReviewMessages(payload);
   aiPreview = {
     text: JSON.stringify(payload, null, 2),
     messages,
-    fingerprint: topologyFingerprint(state.topology),
+    fingerprint: current,
   };
   // A new review invalidates the old conversation: the snapshot it froze
   // is no longer the one on screen.
@@ -396,12 +433,24 @@ function aiReview(): void {
 
 async function aiConfirm(): Promise<void> {
   if (!aiConfig || !aiPreview || aiBusy) return;
+  // Capture what this reply belongs to. Module state can change while the
+  // POST is in flight (a second Review, Cancel, Unload, a new config) and
+  // a reply must never land on a snapshot it was not requested for.
+  const config = aiConfig;
+  const preview = aiPreview;
   aiBusy = true;
   render();
   try {
-    const reply = await postChat(aiConfig, aiPreview.messages);
-    aiConversation = [...aiPreview.messages, { role: 'assistant', content: reply }];
-    aiReviewedFingerprint = aiPreview.fingerprint;
+    const reply = await postChat(config, preview.messages);
+    if (aiConfig !== config || aiPreview !== preview) {
+      state = {
+        ...state,
+        notice: 'AI reply discarded — the review changed while it was in flight',
+      };
+      return;
+    }
+    aiConversation = [...preview.messages, { role: 'assistant', content: reply }];
+    aiReviewedFingerprint = preview.fingerprint;
     aiPreview = null;
   } catch (error) {
     state = { ...state, notice: aiErrorText(error) };
@@ -413,6 +462,7 @@ async function aiConfirm(): Promise<void> {
 
 async function aiChatSend(form: HTMLFormElement): Promise<void> {
   if (!aiConfig || !aiConversation || aiBusy) return;
+  const config = aiConfig;
   const input = form.elements.namedItem('msg') as HTMLInputElement;
   const text = input.value.trim();
   if (!text) return;
@@ -427,16 +477,24 @@ async function aiChatSend(form: HTMLFormElement): Promise<void> {
   const next: AiMessage[] = [...aiConversation, { role: 'user', content: text }];
   aiBusy = true;
   input.value = '';
+  aiMsgDraft = null;
   aiConversation = next;
   render();
   try {
-    const reply = await postChat(aiConfig, next);
+    const reply = await postChat(config, next);
+    if (aiConfig !== config || aiConversation !== next) {
+      state = {
+        ...state,
+        notice: 'AI reply discarded — the conversation changed while it was in flight',
+      };
+      return;
+    }
     aiConversation = [...next, { role: 'assistant', content: reply }];
   } catch (error) {
-    // The turn failed: drop it so the conversation is exactly what was sent.
-    aiConversation = aiConversation.filter(
-      (message) => message.role !== 'user' || message.content !== text,
-    );
+    // The turn failed: drop exactly the failed trailing turn — by
+    // position, never by content, so an earlier identical question that
+    // DID succeed survives with its answer.
+    if (aiConversation === next) aiConversation = next.slice(0, -1);
     state = { ...state, notice: aiErrorText(error) };
   } finally {
     aiBusy = false;
@@ -543,6 +601,9 @@ function onClick(event: MouseEvent): void {
       if (aiConfig) downloadText('network-sandbox-ai.json', toAiJson(aiConfig));
       return;
     case 'ai-unload':
+      // Not while a request is in flight: the reply-discard rule in
+      // aiConfirm/aiChatSend owns that window.
+      if (aiBusy) break;
       aiConfig = null;
       aiPreview = null;
       aiConversation = null;
@@ -556,11 +617,14 @@ function onClick(event: MouseEvent): void {
       void aiConfirm();
       return;
     case 'ai-cancel':
-      aiPreview = null;
+      // A cancel during an in-flight confirm is a no-op: the discard rule
+      // drops the reply when it lands.
+      if (!aiBusy) aiPreview = null;
       break;
     case 'load-starter':
       state = loadTopology(missingReturnRoute());
       lastTrace = null;
+      traceFingerprint = null;
       stopReplay();
       sendFrom = null;
       break;
@@ -824,9 +888,11 @@ document.addEventListener('change', (event) => {
 // Preserve the unsent destination draft across form re-renders: render()
 // rebuilds the input, so without this the send-kind toggle (or any other
 // re-render) would silently revert the field to the last SENT value.
+// The AI chat input carries the same rule (aiMsgDraft).
 document.addEventListener('input', (event) => {
   const target = event.target as HTMLInputElement;
   if (target.name === 'dstIp') dstIpDraft = target.value;
+  if (target.name === 'msg') aiMsgDraft = target.value;
 });
 
 function clientToSvg(
