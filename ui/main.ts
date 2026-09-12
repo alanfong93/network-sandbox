@@ -2,7 +2,7 @@ import type { DeviceId } from '../src/index';
 import { parseIpv4 } from '../src/index';
 import { divergentScopeWarning, exportSandbox, importSandbox } from './jsonio';
 import { PRESETS } from './presets';
-import { missingReturnRoute } from './starters';
+import { STARTERS, starterById } from './starters';
 import { fitContent, panCamera, screenDeltaToWorld, zoomAt, type Camera } from './camera';
 import { contentSize, renderCanvas } from './canvas';
 import { renderDeviceList, renderInspector, renderTrace } from './render';
@@ -81,6 +81,10 @@ let lastDst = '192.168.1.11';
 // records successful sends.
 let dstIpDraft: string | null = null;
 let sendKind: 'icmp' | 'dhcp-discover' = 'icmp';
+// The Starters picker's selection survives re-renders (the #163 draft
+// rule): render() rebuilds the select, so the chosen starter must be
+// re-selected from this, not lost to the first option.
+let starterPick: string | null = null;
 // The optional AI review path (#162, ADR 0033). aiConfig lives in this tab
 // only, never in sandbox JSON; aiPreview holds the exact outbound payload
 // between Review and Confirm; aiConversation is the frozen snapshot chat
@@ -292,7 +296,15 @@ function render(): void {
     '<div id="trace-out"></div>' +
     '<h2>Sandbox JSON</h2>' +
     '<button type="button" data-action="export">Export file</button> ' +
-    '<button type="button" data-action="load-starter">Load missing-return-route starter</button> ' +
+    '<label class="file">Starters <select id="starter-pick">' +
+    STARTERS.map(
+      (starter) =>
+        `<option value="${esc(starter.id)}"` +
+        `${starter.id === (starterPick ?? STARTERS[0]?.id) ? ' selected' : ''}>` +
+        `${esc(starter.label)}</option>`,
+    ).join('') +
+    '</select></label> ' +
+    '<button type="button" data-action="load-starter">Load starter</button> ' +
     '<label class="file">Import <input type="file" id="import-file" accept=".json,application/json"></label>' +
     '<textarea id="json-view" readonly placeholder="Exported sandbox JSON appears here"></textarea>' +
     renderAiPanel();
@@ -438,6 +450,19 @@ async function aiConfirm(): Promise<void> {
   // a reply must never land on a snapshot it was not requested for.
   const config = aiConfig;
   const preview = aiPreview;
+  // The preview must still describe the topology on screen. A starter
+  // load or an import changes the topology without touching aiPreview,
+  // and the identity check below would happily send the old payload -
+  // so currency is checked here, before any fetch (pass-2 finding).
+  if (preview.fingerprint !== topologyFingerprint(state.topology)) {
+    state = {
+      ...state,
+      notice: 'Topology changed since the preview — Review with AI again',
+    };
+    aiPreview = null;
+    render();
+    return;
+  }
   aiBusy = true;
   render();
   try {
@@ -626,13 +651,28 @@ function onClick(event: MouseEvent): void {
       // a named notice instead of populating a cancelled review.
       aiPreview = null;
       break;
-    case 'load-starter':
-      state = loadTopology(missingReturnRoute());
-      lastTrace = null;
-      traceFingerprint = null;
-      stopReplay();
-      sendFrom = null;
+    case 'load-starter': {
+      // Reads the picker at click time; the selection itself survives
+      // re-renders via starterPick.
+      const pick = document.querySelector<HTMLSelectElement>('#starter-pick');
+      const starter = starterById(pick?.value ?? '') ?? STARTERS[0];
+      if (starter) {
+        state = loadTopology(starter.load());
+        lastTrace = null;
+        traceFingerprint = null;
+        stopReplay();
+        sendFrom = null;
+        // A loaded sample is a fresh editing session: the out-of-the-box
+        // promise (#164 - Send unchanged reads H1 pinging H2) holds on
+        // EVERY load, so the send form returns to its shipped defaults
+        // instead of inheriting the previous session's destination, kind
+        // or draft.
+        lastDst = '192.168.1.11';
+        dstIpDraft = null;
+        sendKind = 'icmp';
+      }
       break;
+    }
     case 'replay-step':
       if (lastTrace) {
         replayIndex = stepIndex(allHops(lastTrace).length, replayIndex, 1);
@@ -887,6 +927,11 @@ document.addEventListener('change', (event) => {
   }
   if (target.id === 'ai-file' && target.files?.[0]) {
     void importAiConfig(target.files[0]);
+  }
+  if (target.id === 'starter-pick') {
+    // Record only: the select already shows its own state until the next
+    // rebuild, and nothing else changes on a pick.
+    starterPick = target.value;
   }
 });
 
