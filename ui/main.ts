@@ -450,6 +450,19 @@ async function aiConfirm(): Promise<void> {
   // a reply must never land on a snapshot it was not requested for.
   const config = aiConfig;
   const preview = aiPreview;
+  // The preview must still describe the topology on screen. A starter
+  // load or an import changes the topology without touching aiPreview,
+  // and the identity check below would happily send the old payload -
+  // so currency is checked here, before any fetch (pass-2 finding).
+  if (preview.fingerprint !== topologyFingerprint(state.topology)) {
+    state = {
+      ...state,
+      notice: 'Topology changed since the preview — Review with AI again',
+    };
+    aiPreview = null;
+    render();
+    return;
+  }
   aiBusy = true;
   render();
   try {
@@ -649,6 +662,14 @@ function onClick(event: MouseEvent): void {
         traceFingerprint = null;
         stopReplay();
         sendFrom = null;
+        // A loaded sample is a fresh editing session: the out-of-the-box
+        // promise (#164 - Send unchanged reads H1 pinging H2) holds on
+        // EVERY load, so the send form returns to its shipped defaults
+        // instead of inheriting the previous session's destination, kind
+        // or draft.
+        lastDst = '192.168.1.11';
+        dstIpDraft = null;
+        sendKind = 'icmp';
       }
       break;
     }

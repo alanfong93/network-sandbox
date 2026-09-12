@@ -155,7 +155,7 @@ sandbox JSON file (optional `layout` sidecar).
 ```mermaid
 flowchart TD
     PA[Click a palette box<br>or drop on canvas] --> AP[addPreset writes a chassis<br>plus functions]
-    STT[Load missing-return-route starter] --> SE
+    STT[Starters picker: pick a sample<br>then Load starter] --> SE
     AP --> DR[Drag places the box<br>layout sidecar only]
     DR --> SE{Link pending?}
     SE -->|yes| CL[completeLink joins<br>an explicit free port]
