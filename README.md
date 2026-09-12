@@ -28,7 +28,7 @@ npm run ui:build
 npm run ui:dev
 ```
 
-Open **http://localhost:5173**. Place a box from the palette (or drop it on the canvas), cable two ports, set PVID / untagged VLANs in the inspector, Send, and read the hops. The canvas also steps a replay token along those hops (play/step, no verdict). **Load missing-return-route starter** loads catalogue row 13 (NAT off, no return route) without changing the NAT-on default for a newly placed router.
+Open **http://localhost:5173**. Place a box from the palette (or drop it on the canvas), cable two ports, set PVID / untagged VLANs in the inspector, Send, and read the hops. The canvas also steps a replay token along those hops (play/step, no verdict). **Starters** loads a shipped sample with no setup: **Home network** — modem, router (1 WAN, 4 LAN jacks), two hosts — where the send form already points H1 at H2, so pressing Send unchanged reads a round-trip trace; and **Missing return route** — catalogue row 13 (NAT off, no return route) — which does not change the NAT-on default for a newly placed router.
 
 Docker is an **optional** way to serve the same static UI, not a prerequisite:
 

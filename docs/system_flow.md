@@ -133,7 +133,10 @@ flowchart TD
 ## UI loop
 
 The browser UI runs the same engine, driven by clicks. The shipped loop is:
-place a preset box, or load the missing-return-route starter (ADR 0005 content), set its jack counts — a market-SKU port count on a pure
+place a preset box, or load a starter from the Starters picker (home
+network: modem, router with 1 WAN and 4 LAN jacks, two hosts - the send
+form's untouched defaults give H1 pinging H2 as a round-trip trace;
+missing return route: ADR 0005 content), set its jack counts — a market-SKU port count on a pure
 managed or unmanaged switch, LAN count and WAN count on a router (the LAN
 jacks join one bridge, extra WANs are routed uplinks, ADR 0031) — link two
 free ports, edit in the inspector, send, read

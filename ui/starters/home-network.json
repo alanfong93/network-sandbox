@@ -1,0 +1,274 @@
+{
+  "format": "network-sandbox",
+  "version": 1,
+  "topology": {
+    "devices": [
+      {
+        "id": "H1",
+        "label": "Host 1",
+        "preset": "host",
+        "ports": [
+          {
+            "id": "1",
+            "mtu": 1500,
+            "ownedBy": "none"
+          }
+        ],
+        "radios": [],
+        "functions": [],
+        "internal": [],
+        "mac": "aa:00:00:00:00:01",
+        "ip": "192.168.1.10",
+        "prefix": 24,
+        "gateway": "192.168.1.1",
+        "resolver": "192.168.1.1"
+      },
+      {
+        "id": "H2",
+        "label": "Host 2",
+        "preset": "host",
+        "ports": [
+          {
+            "id": "1",
+            "mtu": 1500,
+            "ownedBy": "none"
+          }
+        ],
+        "radios": [],
+        "functions": [],
+        "internal": [],
+        "mac": "aa:00:00:00:00:02",
+        "ip": "192.168.1.11",
+        "prefix": 24,
+        "gateway": "192.168.1.1",
+        "resolver": "192.168.1.1"
+      },
+      {
+        "id": "R1",
+        "label": "Router 1",
+        "preset": "router",
+        "ports": [
+          {
+            "id": "lan",
+            "mtu": 1500,
+            "ownedBy": "br"
+          },
+          {
+            "id": "lan2",
+            "mtu": 1500,
+            "ownedBy": "br"
+          },
+          {
+            "id": "lan3",
+            "mtu": 1500,
+            "ownedBy": "br"
+          },
+          {
+            "id": "lan4",
+            "mtu": 1500,
+            "ownedBy": "br"
+          },
+          {
+            "id": "lan-svi",
+            "mtu": 1500,
+            "ownedBy": "rt"
+          },
+          {
+            "id": "wan",
+            "mtu": 1500,
+            "ownedBy": "rt"
+          }
+        ],
+        "radios": [],
+        "functions": [
+          {
+            "kind": "bridging",
+            "id": "br",
+            "vlanAware": true,
+            "members": [
+              {
+                "port": "lan",
+                "mode": "access",
+                "pvid": 1,
+                "taggedVlans": [],
+                "untaggedVlans": [
+                  1
+                ],
+                "acceptableFrameTypes": "all",
+                "ingressFiltering": true
+              },
+              {
+                "port": "lan2",
+                "mode": "access",
+                "pvid": 1,
+                "taggedVlans": [],
+                "untaggedVlans": [
+                  1
+                ],
+                "acceptableFrameTypes": "all",
+                "ingressFiltering": true
+              },
+              {
+                "port": "lan3",
+                "mode": "access",
+                "pvid": 1,
+                "taggedVlans": [],
+                "untaggedVlans": [
+                  1
+                ],
+                "acceptableFrameTypes": "all",
+                "ingressFiltering": true
+              },
+              {
+                "port": "lan4",
+                "mode": "access",
+                "pvid": 1,
+                "taggedVlans": [],
+                "untaggedVlans": [
+                  1
+                ],
+                "acceptableFrameTypes": "all",
+                "ingressFiltering": true
+              },
+              {
+                "port": "lan-svi",
+                "mode": "access",
+                "pvid": 1,
+                "taggedVlans": [],
+                "untaggedVlans": [
+                  1
+                ],
+                "acceptableFrameTypes": "all",
+                "ingressFiltering": true
+              }
+            ]
+          },
+          {
+            "kind": "routing",
+            "id": "rt",
+            "ifaces": [
+              {
+                "id": "lan-svi",
+                "ip": "192.168.1.1",
+                "prefix": 24,
+                "mac": "aa:00:00:00:00:05",
+                "vlan": 1
+              },
+              {
+                "id": "wan",
+                "ip": "203.0.113.2",
+                "prefix": 24,
+                "mac": "aa:00:00:00:00:06",
+                "vlan": 500
+              }
+            ],
+            "routes": [
+              {
+                "dest": "0.0.0.0",
+                "prefix": 0,
+                "via": "203.0.113.1"
+              }
+            ],
+            "firewall": []
+          },
+          {
+            "kind": "nat",
+            "id": "nat",
+            "on": "rt",
+            "portForwards": []
+          },
+          {
+            "kind": "dhcp-server",
+            "id": "dhcp",
+            "scopes": [
+              {
+                "vlan": 1,
+                "poolStart": "192.168.1.100",
+                "poolEnd": "192.168.1.199",
+                "gateway": "192.168.1.1",
+                "resolver": "192.168.1.1"
+              }
+            ]
+          }
+        ],
+        "internal": [
+          {
+            "from": "rt",
+            "to": "br"
+          }
+        ],
+        "mac": "aa:00:00:00:00:04",
+        "ip": "192.168.1.1",
+        "prefix": 24,
+        "vlan": 1
+      },
+      {
+        "id": "M1",
+        "label": "ISP modem",
+        "preset": "modem",
+        "ports": [
+          {
+            "id": "1",
+            "mtu": 1500,
+            "ownedBy": "isp"
+          },
+          {
+            "id": "2",
+            "mtu": 1500,
+            "ownedBy": "isp"
+          }
+        ],
+        "radios": [],
+        "functions": [
+          {
+            "kind": "isp-handoff",
+            "id": "isp",
+            "port": "1",
+            "mode": "dhcp",
+            "vlanTag": 500
+          }
+        ],
+        "internal": []
+      }
+    ],
+    "links": [
+      {
+        "id": "wan",
+        "a": {
+          "device": "M1",
+          "port": "1"
+        },
+        "b": {
+          "device": "R1",
+          "port": "wan"
+        },
+        "medium": "wired"
+      },
+      {
+        "id": "h1",
+        "a": {
+          "device": "H1",
+          "port": "1"
+        },
+        "b": {
+          "device": "R1",
+          "port": "lan"
+        },
+        "medium": "wired"
+      },
+      {
+        "id": "h2",
+        "a": {
+          "device": "H2",
+          "port": "1"
+        },
+        "b": {
+          "device": "R1",
+          "port": "lan2"
+        },
+        "medium": "wired"
+      }
+    ],
+    "profiles": []
+  }
+}

@@ -212,8 +212,12 @@ cursor, empty-drag pan, Fit) is a view transform only — it is not `layout`
 and is not in the sandbox file. Forms UI stays
 (ADR 0029). Layout is a sandbox-envelope
 sibling `{deviceId: {x,y}}`, never fields on Topology or Chassis. Missing
-layout is valid — the later UI auto-places. `ui/starters.ts` plus `ui/starters/missing-return-route.json` is the ADR 0005
-starter (NAT off, return route missing; catalogue row 13). Newly placed
+layout is valid — the later UI auto-places. `ui/starters.ts` plus the
+`ui/starters/` documents are the starter set the Starters picker loads:
+the ADR 0005 missing-return-route starter (NAT off, return route
+missing; catalogue row 13) and the home-network first-look sample (#164
+— modem, router with 1 WAN and 4 LAN jacks, two hosts, H1 to H2
+round-trip on the send form's untouched defaults). Newly placed
 routers still write a `nat` function. `ui/jsonio.ts` round-trips
 optional `layout` as an envelope sibling (`exportSandbox(topology, layout?)`,
 `importSandbox` returns `{topology, layout}`); engine `fromJson` still

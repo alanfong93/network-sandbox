@@ -156,6 +156,21 @@ palette is how a topology starts.
 - **Do not call it:** *toolbox*, *toolbar*. It is the list of boxes, not a set of
   editing tools.
 
+### Starter
+
+A shipped sample topology the **Starters** picker loads into the editor:
+the home network (first look — modem, router with 1 WAN and 4 LAN jacks,
+two hosts, and the send form's defaults already point H1 at H2) and the
+missing-return-route broken reply (catalogue row 13, ADR 0005 content).
+A starter is sandbox JSON (the documents under `ui/starters/`), asserted
+equal to the built starter in tests, and it loads through the same path
+as Import. Loading replaces the editor state; it never auto-Sends —
+**Send stays the user's action** (PRODUCT job 3).
+
+- **Do not call it:** *template*, *scene*, *scenario*, *preset* (a preset
+  is a palette box, not a file), *profile* (engine capability data,
+  [ADR 0012](docs/adr/0012-profiles-are-data-the-engine-is-the-only-executor.md)).
+
 ### Inspector
 
 The editor for one placed device: its address fields, and one group of controls per
