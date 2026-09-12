@@ -494,9 +494,10 @@ async function aiChatSend(form: HTMLFormElement): Promise<void> {
     // The turn failed: drop exactly the failed trailing turn — by
     // position, never by content, so an earlier identical question that
     // DID succeed survives with its answer — and give the question back
-    // to the input rather than silently eating it.
+    // to the input, unless the user typed a newer draft while this
+    // request was in flight (the newer text wins).
     if (aiConversation === next) aiConversation = next.slice(0, -1);
-    aiMsgDraft = text;
+    if (aiMsgDraft === null) aiMsgDraft = text;
     state = { ...state, notice: aiErrorText(error) };
   } finally {
     aiBusy = false;
@@ -619,9 +620,11 @@ function onClick(event: MouseEvent): void {
       void aiConfirm();
       return;
     case 'ai-cancel':
-      // A cancel during an in-flight confirm is a no-op: the discard rule
-      // drops the reply when it lands.
-      if (!aiBusy) aiPreview = null;
+      // Always clears the preview. During an in-flight confirm this is
+      // what makes the capture-and-compare discard rule fire: the reply
+      // lands on a preview that no longer exists, so it is dropped with
+      // a named notice instead of populating a cancelled review.
+      aiPreview = null;
       break;
     case 'load-starter':
       state = loadTopology(missingReturnRoute());
