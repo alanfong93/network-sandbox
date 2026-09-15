@@ -4,11 +4,15 @@ import { format } from '../src/format';
 import { createRunContext } from '../src/run';
 import { flowObservationAsFormatInput, runFlow } from '../src/flow';
 import { PRESETS } from './presets';
-import { loadTopology } from './state';
+import { initialState, loadTopology } from './state';
 import {
   STARTERS,
+  SHIPPED_LAST_DST,
+  SHIPPED_SEND_FORM,
+  applyStarterLoad,
   homeNetwork,
   missingReturnRoute,
+  selectedStarterId,
   starterById,
 } from './starters';
 import { toJson } from '../src/json';
@@ -89,7 +93,7 @@ describe('home-network starter (#164)', () => {
 
   it('H2 sits at 192.168.1.11 — the send form\'s shipped default destination (main.ts lastDst)', () => {
     const h2 = homeNetwork().devices.find((device) => device.id === 'H2');
-    expect(h2?.ip).toBe('192.168.1.11');
+    expect(h2?.ip).toBe(SHIPPED_LAST_DST);
   });
 
   it('is the specified topology: modem -> router (1 WAN, 4 LAN jacks) -> 2 hosts', () => {
@@ -121,5 +125,39 @@ describe('home-network starter (#164)', () => {
     const trace = runTrace(homeNetwork(), { from: 'H1', dstIp: '192.168.1.11' });
     expect(trace.outcome).toBe('round-trip');
     expect(trace.requestHops.length).toBeGreaterThan(0);
+  });
+});
+
+describe('starter-load transaction (#166 characterisation)', () => {
+  it('the picker re-selects starterPick, else STARTERS[0]', () => {
+    expect(selectedStarterId(null)).toBe('home-network');
+    expect(selectedStarterId('missing-return-route')).toBe('missing-return-route');
+    expect(selectedStarterId('no-such-starter')).toBe('no-such-starter');
+  });
+
+  it('an unknown or empty picker value loads STARTERS[0]', () => {
+    const empty = applyStarterLoad(initialState, '');
+    const unknown = applyStarterLoad(initialState, 'no-such-starter');
+    expect(empty.state.topology).toEqual(STARTERS[0]!.load());
+    expect(unknown.state.topology).toEqual(STARTERS[0]!.load());
+  });
+
+  it('a known picker value loads that starter and resets the send form', () => {
+    const loaded = applyStarterLoad(initialState, 'missing-return-route');
+    expect(loaded.state.topology).toEqual(missingReturnRoute());
+    expect(loaded.state.selected).toBeNull();
+    expect(loaded.sendForm).toEqual(SHIPPED_SEND_FORM);
+    expect(loaded.sendForm?.lastDst).toBe(SHIPPED_LAST_DST);
+    expect(loaded.sendForm?.sendKind).toBe('icmp');
+    expect(loaded.sendForm?.dstIpDraft).toBeNull();
+    expect(loaded.sendForm?.sendFrom).toBeNull();
+  });
+
+  it('Load replaces prior editor state rather than merging it', () => {
+    const dirty = loadTopology(homeNetwork());
+    const loaded = applyStarterLoad(dirty, 'missing-return-route');
+    expect(loaded.state.topology.devices.map((d) => d.id)).toEqual(
+      missingReturnRoute().devices.map((d) => d.id),
+    );
   });
 });

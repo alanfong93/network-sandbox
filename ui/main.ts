@@ -2,7 +2,12 @@ import type { DeviceId } from '../src/index';
 import { parseIpv4 } from '../src/index';
 import { divergentScopeWarning, exportSandbox, importSandbox } from './jsonio';
 import { PRESETS } from './presets';
-import { STARTERS, starterById } from './starters';
+import {
+  SHIPPED_LAST_DST,
+  STARTERS,
+  applyStarterLoad,
+  selectedStarterId,
+} from './starters';
 import { fitContent, panCamera, screenDeltaToWorld, zoomAt, type Camera } from './camera';
 import { contentSize, renderCanvas } from './canvas';
 import { renderDeviceList, renderInspector, renderTrace } from './render';
@@ -75,7 +80,7 @@ let panView: {
   origin: Camera;
   svg: SVGSVGElement;
 } | null = null;
-let lastDst = '192.168.1.11';
+let lastDst = SHIPPED_LAST_DST;
 // The draft keeps an unsent destination across re-renders (send-kind
 // toggle, device adds) - render() rebuilds the form, and lastDst only
 // records successful sends.
@@ -300,7 +305,7 @@ function render(): void {
     STARTERS.map(
       (starter) =>
         `<option value="${esc(starter.id)}"` +
-        `${starter.id === (starterPick ?? STARTERS[0]?.id) ? ' selected' : ''}>` +
+        `${starter.id === selectedStarterId(starterPick) ? ' selected' : ''}>` +
         `${esc(starter.label)}</option>`,
     ).join('') +
     '</select></label> ' +
@@ -655,21 +660,16 @@ function onClick(event: MouseEvent): void {
       // Reads the picker at click time; the selection itself survives
       // re-renders via starterPick.
       const pick = document.querySelector<HTMLSelectElement>('#starter-pick');
-      const starter = starterById(pick?.value ?? '') ?? STARTERS[0];
-      if (starter) {
-        state = loadTopology(starter.load());
+      const loaded = applyStarterLoad(state, pick?.value ?? '');
+      state = loaded.state;
+      if (loaded.sendForm) {
         lastTrace = null;
         traceFingerprint = null;
         stopReplay();
-        sendFrom = null;
-        // A loaded sample is a fresh editing session: the out-of-the-box
-        // promise (#164 - Send unchanged reads H1 pinging H2) holds on
-        // EVERY load, so the send form returns to its shipped defaults
-        // instead of inheriting the previous session's destination, kind
-        // or draft.
-        lastDst = '192.168.1.11';
-        dstIpDraft = null;
-        sendKind = 'icmp';
+        lastDst = loaded.sendForm.lastDst;
+        dstIpDraft = loaded.sendForm.dstIpDraft;
+        sendKind = loaded.sendForm.sendKind;
+        sendFrom = loaded.sendForm.sendFrom;
       }
       break;
     }
