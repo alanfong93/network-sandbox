@@ -1,5 +1,6 @@
 import { defaults, type Topology } from '../src/index';
 import type { BridgePort, Chassis, DeviceId, Port } from '../src/index';
+import { loadTopology, type EditorState } from './state';
 
 export function missingReturnRoute(): Topology {
   return {
@@ -291,4 +292,47 @@ export const STARTERS: StarterDef[] = [
 
 export function starterById(id: string): StarterDef | undefined {
   return STARTERS.find((starter) => starter.id === id);
+}
+
+/** Shipped ICMP destination. Home-network H2's address; Load resets to this. */
+export const SHIPPED_LAST_DST = '192.168.1.11';
+
+export type SendFormDefaults = {
+  lastDst: string;
+  dstIpDraft: null;
+  sendKind: 'icmp';
+  sendFrom: null;
+};
+
+/** What the send form is after Load starter. Recorded, not specified. */
+export const SHIPPED_SEND_FORM: SendFormDefaults = {
+  lastDst: SHIPPED_LAST_DST,
+  dstIpDraft: null,
+  sendKind: 'icmp',
+  sendFrom: null,
+};
+
+/**
+ * The picker's selected option after a re-render (#166).
+ * `starterPick` as recorded, else the first registry entry.
+ */
+export function selectedStarterId(starterPick: string | null): string | undefined {
+  return starterPick ?? STARTERS[0]?.id;
+}
+
+/**
+ * Load-starter transaction (#166): resolve the picker value, replace the
+ * editor, reset the send form to shipped defaults. Unknown or empty id
+ * falls back to STARTERS[0], matching `starterById(value) ?? STARTERS[0]`.
+ */
+export function applyStarterLoad(
+  state: EditorState,
+  starterId: string,
+): { state: EditorState; sendForm: SendFormDefaults | null } {
+  const starter = starterById(starterId) ?? STARTERS[0];
+  if (!starter) return { state, sendForm: null };
+  return {
+    state: loadTopology(starter.load()),
+    sendForm: { ...SHIPPED_SEND_FORM },
+  };
 }

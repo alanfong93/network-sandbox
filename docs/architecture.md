@@ -217,7 +217,9 @@ layout is valid — the later UI auto-places. `ui/starters.ts` plus the
 the ADR 0005 missing-return-route starter (NAT off, return route
 missing; catalogue row 13) and the home-network first-look sample (#164
 — modem, router with 1 WAN and 4 LAN jacks, two hosts, H1 to H2
-round-trip on the send form's untouched defaults). Newly placed
+round-trip on the send form's untouched defaults). `applyStarterLoad`
+is that load: picker value to editor state plus shipped send-form
+defaults; `main.ts` only reads the select. Newly placed
 routers still write a `nat` function. `ui/jsonio.ts` round-trips
 optional `layout` as an envelope sibling (`exportSandbox(topology, layout?)`,
 `importSandbox` returns `{topology, layout}`); engine `fromJson` still
