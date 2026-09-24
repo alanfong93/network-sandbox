@@ -461,6 +461,54 @@ describe('share-safe export (#168)', () => {
     );
   });
 
+  it('the share export is byte-honest without a layout: marker present, no layout key, strict key order', () => {
+    const topology = credentialedModemTopology();
+    const parsed = JSON.parse(
+      exportSandbox(topology, null, { shareSafe: true }),
+    ) as Record<string, unknown>;
+    expect(Object.keys(parsed)).toEqual(['format', 'version', 'topology', 'sharing']);
+    expect(parsed.sharing).toEqual({ credentials: 'stripped' });
+    expect(parsed).not.toHaveProperty('layout');
+    // The keep export of the same instant differs by exactly the marker
+    // and the credentials.
+    const keep = JSON.parse(exportSandbox(topology, null)) as {
+      topology: { devices: { functions: Record<string, unknown>[] }[] };
+    };
+    const keepHandoff = keep.topology.devices[0]!.functions.find(
+      (fn) => fn.kind === 'isp-handoff',
+    );
+    if (keepHandoff) delete keepHandoff.credentials;
+    expect(parsed.topology).toEqual(keep.topology);
+  });
+
+  it('a truthy-but-not-true shareSafe is refused: unmarked, credentials kept (review C1)', () => {
+    const topology = credentialedModemTopology();
+    const parsed = JSON.parse(
+      exportSandbox(topology, undefined, { shareSafe: 1 } as never),
+    ) as {
+      sharing?: unknown;
+      topology: { devices: { functions: Record<string, unknown>[] }[] };
+    };
+    expect(parsed).not.toHaveProperty('sharing');
+    const handoff = parsed.topology.devices[0]!.functions.find(
+      (fn) => fn.kind === 'isp-handoff',
+    );
+    expect(handoff).toHaveProperty('credentials');
+  });
+
+  it('the marker tolerates extra sibling keys - the gate is the exact credentials value (review C1)', () => {
+    const topology = credentialedModemTopology();
+    const shareText = exportSandbox(topology, undefined, { shareSafe: true });
+    const withExtra = JSON.parse(shareText) as Record<string, unknown>;
+    withExtra.sharing = { credentials: 'stripped', extra: 1 };
+    expect(importSandbox(JSON.stringify(withExtra)).shareStripped).toBe(true);
+    const wrongValue = JSON.parse(shareText) as Record<string, unknown>;
+    wrongValue.sharing = { credentials: 'other', extra: 1 };
+    expect(
+      importSandbox(JSON.stringify(wrongValue)).shareStripped,
+    ).toBeUndefined();
+  });
+
   it('a share artifact round-trips topology (minus credentials) and layout', () => {
     const topology = credentialedModemTopology();
     const id = topology.devices[0]!.id;
