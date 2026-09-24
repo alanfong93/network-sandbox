@@ -15,6 +15,7 @@ import {
 import type { Chassis, Fn, Hop, Topology } from './model';
 import { createRunContext } from './run';
 import { send } from './send';
+import { homeNetwork, missingReturnRoute } from '../ui/starters';
 import { referenceScenario } from './wan.fixture';
 
 function roundTrip(topology: Topology): Topology {
@@ -57,6 +58,33 @@ function mulberry32(seed: number): () => number {
     x ^= x + Math.imul(x ^ (x >>> 7), 61 | x);
     return ((x ^ (x >>> 14)) >>> 0) / 4294967296;
   };
+}
+
+/** The isp-handoff FnJson of a topology's first chassis, for focused asserts. */
+function ispOf(topology: Topology) {
+  const fn = topology.devices[0]?.functions.find(
+    (candidate) => candidate.kind === 'isp-handoff',
+  );
+  return fn?.kind === 'isp-handoff' ? fn : undefined;
+}
+
+/**
+ * toJson's omit contract (#168), mirrored one-for-one: a deep clone with
+ * exactly the isp-handoff `credentials` keys removed. The structural
+ * property below holds the encoder and this helper in lockstep — a new
+ * credential-shaped field in the envelope must change both in the same PR,
+ * and a field that omits anything else fails here loudly.
+ */
+function withoutCredentials(envelope: SandboxEnvelope): SandboxEnvelope {
+  const clone = JSON.parse(JSON.stringify(envelope)) as SandboxEnvelope;
+  for (const chassis of clone.topology.devices) {
+    for (const fn of chassis.functions) {
+      if (fn.kind === 'isp-handoff' && fn.credentials !== undefined) {
+        delete fn.credentials;
+      }
+    }
+  }
+  return clone;
 }
 
 function pickVlans(rng: () => number, max: number): Set<number> {
@@ -286,6 +314,42 @@ describe('sandbox JSON contract', () => {
     });
   });
 
+  it('omit-mode drops only isp-handoff credentials and round-trips (#168)', () => {
+    const topology = generatedTopology(7);
+    const envelope = toJson(topology, { omitCredentials: true });
+    const jsonIsp = envelope.topology.devices[0]?.functions.find(
+      (fn) => fn.kind === 'isp-handoff',
+    );
+    expect(jsonIsp).not.toHaveProperty('credentials');
+    if (jsonIsp?.kind !== 'isp-handoff') return;
+    expect(jsonIsp.vlanTag).toBe(500);
+    expect(jsonIsp.ip).toBe('192.0.2.2');
+    expect(jsonIsp.prefix).toBe(24);
+
+    const parsed = fromJson(envelope);
+    expect(ispOf(parsed)?.credentials).toBeUndefined();
+    expect(ispOf(parsed)?.vlanTag).toBe(500);
+    expect(ispOf(parsed)?.ip).toBe('192.0.2.2');
+  });
+
+  it('default keeps empty-string credentials, omit-mode drops them too (#168)', () => {
+    const topology = generatedTopology(3);
+    const isp = ispOf(topology);
+    if (!isp) throw new Error('expected isp-handoff');
+    isp.credentials = { user: '', pass: '' };
+
+    const kept = toJson(topology).topology.devices[0]?.functions.find(
+      (fn) => fn.kind === 'isp-handoff',
+    );
+    if (kept?.kind !== 'isp-handoff') throw new Error('expected isp-handoff');
+    expect(kept.credentials).toEqual({ user: '', pass: '' });
+
+    const omitted = toJson(topology, { omitCredentials: true }).topology.devices[0]?.functions.find(
+      (fn) => fn.kind === 'isp-handoff',
+    );
+    expect(omitted).not.toHaveProperty('credentials');
+  });
+
   it('rejects an unsupported version by name, not SyntaxError', () => {
     const envelope = { format: SANDBOX_FORMAT, version: 2, topology: { devices: [], links: [], profiles: [] } };
     expect(() => fromJson(envelope)).toThrow(UnsupportedSandboxVersionError);
@@ -360,6 +424,42 @@ describe('sandbox JSON properties', () => {
         UnknownFunctionKindError,
       );
     }
+  });
+
+  it('omit-mode output equals default output minus exactly the credentials keys, for every fixture topology (#168)', () => {
+    // Shape coverage is part of the tripwire: credentialed handoffs
+    // (generated seeds), credential-less handoffs (reference scenario,
+    // home-network starter), and no handoff at all (missing-return-route
+    // starter, its hosts). A shape with no coverage makes the property
+    // vacuous, so the counts are pinned.
+    const fixtures: [string, Topology][] = [
+      ...Array.from({ length: 64 }, (_, seed) => [
+        `generated ${seed}`,
+        generatedTopology(seed),
+      ] as [string, Topology]),
+      ['reference scenario', referenceScenario()],
+      ['starter home-network', homeNetwork()],
+      ['starter missing-return-route', missingReturnRoute()],
+    ];
+    let credentialed = 0;
+    let handoffOnly = 0;
+    let noHandoff = 0;
+    for (const [name, topology] of fixtures) {
+      const full = toJson(topology);
+      const omitted = toJson(topology, { omitCredentials: true });
+      expect(omitted, name).toEqual(withoutCredentials(full));
+
+      const handoffs = topology.devices.flatMap((chassis) =>
+        chassis.functions.filter((fn) => fn.kind === 'isp-handoff'),
+      );
+      if (handoffs.length === 0) noHandoff += 1;
+      else if (handoffs.some((fn) => fn.kind === 'isp-handoff' && fn.credentials))
+        credentialed += 1;
+      else handoffOnly += 1;
+    }
+    expect(credentialed).toBeGreaterThan(0);
+    expect(handoffOnly).toBeGreaterThan(0);
+    expect(noHandoff).toBeGreaterThan(0);
   });
 });
 

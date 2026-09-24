@@ -107,13 +107,13 @@ Palette labels come from `ui/presets.ts`. **Engine** means the TypeScript librar
 | Profile document + registry | yes (`fromProfileJson`) | no picker | vendor/ISP content, UI picker |
 | Radio coverage | estimate seam + `Radio.channel` only | channel is config | coverage UI |
 | Optional AI review | — (not engine; [ADR 0033](docs/adr/0033-ai-advice-sits-beside-the-engine.md)) | Load config, Review, confirm, chat | |
-| Share-safe export | credentials kept in the file | same | [#65](https://github.com/alanfong93/network-sandbox/issues/65) |
+| Share-safe export | yes (`toJson` omit-mode) | "Export share copy" — no credentials, `sharing` marker, import warns once ([ADR 0034](docs/adr/0034-share-safe-export-omits-credentials.md)) | |
 
 Routers are **one device type placed at any depth**. "Sub-router" is a position, not a kind of box.
 
 ## Persistence
 
-Sandbox JSON (`format: 'network-sandbox'`, version 1) is the file you keep. It round-trips the topology, including `isp-handoff` **credentials**. Check a file before you share it. That policy is a standing guard, not a feature request: [#65](https://github.com/alanfong93/network-sandbox/issues/65). Canvas `x,y` is an optional envelope sibling, not Topology.
+There are two export artifacts, with two purposes ([ADR 0034](docs/adr/0034-share-safe-export-omits-credentials.md)). Sandbox JSON (`format: 'network-sandbox'`, version 1) is the file you **keep**: it round-trips the topology, including `isp-handoff` **credentials** — that keep ruling was the standing guard [#65](https://github.com/alanfong93/network-sandbox/issues/65), now resolved by the share-safe design. The file you **hand to someone else** comes from **Export share copy**: the same envelope with credentials omitted and an explicit `sharing: { credentials: 'stripped' }` marker. Importing a marked file warns once, at import, that the credentials are not in it; that is the warning's whole meaning — a claim about what the exporting side did. An unmarked file makes no claim either way, so a keep-file with plaintext credentials still imports silently. Canvas `x,y` is an optional envelope sibling, not Topology.
 
 Vendor and ISP **profile content** is not shipped. The engine can load a version-1 profile document; the UI does not pick files yet.
 

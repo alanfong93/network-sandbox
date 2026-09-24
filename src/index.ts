@@ -35,6 +35,7 @@ export type {
   FnJson,
   SandboxEnvelope,
   StpFnJson,
+  ToJsonOptions,
   TopologyJson,
 } from './json';
 export {

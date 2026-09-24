@@ -53,6 +53,15 @@ export interface SandboxEnvelope {
   topology: TopologyJson;
 }
 
+/**
+ * Encoder-only request (#168): skip the `credentials` write on
+ * `isp-handoff`. The engine stays intent-neutral — it knows "omit these
+ * fields", never "share" (ADR 0034). Default encoding is byte-identical.
+ */
+export interface ToJsonOptions {
+  omitCredentials?: boolean;
+}
+
 export class UnknownFunctionKindError extends Error {
   override readonly name = 'UnknownFunctionKindError';
   readonly kind: unknown;
@@ -73,11 +82,14 @@ export class UnsupportedSandboxVersionError extends Error {
   }
 }
 
-export function toJson(topology: Topology): SandboxEnvelope {
+export function toJson(
+  topology: Topology,
+  options?: ToJsonOptions,
+): SandboxEnvelope {
   return {
     format: SANDBOX_FORMAT,
     version: SANDBOX_VERSION,
-    topology: encodeTopology(topology),
+    topology: encodeTopology(topology, options?.omitCredentials === true),
   };
 }
 
@@ -93,21 +105,26 @@ export function fromJson(input: unknown): Topology {
   return decodeTopology(rec.topology);
 }
 
-function encodeTopology(topology: Topology): TopologyJson {
+function encodeTopology(
+  topology: Topology,
+  omitCredentials: boolean,
+): TopologyJson {
   return {
-    devices: topology.devices.map(encodeChassis),
+    devices: topology.devices.map((chassis) =>
+      encodeChassis(chassis, omitCredentials),
+    ),
     links: topology.links.map(encodeLink),
     profiles: [...topology.profiles],
   };
 }
 
-function encodeChassis(chassis: Chassis): ChassisJson {
+function encodeChassis(chassis: Chassis, omitCredentials: boolean): ChassisJson {
   const out: ChassisJson = {
     id: chassis.id,
     label: chassis.label,
     ports: chassis.ports.map(encodePort),
     radios: chassis.radios.map(encodeRadio),
-    functions: chassis.functions.map(encodeFn),
+    functions: chassis.functions.map((fn) => encodeFn(fn, omitCredentials)),
     internal: chassis.internal.map(encodeEdge),
   };
   if (chassis.preset !== undefined) out.preset = chassis.preset;
@@ -145,7 +162,7 @@ function encodeLink(link: Link): Link {
   return out;
 }
 
-function encodeFn(fn: Fn): FnJson {
+function encodeFn(fn: Fn, omitCredentials: boolean): FnJson {
   switch (fn.kind) {
     case 'bridging':
       return {
@@ -203,7 +220,7 @@ function encodeFn(fn: Fn): FnJson {
         mode: fn.mode,
       };
       if (fn.vlanTag !== undefined) out.vlanTag = fn.vlanTag;
-      if (fn.credentials !== undefined) {
+      if (fn.credentials !== undefined && !omitCredentials) {
         out.credentials = { user: fn.credentials.user, pass: fn.credentials.pass };
       }
       if (fn.ip !== undefined) out.ip = fn.ip;
