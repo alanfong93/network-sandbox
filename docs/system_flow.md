@@ -140,7 +140,11 @@ missing return route: ADR 0005 content), set its jack counts — a market-SKU po
 managed or unmanaged switch, LAN count and WAN count on a router (the LAN
 jacks join one bridge, extra WANs are routed uplinks, ADR 0031) — link two
 free ports, edit in the inspector, send, read
-sentences, export. An SVG canvas **view** draws chassis faces, ports and sagged cables
+sentences, export — **Export file** writes the keep-file, credentials
+included; **Export share copy** writes the same envelope without them,
+marked `sharing: { credentials: 'stripped' }`, and importing a marked file
+warns once that they are absent while an unmarked file is never claimed
+sanitized ([ADR 0034](adr/0034-share-safe-export-omits-credentials.md)). An SVG canvas **view** draws chassis faces, ports and sagged cables
 from `{topology, layout, selected}` (`ui/canvas.ts`); missing layout uses
 `autoPlace` for display only. Wheel zoom and empty-drag pan move a
 session-only camera; they do not write layout. After Send, hop replay rides a packet along
@@ -149,8 +153,9 @@ a verdict (ADR 0002). The live cable also carries a marching-chevron
 overlay from the hop's origin toward its destination (#122); the wired
 live stroke stays solid (#119). The canvas is also the builder: drop a palette preset, click two ports to
 link, drag a box (layout only). Flood replay draws one token per recorded flood hop on that
-device (concurrent if the walk emitted several); it does not invent copies. The topology never leaves the tab except as the
-sandbox JSON file (optional `layout` sidecar).
+device (concurrent if the walk emitted several); it does not invent copies. The topology never leaves the tab except as
+sandbox JSON — the keep-file or the share copy (optional `layout` sidecar
+on both).
 
 ```mermaid
 flowchart TD
@@ -169,11 +174,16 @@ flowchart TD
     SD --> HO[Hops, STP warning,<br>cold-trace notice]
     HO --> RP[Hop replay on canvas<br>consumes completed Hop]
     RP --> SE
-    SD --> EX[Export sandbox JSON<br>layout sidecar optional]
+    SD --> EX[Export file: sandbox.json<br>credentials kept<br>layout sidecar optional]
+    SD --> SX[Export share copy: sandbox-share.json<br>no credentials<br>sharing marker]
     EX --> SE
+    SX --> SW[Marked import warns once<br>unmarked never claimed sanitized]
+    SW --> SE
     style SD fill:#d7f5d7,color:#000
     style HO fill:#d7f5d7,color:#000
     style EX fill:#d7f5d7,color:#000
+    style SX fill:#d7f5d7,color:#000
+    style SW fill:#fff3cd,color:#000
     style RP fill:#fff3cd,color:#000
     style DR fill:#fff3cd,color:#000
 ```

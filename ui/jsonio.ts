@@ -2,13 +2,33 @@ import { fromJson, inSubnet, toJson } from '../src/index';
 import type { Topology } from '../src/index';
 import { pruneLayout, type Layout } from './layout';
 
-export type SandboxFile = { topology: Topology; layout: Layout | null };
+export type SandboxFile = {
+  topology: Topology;
+  layout: Layout | null;
+  /** True only when the envelope carries the exact #168 share marker. */
+  shareStripped?: boolean;
+};
+
+/** The share-export intent lives here in the UI, never in the engine (#168). */
+export interface ExportSandboxOptions {
+  shareSafe?: boolean;
+}
 
 /** The sandbox envelope from #57 is the format of record (ADR 0015, ADR 0029). */
-export function exportSandbox(topology: Topology, layout?: Layout | null): string {
-  const envelope: Record<string, unknown> = { ...toJson(topology) };
+export function exportSandbox(
+  topology: Topology,
+  layout?: Layout | null,
+  options?: ExportSandboxOptions,
+): string {
+  const envelope: Record<string, unknown> = {
+    ...toJson(
+      topology,
+      options?.shareSafe ? { omitCredentials: true } : undefined,
+    ),
+  };
   const pruned = layout ? pruneLayout(layout, topology) : {};
   if (Object.keys(pruned).length >= 1) envelope.layout = pruned;
+  if (options?.shareSafe) envelope.sharing = { credentials: 'stripped' };
   return JSON.stringify(envelope, null, 2);
 }
 
@@ -21,10 +41,30 @@ export function importSandbox(text: string): SandboxFile {
       ? (value as Record<string, unknown>)
       : {};
   const pruned = pruneLayout(rec.layout, topology);
+  // The marker is read only on its exact value; every other `sharing`
+  // shape - string, array, wrong case, wrong field - is inert data.
+  const sharing = rec.sharing;
+  const shareStripped =
+    typeof sharing === 'object' &&
+    sharing !== null &&
+    !Array.isArray(sharing) &&
+    (sharing as Record<string, unknown>).credentials === 'stripped';
   return {
     topology,
     layout: Object.keys(pruned).length >= 1 ? pruned : null,
+    ...(shareStripped ? { shareStripped: true } : {}),
   };
+}
+
+/**
+ * The share marker's honest counterpart (#168, #65: import stays honest
+ * about what a loaded file lacks). Fires only on the exact marker, only
+ * at import, exactly once - the #86 pattern: never a runtime nag.
+ */
+export function shareStrippedWarning(file: SandboxFile): string | null {
+  return file.shareStripped === true
+    ? 'Share copy - the exporter stripped the isp-handoff credentials for sharing; the PPPoE user/pass are not in this file, and everything else round-trips.'
+    : null;
 }
 
 /**

@@ -1,6 +1,11 @@
 import type { DeviceId } from '../src/index';
 import { parseIpv4 } from '../src/index';
-import { divergentScopeWarning, exportSandbox, importSandbox } from './jsonio';
+import {
+  divergentScopeWarning,
+  exportSandbox,
+  importSandbox,
+  shareStrippedWarning,
+} from './jsonio';
 import { PRESETS } from './presets';
 import {
   SHIPPED_LAST_DST,
@@ -301,6 +306,7 @@ function render(): void {
     '<div id="trace-out"></div>' +
     '<h2>Sandbox JSON</h2>' +
     '<button type="button" data-action="export">Export file</button> ' +
+    '<button type="button" data-action="export-share">Export share copy</button> ' +
     '<label class="file">Starters <select id="starter-pick">' +
     STARTERS.map(
       (starter) =>
@@ -378,15 +384,31 @@ function exportJson(): void {
   if (view) view.value = text;
 }
 
+/** The share artifact (#168): same envelope minus credentials, marked. */
+function exportShareJson(): void {
+  const text = exportSandbox(state.topology, state.layout, { shareSafe: true });
+  downloadText('sandbox-share.json', text);
+  const view = document.querySelector<HTMLTextAreaElement>('#json-view');
+  if (view) view.value = text;
+}
+
 async function importJson(file: File): Promise<void> {
   try {
     const imported = importSandbox(await file.text());
-    // Import-only limitation, named where the user meets it (#86): the
-    // engine's standalone DHCP model is one VLAN (src/dhcp.ts), so a
-    // multi-scope chassis answers on chassis.vlan only. Warn, never
-    // reject - the topology is legal.
-    const warning = divergentScopeWarning(imported.topology);
-    state = loadTopology(imported.topology, imported.layout, warning);
+    // Import-time notices only, composed in one deterministic string:
+    // share marker first (#168), then the DHCP limitation (#86). Never a
+    // runtime nag.
+    const notice = [
+      shareStrippedWarning(imported),
+      divergentScopeWarning(imported.topology),
+    ]
+      .filter((part) => part !== null)
+      .join(' ');
+    state = loadTopology(
+      imported.topology,
+      imported.layout,
+      notice.length >= 1 ? notice : null,
+    );
     lastTrace = null;
     traceFingerprint = null;
     stopReplay();
@@ -626,6 +648,9 @@ function onClick(event: MouseEvent): void {
     }
     case 'export':
       exportJson();
+      return;
+    case 'export-share':
+      exportShareJson();
       return;
     case 'ai-template':
       downloadText('network-sandbox-ai.json', toAiJson(blankAiConfig()));

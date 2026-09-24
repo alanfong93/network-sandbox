@@ -6,7 +6,12 @@ import {
   UnsupportedSandboxVersionError,
 } from '../src/index';
 import { addPreset, completeLink, initialState, setPvid, startLink } from './state';
-import { divergentScopeWarning, exportSandbox, importSandbox } from './jsonio';
+import {
+  divergentScopeWarning,
+  exportSandbox,
+  importSandbox,
+  shareStrippedWarning,
+} from './jsonio';
 
 function builtTopology() {
   let state = initialState;
@@ -347,5 +352,127 @@ describe('layout envelope sibling (#104)', () => {
         );
       }
     }
+  });
+});
+
+/** A modem whose handoff carries real PPPoE credentials (#168 fixture). */
+function credentialedModemTopology() {
+  let state = initialState;
+  state = addPreset(state, 'modem');
+  const topology = state.topology;
+  const handoff = topology.devices[0]!.functions.find(
+    (fn) => fn.kind === 'isp-handoff',
+  );
+  if (handoff?.kind !== 'isp-handoff') throw new Error('expected isp-handoff');
+  handoff.mode = 'pppoe';
+  handoff.vlanTag = 500;
+  handoff.credentials = { user: 'alice@example.net', pass: 'hunter2' };
+  return topology;
+}
+
+describe('share-safe export (#168)', () => {
+  it('share export marks the envelope, carries no credentials, keeps layout pruning', () => {
+    const topology = credentialedModemTopology();
+    const id = topology.devices[0]!.id;
+    const parsed = JSON.parse(
+      exportSandbox(topology, { [id]: { x: 3, y: 4 }, ghost: { x: 9, y: 9 } }, { shareSafe: true }),
+    ) as {
+      sharing?: unknown;
+      layout?: Record<string, unknown>;
+      topology: { devices: { functions: Record<string, unknown>[] }[] };
+    };
+    expect(parsed.sharing).toEqual({ credentials: 'stripped' });
+    expect(parsed.layout).toEqual({ [id]: { x: 3, y: 4 } });
+    const handoff = parsed.topology.devices[0]!.functions.find(
+      (fn) => fn.kind === 'isp-handoff',
+    );
+    expect(handoff).toBeDefined();
+    expect(handoff).not.toHaveProperty('credentials');
+    expect(handoff).toHaveProperty('vlanTag');
+  });
+
+  it('the keep-file export is unchanged: credentials in, no sharing sibling', () => {
+    const topology = credentialedModemTopology();
+    const parsed = JSON.parse(exportSandbox(topology)) as {
+      sharing?: unknown;
+      topology: { devices: { functions: Record<string, unknown>[] }[] };
+    };
+    expect(parsed).not.toHaveProperty('sharing');
+    const handoff = parsed.topology.devices[0]!.functions.find(
+      (fn) => fn.kind === 'isp-handoff',
+    );
+    expect(handoff).toBeDefined();
+    expect(handoff).toHaveProperty('credentials');
+  });
+
+  it('the marker is parsed only on the exact value; malformed sharing values are inert', () => {
+    const topology = credentialedModemTopology();
+    const shareText = exportSandbox(topology, undefined, { shareSafe: true });
+    expect(importSandbox(shareText).shareStripped).toBe(true);
+    expect(importSandbox(exportSandbox(topology)).shareStripped).toBeUndefined();
+
+    const inertSharing: unknown[] = [
+      'stripped',
+      ['stripped'],
+      null,
+      7,
+      { credentials: 'Stripped' },
+      { credentials: 'nope' },
+      { credentials: 1 },
+      {},
+    ];
+    for (const sharing of inertSharing) {
+      const envelope = JSON.parse(shareText) as Record<string, unknown>;
+      envelope.sharing = sharing;
+      const reimported = importSandbox(JSON.stringify(envelope));
+      expect(
+        reimported.shareStripped,
+        `sharing ${JSON.stringify(sharing)}`,
+      ).toBeUndefined();
+    }
+    const absent = JSON.parse(shareText) as Record<string, unknown>;
+    delete absent.sharing;
+    expect(importSandbox(JSON.stringify(absent)).shareStripped).toBeUndefined();
+  });
+
+  it('a marked import warns exactly once; an unmarked file with plaintext credentials never warns', () => {
+    const topology = credentialedModemTopology();
+    const marked = importSandbox(
+      exportSandbox(topology, undefined, { shareSafe: true }),
+    );
+    expect(shareStrippedWarning(marked)).toBe(
+      'Share copy - the exporter stripped the isp-handoff credentials for sharing; the PPPoE user/pass are not in this file, and everything else round-trips.',
+    );
+    // Unmarked files never receive a sanitization claim (#65 honesty rule):
+    // a keep-file with plaintext credentials imports without this notice.
+    const unmarked = importSandbox(exportSandbox(topology));
+    expect(unmarked.shareStripped).toBeUndefined();
+    expect(shareStrippedWarning(unmarked)).toBeNull();
+    // A share export of a topology without credentials still marks and
+    // still warns - the claim is about the file, not the topology.
+    let state = initialState;
+    state = addPreset(state, 'modem');
+    const credentialLess = importSandbox(
+      exportSandbox(state.topology, undefined, { shareSafe: true }),
+    );
+    expect(credentialLess.shareStripped).toBe(true);
+    expect(shareStrippedWarning(credentialLess)).toBe(
+      'Share copy - the exporter stripped the isp-handoff credentials for sharing; the PPPoE user/pass are not in this file, and everything else round-trips.',
+    );
+  });
+
+  it('a share artifact round-trips topology (minus credentials) and layout', () => {
+    const topology = credentialedModemTopology();
+    const id = topology.devices[0]!.id;
+    const imported = importSandbox(
+      exportSandbox(topology, { [id]: { x: 5, y: 6 } }, { shareSafe: true }),
+    );
+    const keep = importSandbox(exportSandbox(topology, { [id]: { x: 5, y: 6 } }));
+    const keepHandoff = keep.topology.devices[0]!.functions.find(
+      (fn) => fn.kind === 'isp-handoff',
+    );
+    if (keepHandoff?.kind === 'isp-handoff') delete keepHandoff.credentials;
+    expect(imported.topology).toEqual(keep.topology);
+    expect(imported.layout).toEqual({ [id]: { x: 5, y: 6 } });
   });
 });
