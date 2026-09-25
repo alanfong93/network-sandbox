@@ -2,7 +2,7 @@
 
 A browser-only sandbox for **IEEE 802.1Q / 802.1D bridging**, plus documented models of routing, NAT, DHCP, ARP, resolver lookup and ISP handoff. Build a topology, send a frame, read the engine's hops.
 
-There is **no server and no account**. Open **https://alanfong93.github.io/network-sandbox/** in a clean browser, place a box, and Send. That path needs no Node and no Docker. The hosted copy is this repository (AGPL). A clone still needs Node.js 22+. Sharing a topology file still keeps credentials in the file ([#65](https://github.com/alanfong93/network-sandbox/issues/65)).
+There is **no server and no account**. Open **https://alanfong93.github.io/network-sandbox/** in a clean browser, place a box, and Send. That path needs no Node and no Docker. The hosted copy is this repository (AGPL). A clone still needs Node.js 22+. The regular topology export keeps credentials; use the separate share-safe export to strip ISP handoff credentials before sharing ([ADR 0034](docs/adr/0034-share-safe-export-omits-credentials.md)).
 
 A trace supports design review. It does **not** certify a production design, and it does **not** emulate any vendor's defaults.
 

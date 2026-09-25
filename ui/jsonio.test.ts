@@ -496,6 +496,27 @@ describe('share-safe export (#168)', () => {
     expect(handoff).toHaveProperty('credentials');
   });
 
+  it('reads shareSafe once so credential stripping and marker cannot diverge', () => {
+    const topology = credentialedModemTopology();
+    let reads = 0;
+    const options = Object.defineProperty({}, 'shareSafe', {
+      get() {
+        reads += 1;
+        return reads === 1;
+      },
+    });
+    const parsed = JSON.parse(exportSandbox(topology, undefined, options)) as {
+      sharing?: unknown;
+      topology: { devices: { functions: Record<string, unknown>[] }[] };
+    };
+    expect(reads).toBe(1);
+    expect(parsed.sharing).toEqual({ credentials: 'stripped' });
+    const handoff = parsed.topology.devices[0]!.functions.find(
+      (fn) => fn.kind === 'isp-handoff',
+    );
+    expect(handoff).not.toHaveProperty('credentials');
+  });
+
   it('the marker tolerates extra sibling keys - the gate is the exact credentials value (review C1)', () => {
     const topology = credentialedModemTopology();
     const shareText = exportSandbox(topology, undefined, { shareSafe: true });

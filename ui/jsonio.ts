@@ -20,15 +20,16 @@ export function exportSandbox(
   layout?: Layout | null,
   options?: ExportSandboxOptions,
 ): string {
+  const shareSafe = options?.shareSafe === true;
   const envelope: Record<string, unknown> = {
     ...toJson(
       topology,
-      options?.shareSafe === true ? { omitCredentials: true } : undefined,
+      shareSafe ? { omitCredentials: true } : undefined,
     ),
   };
   const pruned = layout ? pruneLayout(layout, topology) : {};
   if (Object.keys(pruned).length >= 1) envelope.layout = pruned;
-  if (options?.shareSafe === true) envelope.sharing = { credentials: 'stripped' };
+  if (shareSafe) envelope.sharing = { credentials: 'stripped' };
   return JSON.stringify(envelope, null, 2);
 }
 
